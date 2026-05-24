@@ -100,9 +100,9 @@ min_price_chg = st.sidebar.slider(
 
 dry_zone_range = st.sidebar.slider(
     "Dry Zone Range (Trading Days)",
-    min_value=30,
+    min_value=0,
     max_value=150,
-    value=(30, 60),
+    value=(15, 60),
     step=5,
     help="Configure the minimum and maximum duration of the dry zone consolidation period (up to 150 days)"
 )

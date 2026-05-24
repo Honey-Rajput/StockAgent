@@ -36,6 +36,9 @@ def scan_stock(
     if baseline_avg_vol <= 0:
         return None
         
+    # Enforce at least 1 day of dry consolidation to prevent division by zero or NaN average volumes
+    min_dry_days = max(1, min_dry_days)
+    
     # --- STEP 2: Find Dry Zone (Exclude Today) ---
     # Exclude the latest day (today's candle) to scan historical dry period
     history_df = df.iloc[:-1].reset_index(drop=True)
@@ -45,8 +48,11 @@ def scan_stock(
     
     best_window = None  # Format: (start_idx, end_idx, length, not_dry_count)
     
-    # Scan from today-1 backwards to find the most recent valid dry zone
-    for idx in range(len(history_df) - 1, min_dry_days - 2, -1):
+    # Scan only recent days (at most 10 trading days back) to guarantee the consolidation ended recently
+    search_start_idx = len(history_df) - 1
+    search_end_idx = max(0, len(history_df) - 10)
+    
+    for idx in range(search_start_idx, search_end_idx - 1, -1):
         # Check window lengths from max_dry_days down to min_dry_days
         for L in range(max_dry_days, min_dry_days - 1, -1):
             start_idx = idx - L + 1
