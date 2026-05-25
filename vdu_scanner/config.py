@@ -10,7 +10,7 @@ MIN_VOLUME_RATIO = 2.0         # 2x surge minimum
 MIN_PRICE_CHANGE = 1.5         # 1.5% min price move on breakout day
 DRY_ZONE_MIN_DAYS = 30
 DRY_ZONE_MAX_DAYS = 60
-LOOKBACK_DAYS = 250            # Fetch 250 calendar days to guarantee 170+ clean trading days
+LOOKBACK_DAYS = 450            # Fetch 450 calendar days to guarantee 310+ clean trading days
 
 # NIFTY 50 Static Tickers
 NIFTY50_SYMBOLS = [

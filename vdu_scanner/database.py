@@ -79,6 +79,35 @@ def init_db() -> bool:
         );
         """,
         """
+        CREATE TABLE IF NOT EXISTS scanned_gapups (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            prev_close DOUBLE PRECISION,
+            open_price DOUBLE PRECISION,
+            cmp DOUBLE PRECISION,
+            gap_pct DOUBLE PRECISION,
+            volume BIGINT,
+            day_change_pct DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS scanned_trend_setups (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            setup_type VARCHAR(50) NOT NULL,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, setup_type, scan_date)
+        );
+        """,
+        """
         CREATE TABLE IF NOT EXISTS scan_logs (
             scan_date DATE PRIMARY KEY,
             total_scanned INT NOT NULL,
@@ -296,7 +325,63 @@ def get_cached_squeezes(date_str: str) -> list[dict]:
             conn.close()
     return results
 
-def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], total_scanned: int) -> bool:
+def get_cached_gapups(date_str: str) -> list[dict]:
+    """
+    Retrieves the cached Gap-Up setups scanned on a specific date.
+    """
+    query = """
+    SELECT symbol, company_name, prev_close, open_price, cmp, gap_pct, volume, day_change_pct, scan_date
+    FROM scanned_gapups
+    WHERE scan_date = %s;
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading cached gapups from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+
+def get_cached_trend_setups(date_str: str, setup_type: str) -> list[dict]:
+    """
+    Retrieves the cached technical trend setups scanned on a specific date for a setup_type.
+    """
+    query = """
+    SELECT symbol, company_name, cmp, day_change_pct, setup_type, scan_date
+    FROM scanned_trend_setups
+    WHERE scan_date = %s AND setup_type = %s;
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str, setup_type))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading cached trend setups for {setup_type} from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+
+def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], total_scanned: int) -> bool:
     """
     Saves the full market scan results and logs the completion.
     Uses clean transactions to perform daily upsert overrides.
@@ -309,6 +394,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         # 1. Clean existing records for this date
         cur.execute("DELETE FROM scanned_breakouts WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scanned_squeezes WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_gapups WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scan_logs WHERE scan_date = %s;", (date_str,))
         
         # 2. Insert new breakouts
@@ -357,6 +444,39 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 date_str
             ))
             
+        # 3.5. Insert new gapups
+        insert_gapup_query = """
+        INSERT INTO scanned_gapups (symbol, company_name, prev_close, open_price, cmp, gap_pct, volume, day_change_pct, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        for r in gapups:
+            cur.execute(insert_gapup_query, (
+                str(r['symbol']), 
+                str(r['company_name']) if r['company_name'] else "", 
+                float(r['prev_close']),
+                float(r['open_price']),
+                float(r['cmp']), 
+                float(r['gap_pct']),
+                int(r['volume']), 
+                float(r['day_change_pct']), 
+                date_str
+            ))
+            
+        # 3.8. Insert new trend setups (above_ma, support_ma, crossover_ma)
+        insert_trend_query = """
+        INSERT INTO scanned_trend_setups (symbol, company_name, cmp, day_change_pct, setup_type, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s);
+        """
+        for r in trend_setups:
+            cur.execute(insert_trend_query, (
+                str(r['symbol']),
+                str(r['company_name']) if r['company_name'] else "",
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                str(r['setup_type']),
+                date_str
+            ))
+            
         # 4. Insert execution log
         cur.execute("""
         INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
@@ -365,7 +485,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         
         conn.commit()
         cur.close()
-        print(f"Cached {len(breakouts)} breakouts and {len(squeezes)} squeezes in Neon for {date_str}.")
+        print(f"Cached {len(breakouts)} breakouts, {len(squeezes)} squeezes, {len(gapups)} gapups, and {len(trend_setups)} trend setups in Neon for {date_str}.")
         return True
     except Exception as e:
         if conn:

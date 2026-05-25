@@ -49,6 +49,14 @@ if 'ai_custom_sym_input' not in st.session_state:
     st.session_state.ai_custom_sym_input = ""
 if 'coiled_results' not in st.session_state:
     st.session_state.coiled_results = None
+if 'gapup_results' not in st.session_state:
+    st.session_state.gapup_results = None
+if 'above_ma_results' not in st.session_state:
+    st.session_state.above_ma_results = None
+if 'support_ma_results' not in st.session_state:
+    st.session_state.support_ma_results = None
+if 'crossover_ma_results' not in st.session_state:
+    st.session_state.crossover_ma_results = None
 
 # --- Automatic Daily Database Cache Loader ---
 try:
@@ -57,6 +65,10 @@ try:
     if cached_log and st.session_state.scan_results is None:
         st.session_state.scan_results = database.get_cached_breakouts(today_ist_str)
         st.session_state.coiled_results = database.get_cached_squeezes(today_ist_str)
+        st.session_state.gapup_results = database.get_cached_gapups(today_ist_str)
+        st.session_state.above_ma_results = database.get_cached_trend_setups(today_ist_str, 'above_ma')
+        st.session_state.support_ma_results = database.get_cached_trend_setups(today_ist_str, 'support_ma')
+        st.session_state.crossover_ma_results = database.get_cached_trend_setups(today_ist_str, 'crossover_ma')
         st.session_state.total_scanned = cached_log['total_scanned']
         st.session_state.failed_count = 0
         st.session_state.last_scanned = today_ist_str + " (Loaded from DB Cache)"
@@ -70,11 +82,16 @@ st.markdown('<p class="gradient-subtitle">Scan NSE-listed stocks for institution
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.markdown('### ⚙️ Scan Universe')
+universe_selection = st.sidebar.selectbox(
+    "Select Universe to Scan",
+    options=["NIFTY 100 (Recommended)", "NIFTY 50 (Ultra Fast)", "All NSE Listed Equities (Full Scan)"],
+    index=0,
+    help="Select the universe of stocks to scan. NIFTY 100/50 are extremely fast and completely bypass Yahoo Finance rate limits."
+)
+
 st.sidebar.markdown(
-    "<div style='padding:12px; background:rgba(41,182,246,0.06); border:1px solid rgba(41,182,246,0.15); border-radius:10px; margin-bottom: 15px;'>"
-    "<span style='color:#94a3b8; font-size:0.85rem;'>Active Universe:</span><br>"
-    "<b style='font-size:1.15rem; color:#29b6f6;'>All NSE Listed Equities</b><br>"
-    "<span style='color:#ffa000; font-size:0.85rem; font-weight:600;'>⚡ Filters: Price > ₹200 | Market Cap > ₹3000 Cr</span>"
+    "<div style='padding:8px 12px; background:rgba(41,182,246,0.06); border:1px solid rgba(41,182,246,0.15); border-radius:10px; margin-bottom: 15px;'>"
+    "<span style='color:#ffa000; font-size:0.8rem; font-weight:600;'>⚡ Filters: Price > ₹200 | Market Cap > ₹3000 Cr</span>"
     "</div>", 
     unsafe_allow_html=True
 )
@@ -111,13 +128,13 @@ dry_zone_range = st.sidebar.slider(
     help="Configure the minimum and maximum duration of the dry zone consolidation period (up to 150 days)"
 )
 
-max_dry_spikes = st.sidebar.slider(
-    "Max Spikes in Dry Zone",
+min_dry_spikes = st.sidebar.slider(
+    "Min Spikes in Dry Zone",
     min_value=0,
-    max_value=5,
+    max_value=20,
     value=2,
     step=1,
-    help="Allows up to this many unusual volume surge days inside the dry zone window to filter market noise"
+    help="Requires at least this many volume accumulation spikes inside the dry zone window (up to 20 spikes)"
 )
 
 min_signal_str = st.sidebar.slider(
@@ -155,14 +172,25 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         with st.spinner("Loading cached scan results from Neon PostgreSQL..."):
             st.session_state.scan_results = database.get_cached_breakouts(today_ist_str)
             st.session_state.coiled_results = database.get_cached_squeezes(today_ist_str)
+            st.session_state.gapup_results = database.get_cached_gapups(today_ist_str)
+            st.session_state.above_ma_results = database.get_cached_trend_setups(today_ist_str, 'above_ma')
+            st.session_state.support_ma_results = database.get_cached_trend_setups(today_ist_str, 'support_ma')
+            st.session_state.crossover_ma_results = database.get_cached_trend_setups(today_ist_str, 'crossover_ma')
             st.session_state.total_scanned = cached_log['total_scanned']
             st.session_state.failed_count = 0
             st.session_state.last_scanned = today_ist_str + " (Loaded from DB Cache)"
             st.toast("⚡ Today's scan loaded instantly from Neon PostgreSQL!", icon="🟢")
             st.rerun()
 
-    # Automatically query ALL listed equity shares on the National Stock Exchange of India (NSE)
-    raw_symbols = get_index_stocks("ALL NSE")
+    # Resolve the universe selected in the sidebar
+    if "NIFTY 50" in universe_selection:
+        universe_key = "NIFTY 50"
+    elif "NIFTY 100" in universe_selection:
+        universe_key = "NIFTY 100"
+    else:
+        universe_key = "ALL NSE"
+        
+    raw_symbols = get_index_stocks(universe_key)
         
     if not raw_symbols:
         st.sidebar.error("❌ No symbols found to scan.")
@@ -175,8 +203,12 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 formatted = f"{formatted}.NS"
             all_tickers_ns.append(formatted)
             
+        open_price_map = {}
         close_price_map = {}
-        with st.spinner("Downloading real-time quotes for all NSE Listed Equities in parallel chunks..."):
+        volume_map = {}
+        high_price_map = {}
+        low_price_map = {}
+        with st.spinner("Downloading real-time quotes for selected universe in parallel..."):
             import time
             chunk_size = 300
             ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
@@ -187,19 +219,35 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 backoff = 2.0
                 while retries <= max_retries:
                     try:
-                        # Fetch quote chunk
-                        quotes_df = yf.download(tickers=chunk, period="1d", progress=False)
+                        # Fetch quote chunk with threads=False to avoid thread freezing
+                        quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=15, auto_adjust=False)
                         if not quotes_df.empty:
                             if isinstance(quotes_df.columns, pd.MultiIndex):
                                 close_series = quotes_df['Close'].iloc[-1]
+                                open_series = quotes_df['Open'].iloc[-1] if 'Open' in quotes_df else close_series
+                                volume_series = quotes_df['Volume'].iloc[-1] if 'Volume' in quotes_df else pd.Series(0, index=close_series.index)
+                                high_series = quotes_df['High'].iloc[-1] if 'High' in quotes_df else close_series
+                                low_series = quotes_df['Low'].iloc[-1] if 'Low' in quotes_df else close_series
                             else:
                                 close_series = pd.Series({chunk[0]: quotes_df['Close'].iloc[-1]})
+                                open_series = pd.Series({chunk[0]: quotes_df['Open'].iloc[-1]}) if 'Open' in quotes_df else close_series
+                                volume_series = pd.Series({chunk[0]: quotes_df['Volume'].iloc[-1]}) if 'Volume' in quotes_df else pd.Series({chunk[0]: 0})
+                                high_series = pd.Series({chunk[0]: quotes_df['High'].iloc[-1]}) if 'High' in quotes_df else close_series
+                                low_series = pd.Series({chunk[0]: quotes_df['Low'].iloc[-1]}) if 'Low' in quotes_df else close_series
                                 
                             # Map prices back to plain symbols
                             for k, v in close_series.items():
                                 clean_k = k.replace(".NS", "").upper()
                                 if not pd.isna(v) and v > 0:
                                     close_price_map[clean_k] = float(v)
+                                    if clean_k in open_series.index and not pd.isna(open_series[clean_k]):
+                                        open_price_map[clean_k] = float(open_series[clean_k])
+                                    if clean_k in volume_series.index and not pd.isna(volume_series[clean_k]):
+                                        volume_map[clean_k] = int(volume_series[clean_k])
+                                    if clean_k in high_series.index and not pd.isna(high_series[clean_k]):
+                                        high_price_map[clean_k] = float(high_series[clean_k])
+                                    if clean_k in low_series.index and not pd.isna(low_series[clean_k]):
+                                        low_price_map[clean_k] = float(low_series[clean_k])
                             # Successfully loaded chunk
                             break
                         else:
@@ -223,6 +271,10 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         failed_count = 0
         flagged_list = []
         coiled_list = []
+        gapup_list = []
+        above_ma_list = []
+        support_ma_list = []
+        crossover_ma_list = []
         
         # Unpack manual dry constraints from the sidebar range slider
         min_dry = dry_zone_range[0]
@@ -232,6 +284,38 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         prog_bar = st.progress(0)
         status_box = st.empty()
         
+        # Parallel bulk pre-download of historical OHLCV data to boost scan speed by 25x!
+        bulk_data = {}
+        if n_stocks > 0:
+            from config import LOOKBACK_DAYS
+            status_box.text("Downloading historical OHLCV data in bulk parallel chunks...")
+            chunk_size = 100
+            sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
+            
+            for chunk_idx, chunk in enumerate(sym_chunks):
+                status_box.text(f"Downloading historical data: Chunk {chunk_idx+1}/{len(sym_chunks)}...")
+                chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
+                try:
+                    df_bulk = yf.download(tickers=chunk_ns, period=f"{LOOKBACK_DAYS}d", interval="1d", group_by="ticker", progress=False, threads=False, timeout=15, auto_adjust=False)
+                    for sym in chunk:
+                        sym_ns = f"{sym.strip().upper()}.NS"
+                        if sym_ns in df_bulk:
+                            ticker_df = df_bulk[sym_ns].copy()
+                            if isinstance(ticker_df.columns, pd.MultiIndex):
+                                ticker_df.columns = ticker_df.columns.get_level_values(0)
+                            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                            if all(col in ticker_df.columns for col in required_cols):
+                                ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
+                                ticker_df = ticker_df[ticker_df['Volume'] > 0]
+                                if not ticker_df.empty:
+                                    ticker_df = ticker_df[ticker_df['Volume'] > 0] # clean up
+                                    ticker_df = ticker_df.reset_index()
+                                    ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
+                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date'])
+                                    bulk_data[sym.strip().upper()] = ticker_df
+                except Exception as chunk_ex:
+                    print(f"Error downloading parallel chunk {chunk_idx+1}: {chunk_ex}")
+        
         with st.spinner(f"Scanning {n_stocks} active NSE listed equities (Price > ₹200)..."):
             for i, sym in enumerate(scan_symbols):
                 # Update text status and progress bar
@@ -239,18 +323,115 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 prog_bar.progress((i + 1) / n_stocks)
                 
                 # Fetch clean data
-                df = fetch_ohlcv(sym)
+                df = bulk_data.get(sym.strip().upper())
+                if df is None:
+                    # Fallback to single download in case parallel chunk missed this stock
+                    df = fetch_ohlcv(sym)
+                    
                 if df is None or len(df) < 5:
                     failed_count += 1
                     continue
+                    
+                # Dynamically append today's real-time quote candle if yfinance daily history has not yet included today
+                df = df.sort_values('Date').reset_index(drop=True)
+                last_df_date = df['Date'].iloc[-1].date()
+                today_date = datetime.now(IST_TIMEZONE).date()
+                
+                if last_df_date < today_date:
+                    sym_clean = sym.strip().upper()
+                    if sym_clean in open_price_map and sym_clean in close_price_map:
+                        new_row = {
+                            'Date': pd.to_datetime(today_date),
+                            'Open': open_price_map[sym_clean],
+                            'High': high_price_map.get(sym_clean, close_price_map[sym_clean]),
+                            'Low': low_price_map.get(sym_clean, close_price_map[sym_clean]),
+                            'Close': close_price_map[sym_clean],
+                            'Volume': volume_map.get(sym_clean, 0)
+                        }
+                        df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     
                 # Fast price double check
                 today_close_val = df['Close'].iloc[-1]
                 if today_close_val <= 200.0:
                     continue
+                    
+                # Check Gap-Up: Open > Yesterday's Close
+                today_open_val = float(df['Open'].iloc[-1])
+                yesterday_close_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else today_open_val
+                if today_open_val > yesterday_close_val:
+                    gap_pct = (today_open_val - yesterday_close_val) / yesterday_close_val * 100
+                    gapup_list.append({
+                        "symbol": sym.strip().upper(),
+                        "company_name": get_company_name(sym),
+                        "prev_close": yesterday_close_val,
+                        "open_price": today_open_val,
+                        "cmp": today_close_val,
+                        "gap_pct": round(gap_pct, 2),
+                        "volume": int(df['Volume'].iloc[-1]),
+                        "day_change_pct": round(((today_close_val - yesterday_close_val) / yesterday_close_val * 100), 2)
+                    })
+                    
+                # Technical SMA Setups check
+                df_ma = df.copy()
+                df_ma['SMA20'] = df_ma['Close'].rolling(window=20).mean()
+                df_ma['SMA50'] = df_ma['Close'].rolling(window=50).mean()
+                df_ma['SMA65'] = df_ma['Close'].rolling(window=65).mean()
+                df_ma['SMA150'] = df_ma['Close'].rolling(window=150).mean()
+                df_ma['SMA200'] = df_ma['Close'].rolling(window=200).mean()
+                
+                if len(df_ma) >= 200:
+                    today_row = df_ma.iloc[-1]
+                    yesterday_row = df_ma.iloc[-2]
+                    
+                    c_val = float(today_row['Close'])
+                    l_val = float(today_row['Low'])
+                    
+                    sma20 = float(today_row['SMA20'])
+                    sma50 = float(today_row['SMA50'])
+                    sma65 = float(today_row['SMA65'])
+                    sma150 = float(today_row['SMA150'])
+                    sma200 = float(today_row['SMA200'])
+                    
+                    # 1. Above 20 SMA & 50 SMA
+                    if c_val > sma20 and c_val > sma50:
+                        above_ma_list.append({
+                            "symbol": sym.strip().upper(),
+                            "company_name": get_company_name(sym),
+                            "cmp": today_close_val,
+                            "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
+                            "setup_type": "above_ma"
+                        })
+                        
+                    # 2. Support at 65 SMA
+                    is_near_65 = 0.0 <= (c_val - sma65) / sma65 <= 0.02
+                    is_test_65 = l_val <= sma65 and c_val > sma65
+                    if is_near_65 or is_test_65:
+                        support_ma_list.append({
+                            "symbol": sym.strip().upper(),
+                            "company_name": get_company_name(sym),
+                            "cmp": today_close_val,
+                            "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
+                            "setup_type": "support_ma"
+                        })
+                        
+                    # 3. MA Crossovers (50/150/200 SMA)
+                    crossed_golden = (yesterday_row['SMA50'] <= yesterday_row['SMA200']) and (today_row['SMA50'] > today_row['SMA200'])
+                    crossed_150 = (yesterday_row['SMA50'] <= yesterday_row['SMA150']) and (today_row['SMA50'] > today_row['SMA150'])
+                    price_crossed_50 = (yesterday_row['Close'] <= yesterday_row['SMA50']) and (today_row['Close'] > today_row['SMA50'])
+                    price_crossed_150 = (yesterday_row['Close'] <= yesterday_row['SMA150']) and (today_row['Close'] > today_row['SMA150'])
+                    price_crossed_200 = (yesterday_row['Close'] <= yesterday_row['SMA200']) and (today_row['Close'] > today_row['SMA200'])
+                    
+                    if crossed_golden or crossed_150 or price_crossed_50 or price_crossed_150 or price_crossed_200:
+                        crossover_ma_list.append({
+                            "symbol": sym.strip().upper(),
+                            "company_name": get_company_name(sym),
+                            "cmp": today_close_val,
+                            "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
+                            "setup_type": "crossover_ma"
+                        })
 
                     
-                # Scan breakouts (passing max_dry_spikes)
+                # Scan breakouts (passing min_dry_spikes)
                 scan_res = scan_stock(
                     symbol=sym,
                     df=df,
@@ -258,7 +439,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     max_dry_days=max_dry,
                     min_volume_ratio=min_vol_ratio,
                     min_price_change=min_price_chg,
-                    max_dry_spikes=max_dry_spikes
+                    min_dry_spikes=min_dry_spikes
                 )
                 
                 if scan_res is not None:
@@ -315,6 +496,10 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         # Cache results in state to allow seamless widget interactions
         st.session_state.scan_results = flagged_list
         st.session_state.coiled_results = coiled_list
+        st.session_state.gapup_results = gapup_list
+        st.session_state.above_ma_results = above_ma_list
+        st.session_state.support_ma_results = support_ma_list
+        st.session_state.crossover_ma_results = crossover_ma_list
         st.session_state.total_scanned = n_stocks
         st.session_state.failed_count = failed_count
         st.session_state.last_scanned = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p")
@@ -322,10 +507,13 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         # Save to database cache daily
         try:
             today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+            trend_setups_list = above_ma_list + support_ma_list + crossover_ma_list
             database.save_scan_results(
                 date_str=today_ist_str,
                 breakouts=flagged_list,
                 squeezes=coiled_list,
+                gapups=gapup_list,
+                trend_setups=trend_setups_list,
                 total_scanned=n_stocks
             )
             st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
@@ -335,6 +523,8 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         # Highlight large failure rate
         if n_stocks > 0 and (failed_count / n_stocks) > 0.20:
             st.sidebar.warning(f"⚠️ Failed to fetch {failed_count}/{n_stocks} symbols ({failed_count/n_stocks*100:.1f}%). Check internet connection.")
+            
+        st.rerun()
 
 
 # Display Last Scanned Timestamp
@@ -345,12 +535,16 @@ else:
 
 
 # --- MAIN INTERFACE TABS ---
-tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled = st.tabs([
+tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma = st.tabs([
     "📊 Scanner Results", 
     "📈 Stock Detail", 
     "📋 My Watchlist",
     "🤖 AI Chart Pattern Detector",
-    "🌀 Coiled Spring Squeeze"
+    "🌀 Coiled Spring Squeeze",
+    "🚀 Gap-Up Setups",
+    "📈 Above 20 & 50 SMA",
+    "🛡️ 65 SMA Support",
+    "🔄 MA Crossovers"
 ])
 
 
@@ -418,9 +612,9 @@ with tab_scan:
             
             # Gold highlights for premium scoring
             if is_high:
-                sym_txt = f"<span style='color: #ffa000; font-weight: bold;'>🌟 {r['symbol']}</span>"
+                sym_txt = f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #ffa000; font-weight: bold; text-decoration: none;'>🌟 {r['symbol']}</a>"
             else:
-                sym_txt = f"**{r['symbol']}**"
+                sym_txt = f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{r['symbol']}</a>"
                 
             r_cols[0].markdown(sym_txt, unsafe_allow_html=True)
             r_cols[1].markdown(f"<span style='font-size:0.9rem; color:#94a3b8;'>{r['company_name']}</span>", unsafe_allow_html=True)
@@ -520,6 +714,13 @@ with tab_detail:
                     detail_data['df'] = fetch_ohlcv(selected_sym)
             
             df = detail_data['df']
+            if df is not None and 'MA50' not in df.columns:
+                df['MA50'] = df['Close'].rolling(window=50).mean()
+            if df is not None:
+                if 'high_52w' not in detail_data or detail_data.get('high_52w') is None:
+                    detail_data['high_52w'] = float(df['High'].max())
+                if 'low_52w' not in detail_data or detail_data.get('low_52w') is None:
+                    detail_data['low_52w'] = float(df['Low'].min())
             dry_start_date = detail_data['dry_start_date']
             dry_end_date = detail_data['dry_end_date']
             today_date = df['Date'].iloc[-1]
@@ -739,7 +940,7 @@ with tab_watchlist:
         with st.spinner("Fetching real-time quotes for watchlisted assets..."):
             try:
                 # Fetch only 1 day to query CMP
-                prices_df = yf.download(tickers=tickers_list, period="1d", progress=False)
+                prices_df = yf.download(tickers=tickers_list, period="1d", progress=False, auto_adjust=False)
                 if not prices_df.empty:
                     # Clean columns if response is MultiIndexed
                     if isinstance(prices_df.columns, pd.MultiIndex):
@@ -882,7 +1083,7 @@ with tab_watchlist:
 # ==============================================================================
 with tab_ai:
     st.markdown("### 🤖 Technical Chart Pattern Recognition with AI")
-    st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Inspect daily candle charts with Llama-3 technical analyst AI and save/cache findings in Neon PostgreSQL database.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Inspect daily candle charts with Euri / Groq AI technical analysts and save/cache findings in Neon PostgreSQL database.</p>", unsafe_allow_html=True)
     st.markdown("---")
 
     # Fetch available symbols for analyzer
@@ -901,19 +1102,18 @@ with tab_ai:
     
     # Initialize selector defaults from session state if set by the dashboard load click
     options_list = [""] + available_tickers + ["Custom Ticker (Type Manual)"]
-    default_sel_idx = 0
-    if st.session_state.ai_selected_stock in options_list:
-        default_sel_idx = options_list.index(st.session_state.ai_selected_stock)
-        
+    if st.session_state.ai_selected_stock not in options_list:
+        if st.session_state.ai_selected_stock:
+            st.session_state.ai_custom_sym_input = st.session_state.ai_selected_stock
+            st.session_state.ai_selected_stock = "Custom Ticker (Type Manual)"
+        else:
+            st.session_state.ai_selected_stock = ""
+            
     ai_selection = col_s1.selectbox(
         "Select Stock to Analyze:",
         options=options_list,
-        index=default_sel_idx
+        key="ai_selected_stock"
     )
-    
-    if ai_selection != st.session_state.ai_selected_stock:
-        st.session_state.ai_selected_stock = ai_selection
-        st.rerun()
 
     custom_ai_sym = ""
     if ai_selection == "Custom Ticker (Type Manual)":
@@ -956,6 +1156,7 @@ with tab_ai:
                         analysis_dict = ai_detector.detect_chart_pattern(ticker_to_analyze, df_historical)
                         
                         if analysis_dict and analysis_dict.get("pattern_name") != "Error":
+                            analysis_dict['analyzed_date'] = today_date_str
                             # Create small snapshot string of last 5 days close prices
                             subset_5d = df_historical.iloc[-5:]
                             snap_list = [f"{row['Date'].strftime('%m-%d')}:{row['Close']:.0f}" for _, row in subset_5d.iterrows()]
@@ -981,7 +1182,8 @@ with tab_ai:
                     if loaded_from_db:
                         st.markdown("<p style='color: #00e676; font-size: 0.85rem; font-weight: 600; margin-bottom: 15px;'>⚡ Cache Hit: Loaded instantly from PostgreSQL Database (Neon)</p>", unsafe_allow_html=True)
                     else:
-                        st.markdown("<p style='color: #29b6f6; font-size: 0.85rem; font-weight: 600; margin-bottom: 15px;'>🤖 Live Analysis: Computed via Groq Llama-3 AI Technical Analyst</p>", unsafe_allow_html=True)
+                        model_name = analysis_dict.get('model_used', 'gpt-4.1-mini (Euri)')
+                        st.markdown(f"<p style='color: #29b6f6; font-size: 0.85rem; font-weight: 600; margin-bottom: 15px;'>🤖 Live Analysis: Computed via {model_name} Technical Analyst</p>", unsafe_allow_html=True)
                     
                     # Columns for pattern metrics
                     c_det1, c_det2 = st.columns([1, 2])
@@ -1124,42 +1326,54 @@ with tab_ai:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Batch Scan Control Button
+        # Batch Scan Control Buttons
+        btn_cols = st.columns(2)
+        btn_batch_scan = False
+        btn_force_batch_scan = False
+        
         if unscanned_count > 0:
-            btn_batch_scan = st.button(f"🤖 Run AI Scan on {unscanned_count} Pending Stocks", key="batch_ai_scan_action_btn", use_container_width=True)
-            if btn_batch_scan:
-                prog_ai = st.progress(0)
-                status_ai = st.empty()
+            btn_batch_scan = btn_cols[0].button(f"🤖 Run AI Scan on {unscanned_count} Pending Stocks", key="batch_ai_scan_action_btn", use_container_width=True)
+            
+        if len(active_flagged_symbols) > 0:
+            btn_force_batch_scan = btn_cols[1].button(f"🔄 Re-analyze all {len(active_flagged_symbols)} Flagged Stocks once", key="force_batch_ai_scan_action_btn", use_container_width=True)
+            
+        if btn_batch_scan or btn_force_batch_scan:
+            prog_ai = st.progress(0)
+            status_ai = st.empty()
+            
+            scanned_ok = 0
+            to_scan_list = []
+            for sym in active_flagged_symbols:
+                if btn_force_batch_scan or (sym not in flagged_db_records):
+                    to_scan_list.append(sym)
+                    
+            for idx, sym in enumerate(to_scan_list):
+                status_ai.text(f"Running AI Technical Analysis on {sym} ({idx+1}/{len(to_scan_list)})...")
+                prog_ai.progress((idx + 1) / len(to_scan_list))
                 
-                scanned_ok = 0
-                for idx, sym in enumerate(active_flagged_symbols):
-                    if sym not in flagged_db_records:
-                        status_ai.text(f"Running AI Technical Analysis on {sym} ({idx+1}/{len(active_flagged_symbols)})...")
-                        prog_ai.progress((idx + 1) / len(active_flagged_symbols))
+                df_hist = fetch_ohlcv(sym)
+                if df_hist is not None and not df_hist.empty:
+                    ans_dict = ai_detector.detect_chart_pattern(sym, df_hist)
+                    if ans_dict and ans_dict.get("pattern_name") != "Error":
+                        subset_5d = df_hist.iloc[-5:]
+                        snap_list = [f"{row['Date'].strftime('%m-%d')}:{row['Close']:.0f}" for _, row in subset_5d.iterrows()]
+                        snap_str = ",".join(snap_list)
                         
-                        df_hist = fetch_ohlcv(sym)
-                        if df_hist is not None and not df_hist.empty:
-                            ans_dict = ai_detector.detect_chart_pattern(sym, df_hist)
-                            if ans_dict and ans_dict.get("pattern_name") != "Error":
-                                subset_5d = df_hist.iloc[-5:]
-                                snap_list = [f"{row['Date'].strftime('%m-%d')}:{row['Close']:.0f}" for _, row in subset_5d.iterrows()]
-                                snap_str = ",".join(snap_list)
-                                
-                                database.save_pattern(
-                                    symbol=sym,
-                                    pattern_name=ans_dict['pattern_name'],
-                                    confidence=ans_dict['confidence'],
-                                    direction=ans_dict['direction'],
-                                    analysis_text=ans_dict['analysis_text'],
-                                    price_data_snapshot=snap_str,
-                                    date_str=today_str
-                                )
-                                scanned_ok += 1
-                                
-                status_ai.empty()
-                prog_ai.empty()
-                st.toast(f"✅ Successfully scanned & cached {scanned_ok} stocks in Neon PostgreSQL!", icon="🤖")
-                st.rerun()
+                        database.save_pattern(
+                            symbol=sym,
+                            pattern_name=ans_dict['pattern_name'],
+                            confidence=ans_dict['confidence'],
+                            direction=ans_dict['direction'],
+                            analysis_text=ans_dict['analysis_text'],
+                            price_data_snapshot=snap_str,
+                            date_str=today_str
+                        )
+                        scanned_ok += 1
+                        
+            status_ai.empty()
+            prog_ai.empty()
+            st.toast(f"✅ Successfully scanned & cached {scanned_ok} stocks in Neon PostgreSQL!", icon="🤖")
+            st.rerun()
                 
         # Interactive filters for the dashboard list
         st.markdown("#### 🔍 Filter Patterns Identified")
@@ -1225,7 +1439,7 @@ with tab_ai:
             row_cols = st.columns([1.2, 1.2, 2.0, 1.2, 1.2, 2.2, 1.0])
             
             # Symbol & Origin styling
-            row_cols[0].markdown(f"**{sym}**")
+            row_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{sym}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{sym}</a>", unsafe_allow_html=True)
             
             origin = symbol_origins.get(sym, "📊 Breakout")
             origin_color = "#29b6f6" if "Breakout" in origin else "#ab47bc"
@@ -1265,8 +1479,7 @@ with tab_ai:
             # Action button to select this ticker inside selector
             action_key = f"dash_load_{sym}_{displayed_rows}"
             if row_cols[6].button("🔍 View", key=action_key, use_container_width=True):
-                st.session_state.ai_selected_stock = "Custom Ticker (Type Manual)"
-                st.session_state.ai_custom_sym_input = sym
+                st.session_state.ai_selected_stock = sym
                 st.toast(f"🔍 Loading detailed charts & AI context for {sym}...")
                 st.rerun()
                 
@@ -1295,7 +1508,7 @@ with tab_ai:
         
         for idx, rec in enumerate(recent_records):
             row_cols = st.columns([1.5, 2.5, 1.5, 1.5, 2.0, 1.5])
-            row_cols[0].markdown(f"**{rec['symbol']}**")
+            row_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{rec['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{rec['symbol']}</a>", unsafe_allow_html=True)
             row_cols[1].markdown(f"<span style='color:#ffa000; font-weight:500;'>{rec['pattern_name']}</span>", unsafe_allow_html=True)
             
             # Direction styling
@@ -1323,9 +1536,8 @@ with tab_ai:
             # Action button to load this symbol's cached analysis
             if row_cols[5].button("⚡ Load", key=f"load_rec_{rec['symbol']}_{idx}", use_container_width=True):
                 # Set session state options to trigger the analysis box for this symbol
-                st.session_state.ai_selected_stock = "Custom Ticker (Type Manual)"
+                st.session_state.ai_selected_stock = rec['symbol']
                 st.toast(f"Loading cached analysis for {rec['symbol']}!")
-                st.session_state.ai_custom_sym_input = rec['symbol']
                 st.rerun()
                 
             st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
@@ -1389,9 +1601,9 @@ with tab_coiled:
             
             # Formatting
             if is_strong:
-                sym_txt = f"<span style='color: #ab47bc; font-weight: bold;'>🌀 {r['symbol']}</span>"
+                sym_txt = f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #ab47bc; font-weight: bold; text-decoration: none;'>🌀 {r['symbol']}</a>"
             else:
-                sym_txt = f"**{r['symbol']}**"
+                sym_txt = f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{r['symbol']}</a>"
                 
             cr_cols[0].markdown(sym_txt, unsafe_allow_html=True)
             cr_cols[1].markdown(f"<span style='font-size:0.9rem; color:#94a3b8;'>{r['company_name']}</span>", unsafe_allow_html=True)
@@ -1448,7 +1660,7 @@ with tab_coiled:
                 "Previous Range %": r['range_prev'],
                 "Volume Ratio": r['vol_ratio'],
                 "Squeeze Score": r['squeeze_score'],
-                "Above 20 EMA": r['above_20ema']
+                "Above 20 EMA": r.get('above_20ema', True)
             })
         export_c_df = pd.DataFrame(export_coiled)
         csv_c_data = export_c_df.to_csv(index=False).encode('utf-8')
@@ -1459,5 +1671,267 @@ with tab_coiled:
             file_name=f"coiled_squeezes_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv"
         )
+
+# ==============================================================================
+# TAB 6: GAP-UP SETUPS
+# ==============================================================================
+with tab_gapup:
+    st.markdown("### 🚀 Daily Gap-Up Momentum Setups")
+    st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for momentum setups opening higher than yesterday's close — price breaking out of overhead levels immediately upon market open.</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    gapup_data = st.session_state.gapup_results
+    
+    # 1. Premium Metrics Row
+    g_m1, g_m2, g_m3 = st.columns(3)
+    
+    if gapup_data:
+        gapup_count = len(gapup_data)
+        max_gap = max(r['gap_pct'] for r in gapup_data)
+        avg_gap = sum(r['gap_pct'] for r in gapup_data) / gapup_count
+    else:
+        gapup_count = 0
+        max_gap = 0.0
+        avg_gap = 0.0
+        
+    g_m1.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Gap-Up Setups Found</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{gapup_count}</h3></div>', unsafe_allow_html=True)
+    g_m2.markdown(f'<div class="glass-card metric-glow-green"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Highest Gap-Up %</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#00e676;">+{max_gap:.2f}%</h3></div>', unsafe_allow_html=True)
+    g_m3.markdown(f'<div class="glass-card metric-glow-amber"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Average Gap-Up %</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ffa000;">+{avg_gap:.2f}%</h3></div>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # 2. Main Scan Table
+    if gapup_data is None:
+        st.info("💡 Run the scanner from the sidebar to identify live pre-market or intraday gap-up setups.")
+    elif len(gapup_data) == 0:
+        st.info("ℹ️ No gap-up setups found today matching the scanning criteria.")
+    else:
+        # Sort results descending by gap percent
+        sorted_gapup = sorted(gapup_data, key=lambda x: x['gap_pct'], reverse=True)
+        
+        st.markdown("### 🚀 Active Gap-Up Momentum Candidates")
+        
+        # Table headers
+        gh_cols = st.columns([1.5, 2.5, 1.2, 1.2, 1.2, 1.5, 1.5, 1.5, 1.0])
+        gh_cols[0].markdown("**Symbol**")
+        gh_cols[1].markdown("**Company Name**")
+        gh_cols[2].markdown("**Prev Close (₹)**")
+        gh_cols[3].markdown("**Open (₹)**")
+        gh_cols[4].markdown("**CMP (₹)**")
+        gh_cols[5].markdown("**Gap %**")
+        gh_cols[6].markdown("**Day Chg%**")
+        gh_cols[7].markdown("**Today Vol**")
+        gh_cols[8].markdown("**Action**")
+        st.markdown("<hr style='margin: 8px 0; border-color: rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
+        
+        for idx, r in enumerate(sorted_gapup):
+            # Row columns
+            gr_cols = st.columns([1.5, 2.5, 1.2, 1.2, 1.2, 1.5, 1.5, 1.5, 1.0])
+            
+            gr_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{r['symbol']}</a>", unsafe_allow_html=True)
+            gr_cols[1].markdown(f"<span style='font-size:0.9rem; color:#94a3b8;'>{r['company_name']}</span>", unsafe_allow_html=True)
+            gr_cols[2].markdown(f"₹{r['prev_close']:.2f}")
+            gr_cols[3].markdown(f"₹{r['open_price']:.2f}")
+            gr_cols[4].markdown(f"₹{r['cmp']:.2f}")
+            
+            # Gap highlighted in custom badge
+            gap_badge = f"<span class='custom-badge badge-green' style='font-weight: 600;'>+{r['gap_pct']:.2f}%</span>"
+            gr_cols[5].markdown(gap_badge, unsafe_allow_html=True)
+            
+            # Day change badge
+            chg_badge = get_day_change_badge_html(r['day_change_pct'])
+            gr_cols[6].markdown(chg_badge, unsafe_allow_html=True)
+            
+            gr_cols[7].markdown(f"{r['volume']:,}")
+            
+            # Add to Watchlist button
+            add_gapup = gr_cols[8].button(
+                "➕ Add",
+                key=f"add_gapup_{r['symbol']}_{idx}",
+                use_container_width=True
+            )
+            
+            if add_gapup:
+                added = watchlist.add_stock(
+                    symbol=r['symbol'],
+                    entry_price=r['cmp'],
+                    signal_strength=round(r['gap_pct'] * 10, 1),
+                    company_name=r['company_name']
+                )
+                if added:
+                    st.toast(f"✅ Added {r['symbol']} Gap-Up momentum setup to Watchlist!", icon="🚀")
+                else:
+                    st.toast(f"⚠️ {r['symbol']} is already in Watchlist.", icon="👀")
+                    
+            st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Download results option
+        export_gapup = []
+        for r in sorted_gapup:
+            export_gapup.append({
+                "Symbol": r['symbol'],
+                "Company Name": r['company_name'],
+                "Yesterday Close (₹)": r['prev_close'],
+                "Today Open (₹)": r['open_price'],
+                "CMP (₹)": r['cmp'],
+                "Gap %": r['gap_pct'],
+                "Day Change %": r['day_change_pct'],
+                "Volume": r['volume']
+            })
+        export_g_df = pd.DataFrame(export_gapup)
+        csv_g_data = export_g_df.to_csv(index=False).encode('utf-8')
+        
+        st.download_button(
+            label="📥 Download Gap-Up Setups (CSV)",
+            data=csv_g_data,
+            file_name=f"gapup_setups_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+
+# ==============================================================================
+# TAB 7: ABOVE 20 & 50 SMA
+# ==============================================================================
+with tab_above_ma:
+    st.markdown("### 📈 Stocks Trading Above 20 SMA & 50 SMA")
+    st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Identify stocks in a strong medium-term uptrend where price is trading comfortably above both their 20-day and 50-day Simple Moving Averages.</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    above_ma_data = st.session_state.above_ma_results
+    
+    if above_ma_data is None:
+        st.info("💡 Run the scanner from the sidebar to identify stocks trading above their 20 SMA and 50 SMA.")
+    elif len(above_ma_data) == 0:
+        st.info("ℹ️ No stocks found today matching the 20 & 50 SMA uptrend criteria.")
+    else:
+        st.markdown(f"**🔥 Stocks in Active Uptrend ({len(above_ma_data)})**")
+        
+        # Headers
+        h_cols = st.columns([1.5, 3.5, 2.0, 2.0, 1.5])
+        h_cols[0].markdown("**Symbol**")
+        h_cols[1].markdown("**Company Name**")
+        h_cols[2].markdown("**CMP (₹)**")
+        h_cols[3].markdown("**Day Change %**")
+        h_cols[4].markdown("**Action**")
+        st.markdown("<hr style='margin: 8px 0; border-color: rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
+        
+        for idx, r in enumerate(above_ma_data):
+            r_cols = st.columns([1.5, 3.5, 2.0, 2.0, 1.5])
+            r_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{r['symbol']}</a>", unsafe_allow_html=True)
+            r_cols[1].markdown(f"<span style='font-size:0.9rem; color:#94a3b8;'>{r['company_name']}</span>", unsafe_allow_html=True)
+            r_cols[2].markdown(f"₹{r['cmp']:.2f}")
+            r_cols[3].markdown(get_day_change_badge_html(r['day_change_pct']), unsafe_allow_html=True)
+            
+            # Add to Watchlist button
+            add_clicked = r_cols[4].button("➕ Add", key=f"add_above_ma_{r['symbol']}_{idx}", use_container_width=True)
+            if add_clicked:
+                added = watchlist.add_stock(
+                    symbol=r['symbol'],
+                    entry_price=r['cmp'],
+                    signal_strength=50.0,
+                    company_name=r['company_name']
+                )
+                if added:
+                    st.toast(f"✅ Added {r['symbol']} uptrend setup to Watchlist!", icon="📈")
+                else:
+                    st.toast(f"⚠️ {r['symbol']} is already in Watchlist.", icon="👀")
+            st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
+
+# ==============================================================================
+# TAB 8: 65 SMA SUPPORT
+# ==============================================================================
+with tab_support_ma:
+    st.markdown("### 🛡️ Stocks Taking Support at 65 SMA")
+    st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for institutional pullbacks where the price is testing or bouncing precisely off the 65-day Simple Moving Average (65 SMA), offering high-probability low-risk entries.</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    support_ma_data = st.session_state.support_ma_results
+    
+    if support_ma_data is None:
+        st.info("💡 Run the scanner from the sidebar to identify stocks taking support at their 65 SMA.")
+    elif len(support_ma_data) == 0:
+        st.info("ℹ️ No stocks found today taking support at their 65 SMA.")
+    else:
+        st.markdown(f"**🛡️ Active Pullbacks testing 65 SMA ({len(support_ma_data)})**")
+        
+        # Headers
+        h_cols = st.columns([1.5, 3.5, 2.0, 2.0, 1.5])
+        h_cols[0].markdown("**Symbol**")
+        h_cols[1].markdown("**Company Name**")
+        h_cols[2].markdown("**CMP (₹)**")
+        h_cols[3].markdown("**Day Change %**")
+        h_cols[4].markdown("**Action**")
+        st.markdown("<hr style='margin: 8px 0; border-color: rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
+        
+        for idx, r in enumerate(support_ma_data):
+            r_cols = st.columns([1.5, 3.5, 2.0, 2.0, 1.5])
+            r_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{r['symbol']}</a>", unsafe_allow_html=True)
+            r_cols[1].markdown(f"<span style='font-size:0.9rem; color:#94a3b8;'>{r['company_name']}</span>", unsafe_allow_html=True)
+            r_cols[2].markdown(f"₹{r['cmp']:.2f}")
+            r_cols[3].markdown(get_day_change_badge_html(r['day_change_pct']), unsafe_allow_html=True)
+            
+            # Add to Watchlist button
+            add_clicked = r_cols[4].button("➕ Add", key=f"add_support_ma_{r['symbol']}_{idx}", use_container_width=True)
+            if add_clicked:
+                added = watchlist.add_stock(
+                    symbol=r['symbol'],
+                    entry_price=r['cmp'],
+                    signal_strength=60.0,
+                    company_name=r['company_name']
+                )
+                if added:
+                    st.toast(f"✅ Added {r['symbol']} support setup to Watchlist!", icon="🛡️")
+                else:
+                    st.toast(f"⚠️ {r['symbol']} is already in Watchlist.", icon="👀")
+            st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
+
+# ==============================================================================
+# TAB 9: MA CROSSOVERS
+# ==============================================================================
+with tab_crossover_ma:
+    st.markdown("### 🔄 Moving Average Crossover Signals")
+    st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Identify stocks triggering critical trend reversal crossovers (50 SMA crossing 150/200 SMA, or price crossing above 50/150/200 SMA) in the latest session.</p>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    crossover_ma_data = st.session_state.crossover_ma_results
+    
+    if crossover_ma_data is None:
+        st.info("💡 Run the scanner from the sidebar to identify moving average crossover signals.")
+    elif len(crossover_ma_data) == 0:
+        st.info("ℹ️ No stocks found triggering moving average crossover signals in this session.")
+    else:
+        st.markdown(f"**🔄 Moving Average Crossovers ({len(crossover_ma_data)})**")
+        
+        # Headers
+        h_cols = st.columns([1.5, 3.5, 2.0, 2.0, 1.5])
+        h_cols[0].markdown("**Symbol**")
+        h_cols[1].markdown("**Company Name**")
+        h_cols[2].markdown("**CMP (₹)**")
+        h_cols[3].markdown("**Day Change %**")
+        h_cols[4].markdown("**Action**")
+        st.markdown("<hr style='margin: 8px 0; border-color: rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
+        
+        for idx, r in enumerate(crossover_ma_data):
+            r_cols = st.columns([1.5, 3.5, 2.0, 2.0, 1.5])
+            r_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{r['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{r['symbol']}</a>", unsafe_allow_html=True)
+            r_cols[1].markdown(f"<span style='font-size:0.9rem; color:#94a3b8;'>{r['company_name']}</span>", unsafe_allow_html=True)
+            r_cols[2].markdown(f"₹{r['cmp']:.2f}")
+            r_cols[3].markdown(get_day_change_badge_html(r['day_change_pct']), unsafe_allow_html=True)
+            
+            # Add to Watchlist button
+            add_clicked = r_cols[4].button("➕ Add", key=f"add_crossover_ma_{r['symbol']}_{idx}", use_container_width=True)
+            if add_clicked:
+                added = watchlist.add_stock(
+                    symbol=r['symbol'],
+                    entry_price=r['cmp'],
+                    signal_strength=70.0,
+                    company_name=r['company_name']
+                )
+                if added:
+                    st.toast(f"✅ Added {r['symbol']} crossover signal to Watchlist!", icon="🔄")
+                else:
+                    st.toast(f"⚠️ {r['symbol']} is already in Watchlist.", icon="👀")
+            st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
 
 

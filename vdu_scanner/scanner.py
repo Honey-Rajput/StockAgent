@@ -10,15 +10,15 @@ def scan_stock(
     max_dry_days: int = DRY_ZONE_MAX_DAYS,
     min_volume_ratio: float = MIN_VOLUME_RATIO,
     min_price_change: float = MIN_PRICE_CHANGE,
-    max_dry_spikes: int = 2
+    min_dry_spikes: int = 2
 ) -> dict | None:
     """
     Evaluates a stock's OHLCV history for the Volume Dry-Up (VDU) Breakout pattern.
     
     STEP 1: Calculate baseline average volume over available history (up to last 90 days).
     STEP 2: Exclude today's breakout day and search backward for the most recent 
-            Dry Zone of length between min_dry_days and max_dry_days, allowing up to 
-            max_dry_spikes where volume exceeds 40% of baseline volume.
+            Dry Zone of length between min_dry_days and max_dry_days, requiring at least 
+            min_dry_spikes where volume exceeds 40% of baseline volume (accumulation spikes).
     STEP 3: Evaluate today's candle for the breakout pattern (Volume surge, bullish candle, minimum price change).
     STEP 4: Calculate the Signal Strength Score (0 to 100).
     
@@ -61,7 +61,7 @@ def scan_stock(
                 
             # Count spikes (non-dry volume days) in this window
             not_dry_count = is_not_dry_mask.iloc[start_idx : idx + 1].sum()
-            if not_dry_count <= max_dry_spikes:
+            if not_dry_count >= min_dry_spikes:
                 best_window = (start_idx, idx, L, int(not_dry_count))
                 break
         if best_window:

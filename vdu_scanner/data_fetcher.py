@@ -25,12 +25,13 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame:
     
     while retries <= max_retries:
         try:
-            # Download OHLCV data
+            # Download OHLCV data with auto_adjust=False to fetch raw unadjusted NSE prices
             df = yf.download(
                 tickers=formatted_symbol, 
                 period=f"{LOOKBACK_DAYS}d", 
                 interval="1d", 
-                progress=False
+                progress=False,
+                auto_adjust=False
             )
             
             if df is not None and not df.empty:
