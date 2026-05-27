@@ -126,6 +126,7 @@ def init_db() -> bool:
             day_change_pct DOUBLE PRECISION,
             wt_value DOUBLE PRECISION,
             scan_date DATE NOT NULL,
+            volume BIGINT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
@@ -186,7 +187,8 @@ def init_db() -> bool:
             "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS buy_signal BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS wt_diff DOUBLE PRECISION;",
             "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS above_20sma BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS above_50sma BOOLEAN DEFAULT FALSE;"
+            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS above_50sma BOOLEAN DEFAULT FALSE;",
+            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS volume BIGINT;"
         ]
         for m in migrations:
             try:
@@ -486,7 +488,7 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
     query = """
     SELECT symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
            buy_price, exit_price, target_price, confidence, recommendation,
-           wt2_value, buy_signal, wt_diff, above_20sma, above_50sma
+           wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, volume
     FROM scanned_wt_cross
     WHERE scan_date = %s;
     """
@@ -507,6 +509,7 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
             r_dict['wt_diff'] = float(r_dict.get('wt_diff') or 0.0)
             r_dict['above_20sma'] = bool(r_dict.get('above_20sma', False))
             r_dict['above_50sma'] = bool(r_dict.get('above_50sma', False))
+            r_dict['volume'] = int(r_dict.get('volume') or 0)
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached WT Cross from database: {e}")
@@ -645,8 +648,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         insert_wt_query = """
         INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
                                      buy_price, exit_price, target_price, confidence, recommendation,
-                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, volume)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         for r in wt_cross:
             cur.execute(insert_wt_query, (
@@ -665,7 +668,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 bool(r.get('buy_signal', False)),
                 float(r['wt_diff']) if r.get('wt_diff') is not None else None,
                 bool(r.get('above_20sma', False)),
-                bool(r.get('above_50sma', False))
+                bool(r.get('above_50sma', False)),
+                int(r.get('volume', 0))
             ))
             
         # 4. Insert execution log

@@ -447,15 +447,23 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
 
 
 def extract_clean_recommendation(rec: str) -> str:
-    if rec.strip().startswith("{") and rec.strip().endswith("}"):
+    if not rec:
+        return ""
+    rec_str = rec.strip()
+    if rec_str.startswith("{") and rec_str.endswith("}"):
         try:
             import json
-            data = json.loads(rec)
-            if data.get("is_rich"):
-                return data.get("text", rec)
+            data = json.loads(rec_str)
+            if isinstance(data, dict) and data.get("is_rich"):
+                text_val = data.get("text", rec_str)
+                if isinstance(text_val, str):
+                    text_val = text_val.replace('\\u20b9', '₹')
+                return text_val
         except Exception:
             pass
-    return rec
+    if isinstance(rec_str, str):
+        rec_str = rec_str.replace('\\u20b9', '₹')
+    return rec_str
 
 def render_unified_strategy_table(results_list: list, strategy_type: str, key_prefix: str):
     if not results_list or len(results_list) == 0:
@@ -2691,7 +2699,12 @@ with tab_coiled:
                 "Previous Range %": r['range_prev'],
                 "Volume Ratio": r['vol_ratio'],
                 "Squeeze Score": r['squeeze_score'],
-                "Above 20 EMA": r.get('above_20ema', True)
+                "Above 20 EMA": r.get('above_20ema', True),
+                "Buy Range (₹)": r.get('buy_price', r.get('cmp', 0)),
+                "Stop Loss (₹)": r.get('exit_price', 0),
+                "Target (₹)": r.get('target_price', 0),
+                "Confidence": r.get('confidence', ''),
+                "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_c_df = pd.DataFrame(export_coiled)
         csv_c_data = export_c_df.to_csv(index=False).encode('utf-8')
@@ -2757,7 +2770,12 @@ with tab_gapup:
                 "CMP (₹)": r['cmp'],
                 "Gap %": r['gap_pct'],
                 "Day Change %": r['day_change_pct'],
-                "Volume": r['volume']
+                "Volume": r['volume'],
+                "Buy Range (₹)": r.get('buy_price', r.get('cmp', 0)),
+                "Stop Loss (₹)": r.get('exit_price', 0),
+                "Target (₹)": r.get('target_price', 0),
+                "Confidence": r.get('confidence', ''),
+                "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_g_df = pd.DataFrame(export_gapup)
         csv_g_data = export_g_df.to_csv(index=False).encode('utf-8')
@@ -2806,7 +2824,7 @@ with tab_above_ma:
                 "Suggested Exit/SL (₹)": r['exit_price'],
                 "Suggested Target (₹)": r['target_price'],
                 "Confidence": r['confidence'],
-                "Recommendation": r['recommendation']
+                "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_a_df = pd.DataFrame(export_above)
         csv_a_data = export_a_df.to_csv(index=False).encode('utf-8')
@@ -2855,7 +2873,7 @@ with tab_support_ma:
                 "Suggested Exit/SL (₹)": r['exit_price'],
                 "Suggested Target (₹)": r['target_price'],
                 "Confidence": r['confidence'],
-                "Recommendation": r['recommendation']
+                "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_s_df = pd.DataFrame(export_support)
         csv_s_data = export_s_df.to_csv(index=False).encode('utf-8')
@@ -2904,7 +2922,7 @@ with tab_crossover_ma:
                 "Suggested Exit/SL (₹)": r['exit_price'],
                 "Suggested Target (₹)": r['target_price'],
                 "Confidence": r['confidence'],
-                "Recommendation": r['recommendation']
+                "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_x_df = pd.DataFrame(export_crossover)
         csv_x_data = export_x_df.to_csv(index=False).encode('utf-8')
@@ -3082,7 +3100,12 @@ with tab_wavetrend:
                     "Buy Signal": r.get('buy_signal', False),
                     "Above 20 SMA": r.get('above_20sma', False),
                     "Above 50 SMA": r.get('above_50sma', False),
-                    "Volume": r.get('volume', 0)
+                    "Volume": int(r.get('volume', 0)),
+                    "Buy Range (₹)": r.get('buy_price', r.get('cmp', 0)),
+                    "Stop Loss (₹)": r.get('exit_price', 0),
+                    "Target (₹)": r.get('target_price', 0),
+                    "Confidence": r.get('confidence', ''),
+                    "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                 })
             export_wt_df = pd.DataFrame(export_wt)
             csv_wt_data = export_wt_df.to_csv(index=False).encode('utf-8')
@@ -3193,7 +3216,7 @@ with tab_minervini:
                         "Suggested Target (₹)": r['target_price'],
                         "Remaining Target Potential %": round(rem_pct, 2),
                         "Confidence Rating": r['confidence'],
-                        "Actionable Recommendation": r['recommendation']
+                        "Actionable Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                     })
                 export_m_df = pd.DataFrame(export_min)
                 csv_m_data = export_m_df.to_csv(index=False).encode('utf-8')
@@ -3272,7 +3295,7 @@ with tab_minervini:
                             "Suggested Target (₹)": r['target_price'],
                             "Remaining Target Potential %": round(rem_pct, 2),
                             "Confidence Rating": r['confidence'],
-                            "Actionable Recommendation": r['recommendation']
+                            "Actionable Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                         })
                     export_m_df_h = pd.DataFrame(export_min_h)
                     csv_m_data_h = export_m_df_h.to_csv(index=False).encode('utf-8')
