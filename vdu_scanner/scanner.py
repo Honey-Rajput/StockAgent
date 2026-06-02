@@ -958,7 +958,7 @@ def run_monthly_momentum_update(base_date_str: str, today_str: str) -> list[dict
     cmp_map = {}
     prev_close_map = {}
     try:
-        quotes_df = yf.download(tickers=tickers, period="1d", progress=False)
+        quotes_df = yf.download(tickers=tickers, period="1d", progress=False, threads=False)
         if not quotes_df.empty:
             if isinstance(quotes_df.columns, pd.MultiIndex):
                 # multi-ticker Close and Open
@@ -1027,7 +1027,7 @@ def run_weekly_momentum_update(base_date_str: str, today_str: str) -> list[dict]
     # 2. Batch download today's daily quotes to get current CMP
     cmp_map = {}
     try:
-        quotes_df = yf.download(tickers=tickers, period="1d", progress=False)
+        quotes_df = yf.download(tickers=tickers, period="1d", progress=False, threads=False)
         if not quotes_df.empty:
             if isinstance(quotes_df.columns, pd.MultiIndex):
                 for tk in tickers:
@@ -1108,9 +1108,9 @@ def scan_vcs(symbol: str, df: pd.DataFrame, lenShort=13, lenLong=63, lenVol=50, 
         df_copy["volRatio"] = df_copy["volShort"] / df_copy["volAvg"]
 
         # SCORE CALCULATION
-        df_copy["s_atr"] = np.maximum(0, 1 - df_copy["ratioATR"]) * sensitivity
-        df_copy["s_std"] = np.maximum(0, 1 - df_copy["ratioStd"]) * sensitivity
-        df_copy["s_vol"] = np.maximum(0, 1 - df_copy["volRatio"])
+        df_copy["s_atr"] = df_copy["ratioATR"] * sensitivity
+        df_copy["s_std"] = df_copy["ratioStd"] * sensitivity
+        df_copy["s_vol"] = df_copy["volRatio"]
 
         df_copy["rawScore"] = (
             df_copy["s_atr"] * 0.4 +
@@ -1118,7 +1118,7 @@ def scan_vcs(symbol: str, df: pd.DataFrame, lenShort=13, lenLong=63, lenVol=50, 
             df_copy["s_vol"] * 0.2
         )
 
-        df_copy["finalScore"] = df_copy["rawScore"] * 100
+        df_copy["finalScore"] = df_copy["rawScore"] * 10.0
         
         today_score = df_copy["finalScore"].iloc[-1]
         

@@ -951,7 +951,7 @@ def run_background_momentum_scans():
                 MOMENTUM_SCAN_STATUS["status_text"] = f"Step 1/5 - Quote chunk {chunk_idx+1}/{len(ticker_chunks)}..."
                 MOMENTUM_SCAN_STATUS["progress"] = 0.05 + (chunk_idx / len(ticker_chunks)) * 0.15
                 try:
-                    q_df = yf.download(tickers=chunk, period="1d", progress=False)
+                    q_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
                     if not q_df.empty and isinstance(q_df.columns, pd.MultiIndex):
                         price_types = q_df.columns.get_level_values(0).unique().tolist()
                         cl_s = q_df['Close'].iloc[-1] if 'Close' in price_types else pd.Series(dtype=float)
@@ -1013,7 +1013,7 @@ def run_background_momentum_scans():
                     MOMENTUM_SCAN_STATUS["progress"] = 0.35 + (chunk_idx / len(mm_chunks)) * 0.30
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
-                        df_mbulk = yf.download(tickers=chunk_ns, period="10y", interval="1mo", progress=False)
+                        df_mbulk = yf.download(tickers=chunk_ns, period="10y", interval="1mo", progress=False, threads=False)
                         for sym in chunk:
                             sym_ns = f"{sym}.NS"
                             try:
@@ -1069,7 +1069,7 @@ def run_background_momentum_scans():
                     MOMENTUM_SCAN_STATUS["progress"] = 0.65 + (chunk_idx / len(wm_chunks)) * 0.30
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
-                        df_wbulk = yf.download(tickers=chunk_ns, period="3y", interval="1wk", progress=False)
+                        df_wbulk = yf.download(tickers=chunk_ns, period="3y", interval="1wk", progress=False, threads=False)
                         for sym in chunk:
                             sym_ns = f"{sym}.NS"
                             try:
@@ -1417,7 +1417,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 while retries <= max_retries:
                     try:
                         # yfinance 1.x: auto_adjust=True by default, threads param removed
-                        quotes_df = yf.download(tickers=chunk, period="1d", progress=False)
+                        quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
                         if not quotes_df.empty:
                             # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
                             if isinstance(quotes_df.columns, pd.MultiIndex):
@@ -1511,7 +1511,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
                 try:
                     # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
-                    df_bulk = yf.download(tickers=chunk_ns, period=f"{LOOKBACK_DAYS}d", interval="1d", progress=False)
+                    df_bulk = yf.download(tickers=chunk_ns, period=f"{LOOKBACK_DAYS}d", interval="1d", progress=False, threads=False)
                     for sym in chunk:
                         sym_ns = f"{sym.strip().upper()}.NS"
                         try:
@@ -2452,7 +2452,7 @@ with tab_watchlist:
         with st.spinner("Fetching real-time quotes for watchlisted assets..."):
             try:
                 # yfinance 1.x: auto_adjust=True is default, auto_adjust=False is deprecated
-                prices_df = yf.download(tickers=tickers_list, period="1d", progress=False)
+                prices_df = yf.download(tickers=tickers_list, period="1d", progress=False, threads=False)
                 if not prices_df.empty:
                     # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
                     if isinstance(prices_df.columns, pd.MultiIndex):
@@ -3479,7 +3479,7 @@ with tab_wavetrend:
                 chunk_ns = [f"{s}.NS" for s in chunk]
                 try:
                     # yfinance 1.x: group_by, threads, auto_adjust=False removed
-                    df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False)
+                    df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False)
                     for sym in chunk:
                         sym_ns = f"{sym}.NS"
                         try:
@@ -4043,7 +4043,7 @@ with tab_monthly_mom:
             import database
             
             today_ist = datetime.now(IST_TIMEZONE)
-            base_date_monthly = get_monthly_base_date(today_ist.year, today_ist.month)
+            base_date_monthly = database.get_monthly_base_date(today_ist.year, today_ist.month)
             
             if base_date_monthly and base_date_monthly != today_str_check:
                 mm_status = st.empty()
@@ -4095,7 +4095,7 @@ with tab_monthly_mom:
         for mm_cidx, mm_chunk in enumerate(mm_ticker_chunks):
             mm_status.text(f"Step 1/3 — Quotes chunk {mm_cidx+1}/{len(mm_ticker_chunks)}...")
             try:
-                q_df = yf.download(tickers=mm_chunk, period="1d", progress=False)
+                q_df = yf.download(tickers=mm_chunk, period="1d", progress=False, threads=False)
                 if not q_df.empty and isinstance(q_df.columns, pd.MultiIndex):
                     price_types_mm = q_df.columns.get_level_values(0).unique().tolist()
                     cl_s = q_df['Close'].iloc[-1] if 'Close' in price_types_mm else pd.Series(dtype=float)
@@ -4427,7 +4427,7 @@ with tab_weekly_mom:
         for wm_cidx, wm_chunk in enumerate(wm_q_chunks):
             wm_status.text(f"Step 1/3 — Quote chunk {wm_cidx+1}/{len(wm_q_chunks)}...")
             try:
-                wq_df = yf.download(tickers=wm_chunk, period="1d", progress=False)
+                wq_df = yf.download(tickers=wm_chunk, period="1d", progress=False, threads=False)
                 if not wq_df.empty and isinstance(wq_df.columns, pd.MultiIndex):
                     wpt = wq_df.columns.get_level_values(0).unique().tolist()
                     wcl = wq_df['Close'].iloc[-1] if 'Close' in wpt else pd.Series(dtype=float)
@@ -4693,7 +4693,7 @@ with tab_vcs:
             for c_idx, chunk in enumerate(chunks):
                 tkrs = [f"{s}.NS" for s in chunk]
                 try:
-                    df_vcs = yf.download(tickers=tkrs, period=vcs_period, interval=vcs_interval, progress=False)
+                    df_vcs = yf.download(tickers=tkrs, period=vcs_period, interval=vcs_interval, progress=False, threads=False)
                     if not df_vcs.empty:
                         for sym in chunk:
                             try:
