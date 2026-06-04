@@ -5107,8 +5107,7 @@ with tab_vpa:
 </tr>"""
             html_rows.append(row)
             
-        rows_str = "
-".join(html_rows)
+        rows_str = "".join(html_rows)
         
         table_html = f"""<div style="overflow-x: auto; margin-top: 10px;">
 <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 0.95rem;">
