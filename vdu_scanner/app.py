@@ -522,7 +522,11 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         "Vol Ratio": lambda x: float(x.get('volume_ratio') or 0.0),
         "Dry Days": lambda x: int(x.get('dry_days_count') or x.get('dry_days') or 0),
         "Spikes": lambda x: int(x.get('dry_spikes') or 0),
-        "Score": lambda x: float(x.get('signal_strength') or 0.0),
+        "Score": lambda x: float(x.get('score') or x.get('signal_strength') or 0.0),
+        "Base Bottom": lambda x: float(x.get('base_bottom') or 0.0),
+        "Historical High": lambda x: float(x.get('historical_high') or 0.0),
+        "Extension %": lambda x: float(x.get('extension') or 0.0),
+        "7M SMA": lambda x: float(x.get('sma7') or 0.0),
         "Squeeze Score": lambda x: float(x.get('squeeze_score') or 0.0),
         "VCS Score": lambda x: float(x.get('vcs_score') or 0.0),
         "5d Range": lambda x: float(x.get('range_5d') or 0.0),
@@ -586,6 +590,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         # Determine unique strategy score for watchlist adding
         if strategy_type == "vdu_breakout":
             score_val = float(r.get('signal_strength', 50.0))
+        elif strategy_type == "stage2":
+            score_val = float(r.get('score', 50.0))
         elif strategy_type == "coiled_spring":
             score_val = float(r.get('squeeze_score', 50.0))
         elif strategy_type == "gapup":
@@ -609,7 +615,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         # Clickable TradingView Symbol Link
         cells.append(f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{r["symbol"]}" target="_blank" style="color: #29b6f6; text-decoration: none;">{r["symbol"]}</a></td>')
         cells.append(f'<td style="padding: 10px 12px; color: #94a3b8; font-size: 0.82rem;">{r.get("company_name") or get_company_name(r["symbol"])}</td>')
-        cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r["cmp"]:,.2f}</td>')
+        cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{buy:,.2f}</td>')
         
         if strategy_type == "vdu_breakout":
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
@@ -680,6 +686,17 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             score_val = r.get('vcs_score', 0.0)
             cells.append(f'<td style="padding: 10px 12px; color: #29b6f6; font-weight: 700;">{score_val:.2f}</td>')
             
+        elif strategy_type == "stage2":
+            cells.append(f'<td style="padding: 10px 12px; color: #00e676; font-weight: 600;">₹{r.get("base_bottom", 0.0):,.2f}</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1;">₹{r.get("historical_high", 0.0):,.2f}</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: #ffa000; font-weight: 600;">{r.get("extension", 0.0):.1f}%</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: #29b6f6;">₹{r.get("sma7", 0.0):,.2f}</td>')
+            rsi_color = "#00e676" if 60 <= r.get("rsi", 0.0) <= 75 else "#ffa000"
+            cci_color = "#00e676" if r.get("cci", 0.0) >= 100 else "#ffa000" if r.get("cci", 0.0) >= 0 else "#ef4444"
+            cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{r.get("rsi", 0.0):.1f}</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: {cci_color}; font-weight: 600;">{r.get("cci", 0.0):.1f}</td>')
+            cells.append(f'<td style="padding: 10px 12px;">{get_signal_badge_html(r.get("score", 0.0))}</td>')
+            
         # Common Execution Columns
         cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1; font-weight: 600;">₹{buy:,.2f}</td>')
         cells.append(f'<td style="padding: 10px 12px; color: #ef4444; font-weight: 600;">₹{sl:,.2f}</td>')
@@ -708,6 +725,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         headers.extend(["Day Chg %", "WT1", "WT2", "WT Diff", "Signal"])
     elif strategy_type == "vcs":
         headers.extend(["Day Chg %", "VCS Score"])
+    elif strategy_type == "stage2":
+        headers.extend(["Base Bottom", "Historical High", "Extension %", "7M SMA", "RSI", "CCI", "Score"])
         
     # Append common execution columns
     headers.extend(["Buy Range", "Stop Loss", "Swing Target", "Confidence", "Actionable Guidance & Reasoning"])
@@ -772,7 +791,7 @@ def render_quick_trade_board(results_list: list, key_prefix: str):
         row_str = (
             f'<tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s;">'
             f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;">{r["symbol"]}</td>'
-            f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r["cmp"]:,.2f}</td>'
+            f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r.get("cmp", r.get("buy_price", 0.0)):,.2f}</td>'
             f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 600;">₹{buy:,.2f}</td>'
             f'<td style="padding: 10px 12px; color: #ef4444; font-weight: 600;">₹{sl:,.2f}</td>'
             f'<td style="padding: 10px 12px; color: #00e676; font-weight: 600;">₹{target:,.2f}</td>'
@@ -4846,8 +4865,8 @@ with tab_stage2:
             s2_prog.empty()
             s2_status.empty()
             
-            # Sort by signal strength
-            s2_res = sorted(s2_res, key=lambda x: x['signal_strength'], reverse=True)
+            # Sort by signal strength (score)
+            s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
             st.session_state.stage2_results = s2_res
             st.success(f"Stage 2 Scan Complete! Found {len(s2_res)} setups.")
             

@@ -1260,6 +1260,23 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
             f"Buy around ₹{buy_price:.2f}, SL below base ₹{exit_price:.2f}, target ₹{target_price:.2f}."
         )
         
+        # Calculate RSI and CCI for display
+        close_series = df_copy['Close']
+        delta = close_series.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        ema_gain = gain.ewm(com=13, adjust=False).mean()
+        ema_loss = loss.ewm(com=13, adjust=False).mean()
+        rs = ema_gain / (ema_loss + 1e-9)
+        rsi_series = 100 - (100 / (1 + rs))
+        rsi_val = float(rsi_series.iloc[-1])
+        
+        tp = (df_copy['High'] + df_copy['Low'] + close_series) / 3
+        sma_tp = tp.rolling(window=14).mean()
+        mad_manual = tp.rolling(window=14).apply(lambda x: abs(x - x.mean()).mean(), raw=True)
+        cci_series = (tp - sma_tp) / (0.015 * mad_manual + 1e-9)
+        cci_val = float(cci_series.iloc[-1])
+        
         recommendation = compute_rich_analysis(df_copy, symbol, "Stage 2 Breakout", base_rec)
         
         from config import get_company_name
@@ -1277,7 +1294,9 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
             'historical_high': round(historical_high, 2),
             'base_bottom': round(base_bottom, 2),
             'sma7': round(sma7, 2),
-            'extension': round(extension_from_sma, 1)
+            'extension': round(extension_from_sma, 1),
+            'rsi': round(rsi_val, 2),
+            'cci': round(cci_val, 2)
         }
 
     except Exception as e:

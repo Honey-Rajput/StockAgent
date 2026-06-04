@@ -1,0 +1,33 @@
+12: from scanner import scan_stock, scan_coiled_spring, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs
+897: from scanner import run_monthly_momentum_update, run_weekly_momentum_update
+911: mm_results = run_monthly_momentum_update(base_date_monthly, today_str)
+919: database.save_monthly_momentum_results(today_str, mm_results)
+925: with open("monthly_momentum_cache.json", "w") as f:
+1004: mm_results = run_monthly_momentum_update(base_date_monthly, today_str)
+1043: res_m = scan_monthly_momentum(sym, t_df_m, market_cap_cr=mcap_map.get(sym, 0.0))
+1119: database.save_monthly_momentum_results(today_str, mm_results)
+1125: with open("monthly_momentum_cache.json", "w") as f:
+1150: if 'monthly_momentum_results' not in st.session_state:
+1151: st.session_state.monthly_momentum_results = None
+1157: if st.session_state.monthly_momentum_results is None:
+1161: db_results = database.get_cached_monthly_momentum(today_str_check)
+1163: st.session_state.monthly_momentum_results = db_results
+1170: if st.session_state.monthly_momentum_results is None:
+1172: if os.path.exists("monthly_momentum_cache.json"):
+1174: with open("monthly_momentum_cache.json", "r") as f:
+1177: st.session_state.monthly_momentum_results = data.get("results")
+1210: if (st.session_state.monthly_momentum_results is None or st.session_state.weekly_momentum_results is None) and not MOMENTUM_SCAN_STATUS["is_running"]:
+2021: tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs = st.tabs([
+3990: with tab_monthly_mom:
+4017: run_mm_scan = st.button("🔍 Run Monthly Momentum Scan", use_container_width=True, key="run_monthly_mom_btn")
+4022: if st.session_state.monthly_momentum_results is None and MOMENTUM_SCAN_STATUS["monthly_results"] is not None:
+4023: st.session_state.monthly_momentum_results = MOMENTUM_SCAN_STATUS["monthly_results"]
+4025: mm_data = st.session_state.monthly_momentum_results
+4067: mm_results = run_monthly_momentum_update(base_date_monthly, today_str_check)
+4070: database.save_monthly_momentum_results(today_str_check, mm_results)
+4076: with open("monthly_momentum_cache.json", "w") as f:
+4079: st.session_state.monthly_momentum_results = mm_results
+4192: res_m = scan_monthly_momentum(
+4206: st.session_state.monthly_momentum_results = mm_results
+4243: file_name=f"monthly_momentum_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M')}.csv",
+4245: key="dl_monthly_mom_csv"
