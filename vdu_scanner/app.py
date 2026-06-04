@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 
 from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
 from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe
-from scanner import scan_stock, scan_coiled_spring, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2
+from scanner import scan_stock, scan_coiled_spring, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend
 
 import watchlist
 from utils import inject_premium_css, get_signal_badge_html, get_day_change_badge_html
@@ -1515,6 +1515,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         minervini_list = []
         wt_list = []
         vcs_list = []
+        vpa_list = []
         
         # Unpack manual dry constraints from the sidebar range slider
         min_dry = dry_zone_range[0]
@@ -1939,6 +1940,10 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     vcs_res = scan_vcs(sym, df)
                     if vcs_res is not None:
                         vcs_list.append(vcs_res)
+                        
+                    vpa_res = scan_vpa_trend(sym, df)
+                    if vpa_res is not None:
+                        vpa_list.append(vpa_res)
                             
         # Clean progress assets
         prog_bar.empty()
@@ -1953,6 +1958,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         st.session_state.crossover_ma_results = crossover_ma_list
         st.session_state.minervini_results = minervini_list
         st.session_state.vcs_results = vcs_list
+        st.session_state.vpa_results = vpa_list
         st.session_state.wt_results = wt_list
         st.session_state.wt_results_by_tf = {"Daily": wt_list}
         st.session_state.total_scanned = n_stocks
@@ -2044,7 +2050,7 @@ with st.sidebar.expander("🎓 Institutional Buy Signals Guide", expanded=False)
 
 # --- MAIN INTERFACE TABS ---
 try:
-    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_stage2 = st.tabs([
+    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_stage2, tab_vpa = st.tabs([
         "📊 Scanner Results",
         "📈 Stock Detail",
         "📋 My Watchlist",
@@ -2060,7 +2066,8 @@ try:
         "📈 Weekly Momentum",
         "📅 Scan History",
         "📉 Volatility Contraction (VCS)",
-        "🚀 Early Stage 2 Breakout"
+        "🚀 Early Stage 2 Breakout",
+        "🚥 VPA Trend"
     ])
 except Exception as tab_err:
     st.error(f"❌ Tab rendering error: {tab_err}")
@@ -2153,6 +2160,8 @@ with tab_scan:
         st.error(f"❌ Error rendering scan results: {_tab1_err}")
         st.exception(_tab1_err)
 
+
+        st.markdown('</div></div>', unsafe_allow_html=True)
 
 # ==============================================================================
 # TAB 2: STOCK DETAIL
@@ -4890,3 +4899,234 @@ with tab_stage2:
             )
         render_unified_strategy_table(st.session_state.stage2_results, "stage2", "stage2_tab")
 
+
+
+# ==============================================================================
+# TAB 17: VPA TREND
+# ==============================================================================
+with tab_vpa:
+    st.markdown("### 🚥 VPA Trend Indicator (Daily, Weekly, Monthly)")
+    st.info("Scans ALL NSE listed stocks. Filters: Price > ₹100, Market Cap > 2000 Cr. Shows Major, Mid, and Minor trends across timeframes.")
+    
+    col1, col2 = st.columns([3, 7])
+    with col1:
+        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", use_container_width=True)
+    
+    if run_vpa_btn:
+        st.session_state.vpa_results = []
+        with st.spinner("Initializing Ultra-Fast VPA Scan on ALL NSE Stocks..."):
+            try:
+                from data_fetcher import get_all_nse_symbols
+                import yfinance as yf
+                import pandas as pd
+                from concurrent.futures import ThreadPoolExecutor
+                import time
+                
+                raw_symbols = get_all_nse_symbols()
+                all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+                
+                # Phase 1: Bulk OHLCV Download (2 years history for Weekly/Monthly VPA)
+                st.info(f"Phase 1: Downloading 2 years of history for {len(all_symbols)} stocks...")
+                prog = st.progress(0)
+                status = st.empty()
+                
+                chunk_size = 300
+                sym_chunks = [all_symbols[i:i + chunk_size] for i in range(0, len(all_symbols), chunk_size)]
+                
+                valid_data = {}
+                price_filtered = []
+                
+                # We need at least ~100 days of history for VPA to calculate daily/weekly accurately
+                for chunk_idx, chunk in enumerate(sym_chunks):
+                    prog.progress((chunk_idx) / len(sym_chunks))
+                    status.text(f"Fetching bulk history chunk {chunk_idx+1}/{len(sym_chunks)}...")
+                    
+                    try:
+                        df_bulk = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=True)
+                        if isinstance(df_bulk.columns, pd.MultiIndex):
+                            for sym in chunk:
+                                try:
+                                    if 'Close' in df_bulk.columns.levels[0]:
+                                        ticker_df = df_bulk.xs(sym, axis=1, level=1).copy()
+                                        ticker_df = ticker_df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna(subset=['Close'])
+                                        if len(ticker_df) >= 45 and ticker_df['Close'].iloc[-1] > 100.0:
+                                            ticker_df = ticker_df.reset_index()
+                                            ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
+                                            ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                            valid_data[sym] = ticker_df
+                                            price_filtered.append(sym)
+                                except Exception:
+                                    pass
+                        else:
+                            if len(chunk) == 1 and not df_bulk.empty and 'Close' in df_bulk:
+                                ticker_df = df_bulk[['Open', 'High', 'Low', 'Close', 'Volume']].dropna(subset=['Close'])
+                                if len(ticker_df) >= 45 and ticker_df['Close'].iloc[-1] > 100.0:
+                                    ticker_df = ticker_df.reset_index()
+                                    ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
+                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                    valid_data[chunk[0]] = ticker_df
+                                    price_filtered.append(chunk[0])
+                    except Exception:
+                        pass
+                
+                # Phase 2: Parallel Market Cap Fetching
+                st.info(f"Phase 2: Verifying Market Cap (> 2000 Cr) for {len(price_filtered)} valid stocks using multi-threading...")
+                mcap_results = {}
+                
+                def get_mcap(s):
+                    try:
+                        t = yf.Ticker(s)
+                        m = getattr(t.fast_info, 'market_cap', None) or 0
+                        return s, (m / 1e7 if m > 0 else 0)
+                    except:
+                        return s, 0
+                
+                prog.progress(0)
+                status.text("Spawning 25 threads for blazing fast Market Cap checks...")
+                
+                completed = 0
+                with ThreadPoolExecutor(max_workers=25) as executor:
+                    futures = [executor.submit(get_mcap, sym) for sym in price_filtered]
+                    for future in futures:
+                        try:
+                            s, m_cr = future.result(timeout=10)
+                            mcap_results[s] = m_cr
+                        except:
+                            pass
+                        completed += 1
+                        if completed % 10 == 0:
+                            prog.progress(completed / len(price_filtered))
+                            
+                # Phase 3: Final VPA Compute (Instant)
+                st.info("Phase 3: Calculating VPA Trends (Instant)...")
+                status.empty()
+                prog.progress(1.0)
+                
+                vpa_list = []
+                for sym in price_filtered:
+                    m_cr = mcap_results.get(sym, 0)
+                    if m_cr >= 2000.0:
+                        df = valid_data[sym]
+                        clean_sym = sym.replace('.NS', '')
+                        vpa_res = scan_vpa_trend(clean_sym, df)
+                        if vpa_res is not None:
+                            vpa_res['market_cap_cr'] = m_cr
+                            vpa_list.append(vpa_res)
+                            
+                prog.empty()
+                status.empty()
+                st.session_state.vpa_results = vpa_list
+                st.success(f"VPA Scan complete! Found {len(vpa_list)} stocks meeting all criteria.")
+                
+            except Exception as e:
+                st.error(f"Scan failed: {e}")
+                
+    if not st.session_state.get('vpa_results'):
+        st.info("No VPA data available. Click 'Run Advanced VPA Scan' to process.")
+    else:
+        vpa_data = st.session_state.vpa_results
+        
+        # Sort by score
+        vpa_data = sorted(vpa_data, key=lambda x: x.get('score', 0), reverse=True)
+        
+        # Download Button
+        import pandas as pd
+        
+        csv_export = []
+        for r in vpa_data:
+            d, w, m = r['daily'], r['weekly'], r['monthly']
+            csv_export.append({
+                'Symbol': r['symbol'],
+                'CMP': r['cmp'],
+                'Change %': round(r['day_change_pct'], 2),
+                'Market Cap (Cr)': round(r.get('market_cap_cr', 0), 2),
+                'Daily Major': d['major'], 'Daily Mid': d['mid'], 'Daily Minor': d['minor'],
+                'Weekly Major': w['major'], 'Weekly Mid': w['mid'], 'Weekly Minor': w['minor'],
+                'Monthly Major': m['major'], 'Monthly Mid': m['mid'], 'Monthly Minor': m['minor']
+            })
+        
+        csv_df = pd.DataFrame(csv_export)
+        st.download_button(
+            label="📥 Download VPA Results (CSV)",
+            data=csv_df.to_csv(index=False).encode('utf-8'),
+            file_name="vpa_trend_results.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
+        # Interactive Timeframe Selection
+        st.markdown("### Select Timeframe")
+        selected_tf = st.selectbox("Timeframe to display", ["Daily", "Weekly", "Monthly"])
+        
+        def trend_to_badge(t_val):
+            if t_val == 1:
+                return "<span style='color: #00e676; font-weight: bold;'>Up (1)</span>"
+            elif t_val == -1:
+                return "<span style='color: #ef4444; font-weight: bold;'>Dn (-1)</span>"
+            return "<span style='color: #fbbf24; font-weight: bold;'>Neu (0)</span>"
+            
+        def get_action_signal(short, mid, max_t):
+            if max_t == 1 and mid == 1 and short == 1:
+                return "<span style='color: #00e676; font-weight: bold;'>🟢 Perfect Buy / Strong Hold</span>"
+            elif max_t == 1 and mid == 1 and short <= 0:
+                return "<span style='color: #fbbf24; font-weight: bold;'>🟡 Pullback (Wait for Short=Up)</span>"
+            elif max_t == 1 and mid <= 0:
+                return "<span style='color: #f97316; font-weight: bold;'>🟠 Warning (Mid Broken) - Trim</span>"
+            elif max_t <= 0 and mid == 1 and short == 1:
+                return "<span style='color: #3b82f6; font-weight: bold;'>🔵 Early Breakout Entry</span>"
+            elif max_t <= 0 and mid <= 0:
+                return "<span style='color: #ef4444; font-weight: bold;'>🔴 Avoid / Full Exit</span>"
+            else:
+                return "<span style='color: #9ca3af; font-weight: bold;'>⚪ Neutral / Choppy</span>"
+            
+        html_rows = []
+        for r in vpa_data:
+            if selected_tf == "Daily":
+                tf_data = r['daily']
+            elif selected_tf == "Weekly":
+                tf_data = r['weekly']
+            else:
+                tf_data = r['monthly']
+            
+            t_short = trend_to_badge(tf_data['minor'])
+            t_mid = trend_to_badge(tf_data['mid'])
+            t_max = trend_to_badge(tf_data['major'])
+            
+            action = get_action_signal(tf_data['minor'], tf_data['mid'], tf_data['major'])
+            
+            # Zero indentation to prevent Streamlit markdown codeblock rendering
+            row = f"""<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+<td style="padding: 10px;"><strong>{r['symbol']}</strong></td>
+<td style="padding: 10px;">{r['cmp']}</td>
+<td style="padding: 10px;">{get_day_change_badge_html(r['day_change_pct'])}</td>
+<td style="padding: 10px;">{round(r.get('market_cap_cr', 0))}</td>
+<td style="padding: 10px; border-left: 1px solid rgba(255,255,255,0.1);">{t_short}</td>
+<td style="padding: 10px;">{t_mid}</td>
+<td style="padding: 10px;">{t_max}</td>
+<td style="padding: 10px; border-left: 1px solid rgba(255,255,255,0.1);">{action}</td>
+</tr>"""
+            html_rows.append(row)
+            
+        rows_str = "
+".join(html_rows)
+        
+        table_html = f"""<div style="overflow-x: auto; margin-top: 10px;">
+<table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 0.95rem;">
+<thead>
+<tr style="background-color: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.1);">
+<th style="padding: 10px;">Symbol</th>
+<th style="padding: 10px;">CMP</th>
+<th style="padding: 10px;">Chg %</th>
+<th style="padding: 10px;">M.Cap (Cr)</th>
+<th style="padding: 10px; border-left: 1px solid rgba(255,255,255,0.1);">Short Term</th>
+<th style="padding: 10px;">Mid Term</th>
+<th style="padding: 10px;">Max Term</th>
+<th style="padding: 10px; border-left: 1px solid rgba(255,255,255,0.1);">Action / Signal</th>
+</tr>
+</thead>
+<tbody>
+{rows_str}
+</tbody>
+</table>
+</div>"""
+        st.markdown(table_html, unsafe_allow_html=True)

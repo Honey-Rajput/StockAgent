@@ -1302,3 +1302,144 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
     except Exception as e:
         print(f"Stage 2 Early Breakout scan error for {symbol}: {e}")
         return None
+
+def calc_atr(df: pd.DataFrame, length: int) -> pd.Series:
+    """Calculate Average True Range (RMA method as in Pine Script atr)"""
+    high = df['High']
+    low = df['Low']
+    close_prev = df['Close'].shift(1)
+    
+    tr1 = high - low
+    tr2 = (high - close_prev).abs()
+    tr3 = (low - close_prev).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    # Pine Script atr() uses RMA (alpha = 1/length)
+    atr = tr.ewm(alpha=1/length, adjust=False).mean()
+    return atr
+
+def calc_vpa_trends(df: pd.DataFrame) -> dict:
+    """
+    Computes the VPA Major, Mid, and Minor trends based on RWI High/Low.
+    Short term: 2, 8
+    Long term: 10, 40
+    """
+    if df is None or len(df) < 45:
+        return {"major": 0, "mid": 0, "minor": 0}
+        
+    def get_rsh(ps):
+        low_shifted = df['Low'].shift(ps)
+        atr_val = calc_atr(df, ps)
+        return (df['High'] - low_shifted) / (atr_val * np.sqrt(ps))
+
+    def get_rsl(ps):
+        high_shifted = df['High'].shift(ps)
+        atr_val = calc_atr(df, ps)
+        return (high_shifted - df['Low']) / (atr_val * np.sqrt(ps))
+        
+    # Short term RWI High/Low
+    rshmin = get_rsh(2)
+    rshmax = get_rsh(8)
+    rslmin = get_rsl(2)
+    rslmax = get_rsl(8)
+    
+    RWIHi = np.maximum(rshmin, rshmax)
+    RWILo = np.maximum(rslmin, rslmax)
+    
+    ground = RWIHi
+    sky = RWILo
+    
+    # Long term RWI High/Low
+    rlhmin = get_rsh(10)
+    rlhmax = get_rsh(40)
+    rllmin = get_rsl(10)
+    rllmax = get_rsl(40)
+    
+    RWILHi = np.maximum(rlhmin, rlhmax)
+    RWILLo = np.maximum(rllmin, rllmax)
+    
+    j = RWILHi - RWILLo
+    j2 = RWILHi
+    k2 = RWILLo
+    
+    latest_ground = ground.iloc[-1]
+    latest_sky = sky.iloc[-1]
+    latest_j = j.iloc[-1]
+    latest_j2 = j2.iloc[-1]
+    latest_k2 = k2.iloc[-1]
+    
+    # Evaluate Mid trend
+    mid_trend = 1 if latest_ground > 1 else (-1 if latest_sky > 1 else 0)
+    
+    # Evaluate Major trend
+    major_trend = 1 if latest_j > 1 else (-1 if latest_j < -1 else 0)
+    
+    # Evaluate Minor trend
+    minor_trend = 1 if latest_j2 > 1 else (-1 if latest_k2 > 1 else 0)
+    
+    return {
+        "major": major_trend,
+        "mid": mid_trend,
+        "minor": minor_trend
+    }
+
+def scan_vpa_trend(symbol: str, df: pd.DataFrame) -> dict | None:
+    """
+    Scans a stock for VPA Trend across Daily, Weekly, and Monthly timeframes.
+    Returns a dictionary of results.
+    """
+    if df is None or len(df) < 50:
+        return None
+        
+    try:
+        # Calculate Daily
+        daily_trends = calc_vpa_trends(df)
+        
+        # Resample to Weekly
+        df_weekly = df.set_index('Date').resample('W-FRI').agg({
+            'Open': 'first',
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last',
+            'Volume': 'sum'
+        }).dropna().reset_index()
+        weekly_trends = calc_vpa_trends(df_weekly)
+        
+        # Resample to Monthly
+        df_monthly = df.set_index('Date').resample('ME').agg({
+            'Open': 'first',
+            'High': 'max',
+            'Low': 'min',
+            'Close': 'last',
+            'Volume': 'sum'
+        }).dropna().reset_index()
+        monthly_trends = calc_vpa_trends(df_monthly)
+        
+        # Determine overall score (simple heuristic: up trend +1, down trend -1)
+        score = 0
+        for t in [daily_trends, weekly_trends, monthly_trends]:
+            score += t['major'] * 3
+            score += t['mid'] * 2
+            score += t['minor'] * 1
+            
+        cmp = float(df['Close'].iloc[-1])
+        prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
+        day_change_pct = ((cmp - prev_close) / prev_close) * 100
+        
+        from config import get_company_name
+        company_name = get_company_name(symbol)
+        
+        return {
+            "symbol": symbol.strip().upper(),
+            "company_name": company_name,
+            "cmp": round(cmp, 2),
+            "day_change_pct": round(day_change_pct, 2),
+            "volume": int(df['Volume'].iloc[-1]),
+            "daily": daily_trends,
+            "weekly": weekly_trends,
+            "monthly": monthly_trends,
+            "score": score
+        }
+    except Exception as e:
+        print(f"Error in VPA scan for {symbol}: {e}")
+        return None
