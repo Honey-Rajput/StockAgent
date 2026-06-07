@@ -1276,10 +1276,13 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                 except Exception:
                     st.session_state.minervini_results = []
                 try:
-                    st.session_state.vcs_results = []
+                    st.session_state.vcs_results = database.get_cached_vcs(latest_date_str)
                 except Exception:
-                    pass
-                
+                    st.session_state.vcs_results = []
+                try:
+                    st.session_state.vpa_results = database.get_cached_vpa(latest_date_str)
+                except Exception:
+                    st.session_state.vpa_results = []
                 st.session_state.total_scanned = cached_log.get('total_scanned', 0)
                 st.session_state.failed_count = 0
                 st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
@@ -1976,7 +1979,9 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 gapups=gapup_list,
                 trend_setups=trend_setups_list,
                 wt_cross=wt_list,
-                total_scanned=n_stocks
+                total_scanned=n_stocks,
+                vcs_results=vcs_list,
+                vpa_results=vpa_list
             )
             st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
             

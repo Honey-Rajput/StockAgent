@@ -194,6 +194,48 @@ def init_db() -> bool:
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS scanned_vcs (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            vcs_score DOUBLE PRECISION,
+            volume BIGINT,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS scanned_vpa (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            vpa_score INT,
+            daily_major INT,
+            daily_mid INT,
+            daily_minor INT,
+            weekly_major INT,
+            weekly_mid INT,
+            weekly_minor INT,
+            monthly_major INT,
+            monthly_mid INT,
+            monthly_minor INT,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
         """
     ]
     
@@ -261,7 +303,13 @@ def init_db() -> bool:
             "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
             "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
             "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS return_1m DOUBLE PRECISION;"
+            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS return_1m DOUBLE PRECISION;",
+
+            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
+            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS recommendation TEXT;"
         ]
         for m in migrations:
             try:
@@ -592,11 +640,96 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
             conn.close()
     return results
 
-def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], wt_cross: list[dict], total_scanned: int) -> bool:
+def get_cached_vcs(date_str: str) -> list[dict]:
+    """
+    Retrieves the cached VCS setups scanned on a specific date.
+    """
+    query = """
+    SELECT symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
+           buy_price, exit_price, target_price, confidence, recommendation
+    FROM scanned_vcs
+    WHERE scan_date = %s;
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['vcs_score'] = float(r_dict.get('vcs_score') or 0.0)
+            r_dict['volume'] = int(r_dict.get('volume') or 0)
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading cached VCS from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+
+def get_cached_vpa(date_str: str) -> list[dict]:
+    """
+    Retrieves the cached VPA trend setups scanned on a specific date.
+    """
+    query = """
+    SELECT symbol, company_name, cmp, day_change_pct, volume, vpa_score,
+           daily_major, daily_mid, daily_minor,
+           weekly_major, weekly_mid, weekly_minor,
+           monthly_major, monthly_mid, monthly_minor,
+           scan_date
+    FROM scanned_vpa
+    WHERE scan_date = %s;
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['volume'] = int(r_dict.get('volume') or 0)
+            r_dict['score'] = int(r_dict.get('vpa_score') or 0)
+            
+            r_dict['daily'] = {
+                "major": int(r_dict.get('daily_major') or 0),
+                "mid": int(r_dict.get('daily_mid') or 0),
+                "minor": int(r_dict.get('daily_minor') or 0)
+            }
+            r_dict['weekly'] = {
+                "major": int(r_dict.get('weekly_major') or 0),
+                "mid": int(r_dict.get('weekly_mid') or 0),
+                "minor": int(r_dict.get('weekly_minor') or 0)
+            }
+            r_dict['monthly'] = {
+                "major": int(r_dict.get('monthly_major') or 0),
+                "mid": int(r_dict.get('monthly_mid') or 0),
+                "minor": int(r_dict.get('monthly_minor') or 0)
+            }
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading cached VPA from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+
+def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], wt_cross: list[dict], total_scanned: int, vcs_results: list[dict] = None, vpa_results: list[dict] = None) -> bool:
     """
     Saves the full market scan results and logs the completion.
     Uses clean transactions to perform daily upsert overrides.
     """
+    if vcs_results is None:
+        vcs_results = []
+    if vpa_results is None:
+        vpa_results = []
     conn = None
     try:
         conn = get_connection()
@@ -608,6 +741,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         cur.execute("DELETE FROM scanned_gapups WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scanned_wt_cross WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_vcs WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_vpa WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scan_logs WHERE scan_date = %s;", (date_str,))
         
         # 2. Insert new breakouts
@@ -748,6 +883,56 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 int(r.get('volume', 0))
             ))
             
+        # 3.10. Insert new VCS setups
+        insert_vcs_query = """
+        INSERT INTO scanned_vcs (symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
+                                 buy_price, exit_price, target_price, confidence, recommendation)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        for r in vcs_results:
+            cur.execute(insert_vcs_query, (
+                str(r['symbol']),
+                str(r['company_name']) if r['company_name'] else "",
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                float(r['vcs_score']),
+                int(r.get('volume', 0)),
+                date_str,
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                str(r['confidence']) if r.get('confidence') is not None else None,
+                str(r['recommendation']) if r.get('recommendation') is not None else None
+            ))
+            
+        # 3.11. Insert new VPA setups
+        insert_vpa_query = """
+        INSERT INTO scanned_vpa (symbol, company_name, cmp, day_change_pct, volume, vpa_score, 
+                                 daily_major, daily_mid, daily_minor, 
+                                 weekly_major, weekly_mid, weekly_minor, 
+                                 monthly_major, monthly_mid, monthly_minor, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        for r in vpa_results:
+            cur.execute(insert_vpa_query, (
+                str(r['symbol']),
+                str(r['company_name']) if r['company_name'] else "",
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                int(r.get('volume', 0)),
+                int(r.get('score', 0)),
+                int(r.get('daily', {}).get('major', 0)),
+                int(r.get('daily', {}).get('mid', 0)),
+                int(r.get('daily', {}).get('minor', 0)),
+                int(r.get('weekly', {}).get('major', 0)),
+                int(r.get('weekly', {}).get('mid', 0)),
+                int(r.get('weekly', {}).get('minor', 0)),
+                int(r.get('monthly', {}).get('major', 0)),
+                int(r.get('monthly', {}).get('mid', 0)),
+                int(r.get('monthly', {}).get('minor', 0)),
+                date_str
+            ))
+            
         # 4. Insert execution log
         cur.execute("""
         INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
@@ -756,7 +941,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         
         conn.commit()
         cur.close()
-        print(f"Cached {len(breakouts)} breakouts, {len(squeezes)} squeezes, {len(gapups)} gapups, {len(trend_setups)} trend setups, and {len(wt_cross)} WT Cross setups in Neon for {date_str}.")
+        print(f"Cached {len(breakouts)} breakouts, {len(squeezes)} squeezes, {len(gapups)} gapups, {len(trend_setups)} trend setups, {len(wt_cross)} WT Cross setups, {len(vcs_results)} VCS setups, and {len(vpa_results)} VPA setups in Neon for {date_str}.")
         return True
     except Exception as e:
         if conn:
