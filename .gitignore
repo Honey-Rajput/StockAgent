@@ -18,3 +18,5 @@ Thumbs.db
 
 # Cache files
 vdu_scanner/*_cache.json
+
+*.db
