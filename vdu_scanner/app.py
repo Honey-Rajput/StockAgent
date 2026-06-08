@@ -358,7 +358,7 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
                         <p style="margin: 0; font-size: 0.92rem; color: #e2e8f0; line-height: 1.5; font-style: italic;">"{rec_text}"</p>
                     </div>
                 </div>
-                """,
+                """),
                 unsafe_allow_html=True
             )
             
@@ -407,7 +407,7 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
                             </tr>
                         </tbody>
                     </table>
-                    """,
+                    """),
                     unsafe_allow_html=True
                 )
         else:
@@ -441,7 +441,7 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
                         <p style="margin: 0; font-size: 0.92rem; color: #e2e8f0; line-height: 1.5; font-style: italic;">"{rec}"</p>
                     </div>
                 </div>
-                """,
+                """),
                 unsafe_allow_html=True
             )
 
