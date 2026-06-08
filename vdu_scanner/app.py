@@ -273,8 +273,9 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
             # HTML for triggers
             triggers_html = "".join([f'<div style="font-size:0.88rem; color:#00e676; margin-bottom: 5px; font-weight: 500;">{t}</div>' for t in triggers])
             
+            import textwrap
             st.markdown(
-                f"""
+                textwrap.dedent(f"""
                 <div class="glass-card" style="padding: 18px; border-left: 4px solid #29b6f6; background: rgba(30, 41, 59, 0.4); margin-bottom: 8px;">
                     <!-- Top metrics row -->
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
@@ -364,7 +365,7 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
             # Collapsible strategy reference guide under the indicators table
             with st.expander("🎓 Indicator Strategy Reference Guide", expanded=False):
                 st.markdown(
-                    """
+                    textwrap.dedent("""
                     <div style="font-size: 0.88rem; line-height: 1.4; color: #cbd5e1; margin-bottom: 8px;">
                         <span style="color: #38bdf8; font-weight: 600;">Core Technical Signals & Parameters:</span>
                         <p style="margin: 4px 0 10px 0;">This checklist and table help identify the highest probability swing setups. When multiple indicators align at their optimal buying values, it creates <b>bullish confluence</b>.</p>
@@ -411,8 +412,9 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
                 )
         else:
             # Fallback legacy layout
+            import textwrap
             st.markdown(
-                f"""
+                textwrap.dedent(f"""
                 <div class="glass-card" style="padding: 15px; border-left: 4px solid #29b6f6; background: rgba(30, 41, 59, 0.4); margin-bottom: 8px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
                         <div>
@@ -2163,6 +2165,7 @@ with tab_scan:
                     "Above 200 DMA": r.get('above_200dma', False),
                     "Dry Start Date": _safe_date(r.get('dry_start_date')),
                     "Dry End Date": _safe_date(r.get('dry_end_date')),
+                    "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                 })
             export_df = pd.DataFrame(export_rows)
             csv_data = export_df.to_csv(index=False).encode('utf-8')
@@ -2195,6 +2198,7 @@ with tab_detail:
         "Choose Analysis Target Mode:",
         ["🔍 Select from Scanned Breakouts", "✏️ Search Any Ticker (Custom Assessment)"],
         horizontal=True,
+        key="detail_search_mode_radio",
         help="Analyze scanned breakouts from the current scanner run, or enter any stock ticker name for real-time custom technical assessment."
     )
     
@@ -2217,6 +2221,7 @@ with tab_detail:
         custom_input = st.text_input(
             "Enter NSE Ticker Name (e.g. SBIN, RELIANCE, INFIBEAM, TATASTEEL):",
             value="",
+            key="detail_custom_ticker_input",
             help="Type any active NSE ticker. We will download its real-time quotes, calculate indicators, and generate custom recommendations."
         ).strip().upper()
         
@@ -2286,9 +2291,15 @@ with tab_detail:
                             detail_data['high_52w'] = float(df['High'].max())
                         if 'low_52w' not in detail_data or detail_data.get('low_52w') is None:
                             detail_data['low_52w'] = float(df['Low'].min())
-                    dry_start_date = detail_data['dry_start_date']
-                    dry_end_date = detail_data['dry_end_date']
                     today_date = df['Date'].iloc[-1]
+                    dry_start_date = detail_data.get('dry_start_date', df['Date'].iloc[-min(30, len(df))] if len(df) > 0 else today_date)
+                    dry_end_date = detail_data.get('dry_end_date', today_date)
+                    dry_days_count = detail_data.get('dry_days_count', 0)
+                    dry_avg_vol = detail_data.get('dry_avg_vol', df['Volume'].mean() if len(df) > 0 else 0)
+                    volume_ratio = detail_data.get('volume_ratio', 1.0)
+                    signal_strength = detail_data.get('signal_strength', 50.0)
+                    above_50dma = detail_data.get('above_50dma', False)
+                    today_volume = detail_data.get('today_volume', int(df['Volume'].iloc[-1]) if len(df) > 0 else 0)
 
                     # A. Dual subplot layout
                     fig = make_subplots(
@@ -2436,9 +2447,9 @@ with tab_detail:
                     c2.markdown(f"""
                     <div class="glass-card">
                         <h4 style="margin-top:0; color:#00e676; font-size:1.1rem; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:8px;">📭 Dry Zone Volume Metrics</h4>
-                        <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Volume Ratio:</span><br><b style="font-size:1.3rem; color:#00e676;">{detail_data['volume_ratio']:.2f}x</b> (vs Dry Average)</div>
-                        <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry zone Duration:</span><br><b>{detail_data['dry_days_count']}</b> trading days</div>
-                        <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry average / today's volume:</span><br><b>{int(detail_data['dry_avg_vol']):,}</b> / <b>{detail_data['today_volume']:,}</b></div>
+                        <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Volume Ratio:</span><br><b style="font-size:1.3rem; color:#00e676;">{volume_ratio:.2f}x</b> (vs Dry Average)</div>
+                        <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry zone Duration:</span><br><b>{dry_days_count}</b> trading days</div>
+                        <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry average / today's volume:</span><br><b>{int(dry_avg_vol):,}</b> / <b>{today_volume:,}</b></div>
                     </div>
                     """, unsafe_allow_html=True)
 
@@ -2446,7 +2457,7 @@ with tab_detail:
                     gauge_fig = go.Figure(
                         go.Indicator(
                             mode="gauge+number",
-                            value=detail_data['signal_strength'],
+                            value=signal_strength,
                             title={'text': "Signal Score Rating", 'font': {'size': 15, 'color': '#ffa000', 'family': 'Outfit'}},
                             gauge={
                                 'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#94a3b8"},
@@ -2474,7 +2485,7 @@ with tab_detail:
                         st.plotly_chart(gauge_fig, use_container_width=True)
 
                         # DMA Flag badge
-                        dma_status = detail_data['above_50dma']
+                        dma_status = above_50dma
                         dma_badge = '<span class="custom-badge badge-green">▲ ABOVE 50 DMA</span>' if dma_status else '<span class="custom-badge badge-red">▼ BELOW 50 DMA</span>'
 
                         st.markdown(
@@ -3132,10 +3143,12 @@ with tab_ai:
             
             # Action button to select this ticker inside selector
             action_key = f"dash_load_{sym}_{displayed_rows}"
-            if row_cols[6].button("🔍 View", key=action_key, use_container_width=True):
-                st.session_state.ai_selected_stock = sym
+            
+            def set_ai_selection(s=sym):
+                st.session_state.ai_selected_stock = s
+                
+            if row_cols[6].button("🔍 View", key=action_key, use_container_width=True, on_click=set_ai_selection):
                 st.toast(f"🔍 Loading detailed charts & AI context for {sym}...")
-                st.rerun()
                 
             st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
             
@@ -3188,11 +3201,11 @@ with tab_ai:
             row_cols[4].markdown(f"<span style='font-size:0.85rem; color:#94a3b8;'>{rec['analyzed_date']}</span>", unsafe_allow_html=True)
             
             # Action button to load this symbol's cached analysis
-            if row_cols[5].button("⚡ Load", key=f"load_rec_{rec['symbol']}_{idx}", use_container_width=True):
-                # Set session state options to trigger the analysis box for this symbol
-                st.session_state.ai_selected_stock = rec['symbol']
+            def set_cached_ai_selection(s=rec['symbol']):
+                st.session_state.ai_selected_stock = s
+                
+            if row_cols[5].button("⚡ Load", key=f"load_rec_{rec['symbol']}_{idx}", use_container_width=True, on_click=set_cached_ai_selection):
                 st.toast(f"Loading cached analysis for {rec['symbol']}!")
-                st.rerun()
                 
             st.markdown("<hr style='margin: 4px 0; border-color: rgba(255,255,255,0.03);'>", unsafe_allow_html=True)
 
@@ -4297,6 +4310,7 @@ with tab_monthly_mom:
             "Momentum Score": r['momentum_score'],
             "Buy Price (₹)": r['buy_price'], "Stop Loss (₹)": r['exit_price'], "Target (₹)": r['target_price'],
             "Confidence": r['confidence'],
+            "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
         } for r in sorted_mm]
         mm_csv = pd.DataFrame(mm_export).to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -4629,6 +4643,7 @@ with tab_weekly_mom:
             "Weekly Score": r['weekly_score'],
             "Buy Price (₹)": r['buy_price'], "Stop Loss (₹)": r['exit_price'], "Target (₹)": r['target_price'],
             "Confidence": r['confidence'],
+            "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
         } for r in sorted_wm]
         wm_csv = pd.DataFrame(wm_export).to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -4819,7 +4834,13 @@ with tab_vcs:
     else:
         col_btn, _ = st.columns([2, 8])
         with col_btn:
-            vcs_df = pd.DataFrame(st.session_state.vcs_results)
+            v_export_list = []
+            for r in st.session_state.vcs_results:
+                row = dict(r)
+                if 'recommendation' in row:
+                    row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
+                v_export_list.append(row)
+            vcs_df = pd.DataFrame(v_export_list)
             csv_data = vcs_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="⬇️ Download CSV",
@@ -4833,9 +4854,7 @@ with tab_vcs:
 # ==============================================================================
 # TAB: EARLY STAGE 2 BREAKOUT
 # ==============================================================================
-st.warning("DEBUG: This should appear outside all tabs at the bottom.")
 with tab_stage2:
-    print("DEBUG: EXECUTING TAB STAGE 2")
     st.markdown("### 🚀 Early Stage 2 Base Breakout Scanner")
     st.markdown("Identifies stocks moving out of a long-term Stage 1 base on the monthly timeframe.")
     
@@ -4921,7 +4940,13 @@ with tab_stage2:
     else:
         dl_btn, _ = st.columns([2, 8])
         with dl_btn:
-            s2_df = pd.DataFrame(st.session_state.stage2_results)
+            s2_export_list = []
+            for r in st.session_state.stage2_results:
+                row = dict(r)
+                if 'recommendation' in row:
+                    row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
+                s2_export_list.append(row)
+            s2_df = pd.DataFrame(s2_export_list)
             csv_data = s2_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="⬇️ Download CSV",
