@@ -4923,7 +4923,7 @@ with tab_stage2:
 # ==============================================================================
 with tab_vpa:
     st.markdown("### 🚥 VPA Trend Indicator (Daily, Weekly, Monthly)")
-    st.info("Scans ALL NSE listed stocks. Filters: Price > ₹100, Market Cap > 2000 Cr. Shows Major, Mid, and Minor trends across timeframes.")
+    st.info("Scans ALL NSE listed stocks. Filters: Price > ₹100. Shows Major, Mid, and Minor trends across timeframes.")
     
     col1, col2 = st.columns([3, 7])
     with col1:
@@ -4986,49 +4986,19 @@ with tab_vpa:
                     except Exception:
                         pass
                 
-                # Phase 2: Parallel Market Cap Fetching
-                st.info(f"Phase 2: Verifying Market Cap (> 2000 Cr) for {len(price_filtered)} valid stocks using multi-threading...")
-                mcap_results = {}
-                
-                def get_mcap(s):
-                    try:
-                        t = yf.Ticker(s)
-                        m = getattr(t.fast_info, 'market_cap', None) or 0
-                        return s, (m / 1e7 if m > 0 else 0)
-                    except:
-                        return s, 0
-                
-                prog.progress(0)
-                status.text("Spawning 25 threads for blazing fast Market Cap checks...")
-                
-                completed = 0
-                with ThreadPoolExecutor(max_workers=25) as executor:
-                    futures = [executor.submit(get_mcap, sym) for sym in price_filtered]
-                    for future in futures:
-                        try:
-                            s, m_cr = future.result(timeout=10)
-                            mcap_results[s] = m_cr
-                        except:
-                            pass
-                        completed += 1
-                        if completed % 10 == 0:
-                            prog.progress(completed / len(price_filtered))
-                            
-                # Phase 3: Final VPA Compute (Instant)
-                st.info("Phase 3: Calculating VPA Trends (Instant)...")
+                # Phase 2: Final VPA Compute (Instant)
+                st.info("Phase 2: Calculating VPA Trends (Instant)...")
                 status.empty()
                 prog.progress(1.0)
                 
                 vpa_list = []
                 for sym in price_filtered:
-                    m_cr = mcap_results.get(sym, 0)
-                    if m_cr >= 2000.0:
-                        df = valid_data[sym]
-                        clean_sym = sym.replace('.NS', '')
-                        vpa_res = scan_vpa_trend(clean_sym, df)
-                        if vpa_res is not None:
-                            vpa_res['market_cap_cr'] = m_cr
-                            vpa_list.append(vpa_res)
+                    df = valid_data[sym]
+                    clean_sym = sym.replace('.NS', '')
+                    vpa_res = scan_vpa_trend(clean_sym, df)
+                    if vpa_res is not None:
+                        vpa_res['market_cap_cr'] = 0  # Default since bulk fetch rate-limits
+                        vpa_list.append(vpa_res)
                             
                 prog.empty()
                 status.empty()
