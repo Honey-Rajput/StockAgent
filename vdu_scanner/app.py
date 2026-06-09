@@ -4629,18 +4629,20 @@ with tab_vcs:
     st.markdown("Identifies stocks with tightening ATR, Standard Deviation, and Volume contraction.")
     
     st.markdown("#### Scanner Parameters")
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     with col1:
         vcs_timeframe = st.selectbox("Timeframe", ["Daily (1d)", "Weekly (1wk)"], index=0)
     with col2:
-        vcs_len_short = st.number_input("Short ATR Len", min_value=1, max_value=100, value=13)
+        vcs_min_price_chg = st.number_input("Min % Chg", min_value=-50.0, max_value=100.0, value=0.0, step=0.5)
     with col3:
-        vcs_len_long = st.number_input("Long ATR Len", min_value=1, max_value=200, value=63)
+        vcs_len_short = st.number_input("Short ATR Len", min_value=1, max_value=100, value=13)
     with col4:
-        vcs_len_vol = st.number_input("Volume Len", min_value=1, max_value=200, value=50)
+        vcs_len_long = st.number_input("Long ATR Len", min_value=1, max_value=200, value=63)
     with col5:
-        vcs_sensitivity = st.number_input("Sensitivity", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
+        vcs_len_vol = st.number_input("Volume Len", min_value=1, max_value=200, value=50)
     with col6:
+        vcs_sensitivity = st.number_input("Sensitivity", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
+    with col7:
         vcs_max_score = st.number_input("Max Score Limit", min_value=1.0, max_value=100.0, value=10.0, step=1.0)
         
     run_vcs_btn = st.button("🔍 Run Custom VCS Scan", use_container_width=True, type="primary")
@@ -4695,9 +4697,10 @@ with tab_vcs:
                                                    sensitivity=vcs_sensitivity, 
                                                    max_score=vcs_max_score)
                                     if res:
-                                        res['Timeframe'] = vcs_timeframe
-                                        res['Action'] = res.get('recommendation', 'Wait')
-                                        custom_vcs_results.append(res)
+                                        if res.get('day_change_pct', 0.0) >= vcs_min_price_chg:
+                                            res['Timeframe'] = vcs_timeframe
+                                            res['Action'] = res.get('recommendation', 'Wait')
+                                            custom_vcs_results.append(res)
                             except Exception:
                                 pass
                 except Exception:
@@ -4977,7 +4980,7 @@ with tab_vpa:
                 'Mid Trend': "Up" if d['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if d['minor'] == 1 else "Down",
                 'Action': get_action_signal_text(d['minor'], d['mid'], d['major']),
-                'Signal': "Buy" if d['major'] == 1 and d['mid'] == 1 else "Hold" if d['major'] == 1 else "Sell"
+                'Signal': "Buy" if (d['major'] == 1 and d['mid'] == 1) or (d['major'] <= 0 and d['mid'] == 1 and d['minor'] == 1) else "Hold" if d['major'] == 1 else "Sell"
             })
             
         weekly_export = []
@@ -4992,7 +4995,7 @@ with tab_vpa:
                 'Mid Trend': "Up" if w['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if w['minor'] == 1 else "Down",
                 'Action': get_action_signal_text(w['minor'], w['mid'], w['major']),
-                'Signal': "Buy" if w['major'] == 1 and w['mid'] == 1 else "Hold" if w['major'] == 1 else "Sell"
+                'Signal': "Buy" if (w['major'] == 1 and w['mid'] == 1) or (w['major'] <= 0 and w['mid'] == 1 and w['minor'] == 1) else "Hold" if w['major'] == 1 else "Sell"
             })
             
         monthly_export = []
@@ -5007,7 +5010,7 @@ with tab_vpa:
                 'Mid Trend': "Up" if m['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if m['minor'] == 1 else "Down",
                 'Action': get_action_signal_text(m['minor'], m['mid'], m['major']),
-                'Signal': "Buy" if m['major'] == 1 and m['mid'] == 1 else "Hold" if m['major'] == 1 else "Sell"
+                'Signal': "Buy" if (m['major'] == 1 and m['mid'] == 1) or (m['major'] <= 0 and m['mid'] == 1 and m['minor'] == 1) else "Hold" if m['major'] == 1 else "Sell"
             })
         
         col1, col2, col3 = st.columns(3)
