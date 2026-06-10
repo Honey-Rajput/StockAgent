@@ -1935,7 +1935,8 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         if n_stocks > 0 and (failed_count / n_stocks) > 0.20:
             st.sidebar.warning(f"⚠️ Failed to fetch {failed_count}/{n_stocks} symbols ({failed_count/n_stocks*100:.1f}%). Check internet connection.")
             
-        st.rerun()
+        st.success("✅ Scanner complete! Results have been updated.")
+
 
 
 # Display Last Scanned Timestamp
