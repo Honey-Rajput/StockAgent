@@ -248,27 +248,44 @@ def fetch_nse_company_names() -> dict:
 @st.cache_data(ttl=86400 * 7)
 def fetch_sector_map() -> dict:
     """
-    Downloads Nifty 500 list to map symbols to their industry/sector.
+    Downloads multiple Nifty lists and uses local cache to map symbols to their industry/sector.
     Returns a dictionary of {symbol: industry}.
     """
-    url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+    urls = [
+        "https://archives.nseindia.com/content/indices/ind_nifty500list.csv",
+        "https://archives.nseindia.com/content/indices/ind_niftymidcap150list.csv",
+        "https://archives.nseindia.com/content/indices/ind_niftysmallcap250list.csv",
+        "https://archives.nseindia.com/content/indices/ind_niftymicrocap250_list.csv"
+    ]
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     sector_map = {}
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        if res.status_code == 200:
-            df = pd.read_csv(io.StringIO(res.text))
-            if 'Symbol' in df.columns and 'Industry' in df.columns:
-                for _, row in df.iterrows():
-                    sym = str(row['Symbol']).strip().upper()
-                    ind = str(row['Industry']).strip()
-                    if sym and ind and ind.lower() != 'nan':
-                        sector_map[sym] = ind
-                return sector_map
-    except Exception as ex:
-        print(f"Failed to fetch sectors: {ex}")
+    
+    # Base from local JSON if generated
+    import json
+    import os
+    if os.path.exists("sector_map.json"):
+        try:
+            with open("sector_map.json", "r") as f:
+                sector_map.update(json.load(f))
+        except:
+            pass
+
+    for url in urls:
+        try:
+            res = requests.get(url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                df = pd.read_csv(io.StringIO(res.text))
+                if 'Symbol' in df.columns and 'Industry' in df.columns:
+                    for _, row in df.iterrows():
+                        sym = str(row['Symbol']).strip().upper()
+                        ind = str(row['Industry']).strip()
+                        if sym and ind and ind.lower() != 'nan':
+                            sector_map[sym] = ind
+        except Exception as ex:
+            print(f"Failed to fetch sectors from {url}: {ex}")
+            
     return sector_map
 
 @st.cache_data(ttl=86400 * 7)
