@@ -1995,7 +1995,7 @@ with st.sidebar.expander("🎓 Institutional Buy Signals Guide", expanded=False)
 
 # --- MAIN INTERFACE TABS ---
 try:
-    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_structural_vcp, tab_stage2, tab_vpa = st.tabs([
+    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_coiled, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_structural_vcp, tab_stage2, tab_vpa, tab_frequent = st.tabs([
         "📊 Scanner Results",
         "📈 Stock Detail",
         "📋 My Watchlist",
@@ -2013,7 +2013,8 @@ try:
         "📉 Volatility Contraction (VCS)",
         "🎯 Structural VCP",
         "🚀 Early Stage 2 Breakout",
-        "🚥 VPA Trend"
+        "🚥 VPA Trend",
+        "🔄 Consistent Alerts"
     ])
 except Exception as tab_err:
     st.error(f"❌ Tab rendering error: {tab_err}")
@@ -5114,3 +5115,8 @@ with tab_vpa:
 </table>
 </div>"""
         st.markdown(table_html, unsafe_allow_html=True)
+
+# TAB: FREQUENT FLYERS (CONSISTENT ALERTS)
+with tab_frequent:
+    import tabs.tab_frequent as tab_freq_mod
+    tab_freq_mod.render()
