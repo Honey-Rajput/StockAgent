@@ -1638,22 +1638,33 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities (Price > ₹200)...")
         prog_bar.progress(0)
         
-        for i, sym in enumerate(scan_symbols):
-            # Update text status and progress bar
-            status_box.text(f"Phase 3/3: Scanning {sym} ({i+1}/{n_stocks})")
-            prog_bar.progress((i + 1) / n_stocks)
+
+        def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
+                                  min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
+                                  min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness):
+            from datetime import datetime
+            import pandas as pd
+            import pytz
+            IST_TIMEZONE = pytz.timezone('Asia/Kolkata')
             
-            # Fetch clean data
-            df = bulk_data.get(sym.strip().upper())
-            if df is None:
-                # Fallback to single download in case parallel chunk missed this stock
-                df = fetch_ohlcv(sym)
-                
+            res = {
+                "failed": False,
+                "gapup": None,
+                "above_ma": None,
+                "support_ma": None,
+                "crossover_ma": None,
+                "minervini": None,
+                "flagged": None,
+                "coiled": None,
+                "wt": None,
+                "vcs": None,
+                "structural_vcp": None,
+                "vpa": None
+            }
             if df is None or len(df) < 5:
-                failed_count += 1
-                continue
+                res["failed"] = True
+                return res
                 
-            # Dynamically append today's real-time quote candle if yfinance daily history has not yet included today
             df = df.sort_values('Date').reset_index(drop=True)
             last_df_date = df['Date'].iloc[-1].date()
             today_date = datetime.now(IST_TIMEZONE).date()
@@ -1671,57 +1682,40 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     }
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 
-            # Fast price double check
             today_close_val = df['Close'].iloc[-1]
             if today_close_val <= 200.0:
-                continue
+                res["failed"] = True
+                return res
                 
-            # Check Gap-Up: Open > Yesterday's Close
             today_open_val = float(df['Open'].iloc[-1])
             today_close_val = float(df['Close'].iloc[-1])
             yesterday_close_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else today_open_val
             if today_open_val > yesterday_close_val and today_close_val > yesterday_close_val and today_close_val >= (today_open_val * 0.97):
                 gap_pct = (today_open_val - yesterday_close_val) / yesterday_close_val * 100
-                
-                # Rework target dynamically: smaller targets for extreme gap-ups to respect circuits
                 if gap_pct >= 8.0:
-                    target_multiplier = 1.04
-                    target_pct_str = "+4.0%"
+                    target_multiplier = 1.04; target_pct_str = "+4.0%"
                 elif gap_pct >= 5.0:
-                    target_multiplier = 1.06
-                    target_pct_str = "+6.0%"
+                    target_multiplier = 1.06; target_pct_str = "+6.0%"
                 else:
-                    target_multiplier = 1.10
-                    target_pct_str = "+10.0%"
+                    target_multiplier = 1.10; target_pct_str = "+10.0%"
                     
                 gap_buy_price = round(today_close_val, 2)
                 gap_exit_price = round(today_open_val * 0.98, 2) 
                 gap_target_price = round(today_close_val * target_multiplier, 2) 
-                
                 gap_confidence = "High (Gap-Up Momentum)" if gap_pct > 3.0 else "Medium (Gap-Up)"
-                base_gap_rec = (
-                    f"Bullish gap-up breakout of {gap_pct:.2f}% on strong momentum. Buy near ₹{gap_buy_price:.2f} "
-                    f"with a stop loss below today's open price at ₹{gap_exit_price:.2f} "
-                    f"targeting dynamic swing target ₹{gap_target_price:.2f} ({target_pct_str})."
-                )
+                base_gap_rec = (f"Bullish gap-up breakout of {gap_pct:.2f}% on strong momentum. Buy near ₹{gap_buy_price:.2f} "
+                                f"with a stop loss below today's open price at ₹{gap_exit_price:.2f} "
+                                f"targeting dynamic swing target ₹{gap_target_price:.2f} ({target_pct_str}).")
                 gap_recommendation = compute_rich_analysis(df, sym, "Gap-Up", base_gap_rec)
-                gapup_list.append({
-                    "symbol": sym.strip().upper(),
-                    "company_name": get_company_name(sym),
-                    "prev_close": yesterday_close_val,
-                    "open_price": today_open_val,
-                    "cmp": today_close_val,
-                    "gap_pct": round(gap_pct, 2),
-                    "volume": int(df['Volume'].iloc[-1]),
+                res["gapup"] = {
+                    "symbol": sym.strip().upper(), "company_name": get_company_name(sym),
+                    "prev_close": yesterday_close_val, "open_price": today_open_val, "cmp": today_close_val,
+                    "gap_pct": round(gap_pct, 2), "volume": int(df['Volume'].iloc[-1]),
                     "day_change_pct": round(((today_close_val - yesterday_close_val) / yesterday_close_val * 100), 2),
-                    "buy_price": gap_buy_price,
-                    "exit_price": gap_exit_price,
-                    "target_price": gap_target_price,
-                    "confidence": gap_confidence,
-                    "recommendation": gap_recommendation
-                })
+                    "buy_price": gap_buy_price, "exit_price": gap_exit_price, "target_price": gap_target_price,
+                    "confidence": gap_confidence, "recommendation": gap_recommendation
+                }
                 
-            # Technical SMA Setups check
             df_ma = df.copy()
             df_ma['SMA20'] = df_ma['Close'].rolling(window=20).mean()
             df_ma['SMA50'] = df_ma['Close'].rolling(window=50).mean()
@@ -1730,86 +1724,48 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
             df_ma['SMA200'] = df_ma['Close'].rolling(window=200).mean()
             
             if len(df_ma) >= 200:
-                today_row = df_ma.iloc[-1]
-                yesterday_row = df_ma.iloc[-2]
-                
-                c_val = float(today_row['Close'])
-                l_val = float(today_row['Low'])
-                
-                sma20 = float(today_row['SMA20'])
-                sma50 = float(today_row['SMA50'])
-                sma65 = float(today_row['SMA65'])
-                sma150 = float(today_row['SMA150'])
+                today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]
+                c_val = float(today_row['Close']); l_val = float(today_row['Low'])
+                sma20 = float(today_row['SMA20']); sma50 = float(today_row['SMA50'])
+                sma65 = float(today_row['SMA65']); sma150 = float(today_row['SMA150'])
                 sma200 = float(today_row['SMA200'])
                 
-                # 1. Above 20 SMA & 50 SMA
                 if c_val > sma20 and c_val > sma50:
                     above_buy_price = round(today_close_val, 2)
                     above_exit_price = round(sma50 * 0.97, 2) 
                     above_target_price = round(today_close_val * 1.12, 2) 
                     above_confidence = "High (Uptrend)" if sma20 > sma50 and sma50 > sma200 else "Medium-High (Uptrend)"
-                    base_above_rec = (
-                        f"Strong medium-term uptrend. Close above 20 SMA & 50 SMA. Buy near ₹{above_buy_price:.2f} "
-                        f"with stop below 50 SMA support at ₹{above_exit_price:.2f} targeting momentum target ₹{above_target_price:.2f}."
-                    )
-                    above_recommendation = compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec)
-                    above_ma_list.append({
-                        "symbol": sym.strip().upper(),
-                        "company_name": get_company_name(sym),
-                        "cmp": today_close_val,
+                    base_above_rec = (f"Strong medium-term uptrend. Close above 20 SMA & 50 SMA. Buy near ₹{above_buy_price:.2f} "
+                                      f"with stop below 50 SMA support at ₹{above_exit_price:.2f} targeting momentum target ₹{above_target_price:.2f}.")
+                    res["above_ma"] = {
+                        "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
                         "dist_20sma_pct": round((today_close_val - sma20) / sma20 * 100, 2),
                         "dist_50sma_pct": round((today_close_val - sma50) / sma50 * 100, 2),
-                        "setup_type": "above_ma",
-                        "buy_price": above_buy_price,
-                        "exit_price": above_exit_price,
-                        "target_price": above_target_price,
-                        "confidence": above_confidence,
-                        "recommendation": above_recommendation
-                    })
+                        "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
+                        "target_price": above_target_price, "confidence": above_confidence,
+                        "recommendation": compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec)
+                    }
                     
-                # 2. Support at 65 SMA (Bounce & Up Move)
-                # Must have tested the 65 SMA recently (Low within 1% above, or dropped below it)
-                yesterday_l = float(yesterday_row['Low'])
-                yesterday_sma65 = float(yesterday_row['SMA65'])
-                
-                tested_today = l_val <= sma65 * 1.01
-                tested_yesterday = yesterday_l <= yesterday_sma65 * 1.01
-                
-                # Must be moving up (Green candle AND higher than yesterday's close)
-                o_val = float(today_row['Open'])
-                yesterday_c = float(yesterday_row['Close'])
-                is_green_candle = c_val > o_val
-                is_up_move = c_val > yesterday_c
-                
-                # Must hold above the 65 SMA
-                holds_above = c_val > sma65
+                yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
+                tested_today = l_val <= sma65 * 1.01; tested_yesterday = yesterday_l <= yesterday_sma65 * 1.01
+                o_val = float(today_row['Open']); yesterday_c = float(yesterday_row['Close'])
+                is_green_candle = c_val > o_val; is_up_move = c_val > yesterday_c; holds_above = c_val > sma65
                 
                 if (tested_today or tested_yesterday) and holds_above and is_green_candle and is_up_move:
-                    support_buy_price = round(today_close_val, 2)
-                    support_exit_price = round(sma65 * 0.97, 2) 
+                    support_buy_price = round(today_close_val, 2); support_exit_price = round(sma65 * 0.97, 2) 
                     support_target_price = round(today_close_val * 1.15, 2) 
                     support_confidence = "High (Pullback Support)" if today_close_val > yesterday_row['Close'] else "Medium (Pullback Support)"
-                    base_support_rec = (
-                        f"Institutional pullback testing critical 65 SMA support (₹{sma65:.2f}). "
-                        f"Buy around ₹{support_buy_price:.2f} with tight stop just below SMA at ₹{support_exit_price:.2f} targeting bounce to ₹{support_target_price:.2f}."
-                    )
-                    support_recommendation = compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec)
-                    support_ma_list.append({
-                        "symbol": sym.strip().upper(),
-                        "company_name": get_company_name(sym),
-                        "cmp": today_close_val,
+                    base_support_rec = (f"Institutional pullback testing critical 65 SMA support (₹{sma65:.2f}). "
+                                        f"Buy around ₹{support_buy_price:.2f} with tight stop just below SMA at ₹{support_exit_price:.2f} targeting bounce to ₹{support_target_price:.2f}.")
+                    res["support_ma"] = {
+                        "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                        "dist_65sma_pct": round((today_close_val - sma65) / sma65 * 100, 2),
-                        "setup_type": "support_ma",
-                        "buy_price": support_buy_price,
-                        "exit_price": support_exit_price,
-                        "target_price": support_target_price,
-                        "confidence": support_confidence,
-                        "recommendation": support_recommendation
-                    })
+                        "dist_65sma_pct": round((today_close_val - sma65) / sma65 * 100, 2), "setup_type": "support_ma",
+                        "buy_price": support_buy_price, "exit_price": support_exit_price, "target_price": support_target_price,
+                        "confidence": support_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec)
+                    }
                     
-                # 3. MA Crossovers (50/150/200 SMA)
                 crossed_golden = (yesterday_row['SMA50'] <= yesterday_row['SMA200']) and (today_row['SMA50'] > today_row['SMA200'])
                 crossed_150 = (yesterday_row['SMA50'] <= yesterday_row['SMA150']) and (today_row['SMA50'] > today_row['SMA150'])
                 price_crossed_50 = (yesterday_row['Close'] <= yesterday_row['SMA50']) and (today_row['Close'] > today_row['SMA50'])
@@ -1817,165 +1773,120 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 price_crossed_200 = (yesterday_row['Close'] <= yesterday_row['SMA200']) and (today_row['Close'] > today_row['SMA200'])
                 
                 if crossed_golden or crossed_150 or price_crossed_50 or price_crossed_150 or price_crossed_200:
-                    cross_buy_price = round(today_close_val, 2)
-                    cross_exit_price = round(today_close_val * 0.94, 2) 
+                    cross_buy_price = round(today_close_val, 2); cross_exit_price = round(today_close_val * 0.94, 2) 
                     cross_target_price = round(today_close_val * 1.18, 2) 
                     cross_confidence = "High (Golden Cross)" if crossed_golden else "Medium-High (Crossover)"
-                    base_cross_rec = (
-                        f"Technical moving average crossover signal! Buy near ₹{cross_buy_price:.2f} "
-                        f"to ride the emerging uptrend. Set stop loss at ₹{cross_exit_price:.2f} targeting swing high ₹{cross_target_price:.2f}."
-                    )
-                    cross_recommendation = compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec)
-                    crossover_ma_list.append({
-                        "symbol": sym.strip().upper(),
-                        "company_name": get_company_name(sym),
-                        "cmp": today_close_val,
+                    base_cross_rec = (f"Technical moving average crossover signal! Buy near ₹{cross_buy_price:.2f} "
+                                      f"to ride the emerging uptrend. Set stop loss at ₹{cross_exit_price:.2f} targeting swing high ₹{cross_target_price:.2f}.")
+                    res["crossover_ma"] = {
+                        "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
                         "dist_50sma_pct": round((today_close_val - sma50) / sma50 * 100, 2),
-                        "dist_200sma_pct": round((today_close_val - sma200) / sma200 * 100, 2),
-                        "setup_type": "crossover_ma",
-                        "buy_price": cross_buy_price,
-                        "exit_price": cross_exit_price,
-                        "target_price": cross_target_price,
-                        "confidence": cross_confidence,
-                        "recommendation": cross_recommendation
-                    })
+                        "dist_200sma_pct": round((today_close_val - sma200) / sma200 * 100, 2), "setup_type": "crossover_ma",
+                        "buy_price": cross_buy_price, "exit_price": cross_exit_price, "target_price": cross_target_price,
+                        "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec)
+                    }
 
-            # 4. Mark Minervini Stage-2 Trend Template check
             if len(df_ma) >= 250:
-                today_row = df_ma.iloc[-1]
-                yesterday_row = df_ma.iloc[-2]
-                
-                c_val = float(today_row['Close'])
-                
-                sma50 = float(today_row['SMA50'])
-                sma150 = float(today_row['SMA150'])
-                sma200 = float(today_row['SMA200'])
-                
-                # 200 SMA 10 days ago (trending up filter)
+                today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]; c_val = float(today_row['Close'])
+                sma50 = float(today_row['SMA50']); sma150 = float(today_row['SMA150']); sma200 = float(today_row['SMA200'])
                 sma200_10d_ago = float(df_ma['SMA200'].iloc[-11]) if len(df_ma) >= 210 else sma200
+                high_52w = float(df_ma['High'].iloc[-250:].max()); low_52w = float(df_ma['Low'].iloc[-250:].min())
                 
-                # 52w High / Low
-                high_52w = float(df_ma['High'].iloc[-250:].max())
-                low_52w = float(df_ma['Low'].iloc[-250:].min())
-                
-                # Mark Minervini Stage-2 Criteria:
-                # 1. Price is above 150 EMA and 200 SMA
-                c_above_150_200 = c_val > sma150 and c_val > sma200
-                # 2. 150 EMA is above 200 SMA
-                sma150_above_200 = sma150 > sma200
-                # 3. 200 SMA is rising (uptrend)
-                sma200_rising = sma200 > sma200_10d_ago
-                # 4. 50 SMA is above 150 EMA and 200 SMA
-                sma50_above_others = sma50 > sma150 and sma50 > sma200
-                # 5. Price is above 50 SMA
-                c_above_50 = c_val > sma50
-                # 6. Price is at least 30% above 52w Low
-                c_above_52w_low = c_val >= 1.30 * low_52w
-                # 7. Price is within 25% of 52w High
-                c_within_52w_high = c_val >= 0.75 * high_52w
-                
-                if c_above_150_200 and sma150_above_200 and sma200_rising and sma50_above_others and c_above_50 and c_above_52w_low and c_within_52w_high:
+                if c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_10d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.30 * low_52w and c_val >= 0.75 * high_52w:
                     run_up_200 = round(((c_val - sma200) / sma200 * 100), 2)
                     run_up_52w = round(((c_val - low_52w) / low_52w * 100), 2)
                     is_early = bool(c_val <= 1.20 * sma200)
-                    
-                    # Exit below 200 SMA or 6% below close (tight protection)
                     exit_price = round(min(sma200 * 0.98, c_val * 0.94), 2)
-                    
-                    # Dynamic target price: early Stage-2 has higher potential than extended Stage-2
                     distance_200 = (c_val - sma200) / sma200
-                    if is_early:
-                        # Scaled remaining target between 25% and 40% based on support proximity
-                        target_mult = 1.40 - min(0.15, distance_200 * 0.7)
-                    else:
-                        # Extended uptrend, target is tighter (between 12% and 18%)
-                        target_mult = 1.18 - min(0.06, (distance_200 - 0.20) * 0.4)
-                        
+                    target_mult = 1.40 - min(0.15, distance_200 * 0.7) if is_early else 1.18 - min(0.06, (distance_200 - 0.20) * 0.4)
                     target_price = round(max(high_52w * 1.05, c_val * target_mult), 2)
                     min_confidence = "High (Minervini Stage-2)" if is_early else "Medium-High (Minervini Extended)"
-                    
-                    # Structured JSON technical reasoning
                     rem_pct = ((target_price - c_val) / c_val * 100)
                     stage_label = "Early Stage-2 Accumulation" if is_early else "Extended Stage-2 Uptrend"
-                    base_minervini_rec = (
-                        f"Mark Minervini Stage-2 Trend Template verified! The stock is in an active '{stage_label}' "
-                        f"having run up {run_up_52w:.1f}% from its 52w low and "
-                        f"holding {run_up_200:.1f}% above its 200 SMA support. "
-                        f"Buy around CMP ₹{c_val:.2f}. Set stop loss at ₹{exit_price:.2f} (tight support lock) "
-                        f"targeting momentum swing target of ₹{target_price:.2f} (remaining potential +{rem_pct:.1f}%)."
-                    )
-                    minervini_recommendation = compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec)
-                    
-                    minervini_list.append({
-                        "symbol": sym.strip().upper(),
-                        "company_name": get_company_name(sym),
-                        "cmp": today_close_val,
+                    base_minervini_rec = (f"Mark Minervini Stage-2 Trend Template verified! The stock is in an active '{stage_label}' "
+                                          f"having run up {run_up_52w:.1f}% from its 52w low and holding {run_up_200:.1f}% above its 200 SMA support. "
+                                          f"Buy around CMP ₹{c_val:.2f}. Set stop loss at ₹{exit_price:.2f} (tight support lock) "
+                                          f"targeting momentum swing target of ₹{target_price:.2f} (remaining potential +{rem_pct:.1f}%).")
+                    res["minervini"] = {
+                        "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                        "setup_type": "minervini",
-                        "run_up_200": run_up_200,
-                        "run_up_52w": run_up_52w,
-                        "is_early": is_early,
-                        "buy_price": round(c_val, 2),
-                        "exit_price": exit_price,
-                        "target_price": target_price,
-                        "confidence": min_confidence,
-                        "recommendation": minervini_recommendation
-                    })
-
-                
-            # Scan breakouts (passing min_dry_spikes)
-            scan_res = scan_stock(
-                symbol=sym,
-                df=df,
-                min_dry_days=min_dry,
-                max_dry_days=max_dry,
-                min_volume_ratio=min_vol_ratio,
-                min_price_change=min_price_chg,
-                min_dry_spikes=min_dry_spikes
-            )
-            
+                        "setup_type": "minervini", "run_up_200": run_up_200, "run_up_52w": run_up_52w, "is_early": is_early,
+                        "buy_price": round(c_val, 2), "exit_price": exit_price, "target_price": target_price,
+                        "confidence": min_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec)
+                    }
+                    
+            scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes)
             if scan_res is not None:
-                # Market Cap filter bypassed
-                mcap_crores = 0.0
-                scan_res['market_cap_cr'] = mcap_crores
-
+                scan_res['market_cap_cr'] = 0.0
                 if scan_res['signal_strength'] >= min_signal_str:
-                    if (not above_50dma_only or scan_res.get('above_50dma', False)) and \
-                       (not above_200dma_only or scan_res.get('above_200dma', False)):
-                        flagged_list.append(scan_res)
+                    if (not above_50dma_only or scan_res.get('above_50dma', False)) and (not above_200dma_only or scan_res.get('above_200dma', False)):
+                        res["flagged"] = scan_res
                         
-            # Scan coiled spring VCP setups
             coiled_res = scan_coiled_spring(sym, df, max_tightness=vcp_max_tightness)
             if coiled_res is not None:
-                # Market Cap filter bypassed
-                mcap_crores = 0.0
-                coiled_res['market_cap_cr'] = mcap_crores
-
+                coiled_res['market_cap_cr'] = 0.0
                 if coiled_res['squeeze_score'] >= min_signal_str:
-                    coiled_list.append(coiled_res)
+                    res["coiled"] = coiled_res
                         
-            # Scan WaveTrend oversold zone with buy signals (Daily is default)
             df_wt = df
             if df_wt is not None and len(df_wt) >= 40:
                 wt_res = scan_wt_cross(sym, df_wt)
                 if wt_res is not None:
                     wt_res['timeframe'] = "Daily"
-                    wt_list.append(wt_res)
+                    res["wt"] = wt_res
                     
             if df is not None:
-                vcs_res = scan_vcs(sym, df)
-                if vcs_res is not None:
-                    vcs_list.append(vcs_res)
+                res["vcs"] = scan_vcs(sym, df)
+                res["structural_vcp"] = scan_structural_vcp(sym, df)
+                res["vpa"] = scan_vpa_trend(sym, df)
+                
+            return res
+
+
+        import concurrent.futures
+        import os
+        
+        status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities (Price > ₹200)...")
+        prog_bar.progress(0)
+        
+        # Parallel Execution Core
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, os.cpu_count() * 2 if os.cpu_count() else 8)) as executor:
+            future_to_sym = {}
+            for sym in scan_symbols:
+                df = bulk_data.get(sym.strip().upper())
+                if df is None:
+                    df = fetch_ohlcv(sym)
+                future = executor.submit(process_single_symbol, sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness)
+                future_to_sym[future] = sym
+                
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_sym)):
+                sym = future_to_sym[future]
+                try:
+                    res = future.result()
+                    if res.get("failed"):
+                        failed_count += 1
+                        continue
+                    if res.get("gapup"): gapup_list.append(res["gapup"])
+                    if res.get("above_ma"): above_ma_list.append(res["above_ma"])
+                    if res.get("support_ma"): support_ma_list.append(res["support_ma"])
+                    if res.get("crossover_ma"): crossover_ma_list.append(res["crossover_ma"])
+                    if res.get("minervini"): minervini_list.append(res["minervini"])
+                    if res.get("flagged"): flagged_list.append(res["flagged"])
+                    if res.get("coiled"): coiled_list.append(res["coiled"])
+                    if res.get("wt"): wt_list.append(res["wt"])
+                    if res.get("vcs"): vcs_list.append(res["vcs"])
+                    if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
+                    if res.get("vpa"): vpa_list.append(res["vpa"])
+                except Exception as exc:
+                    print(f"Error processing {sym}: {exc}")
+                    failed_count += 1
                     
-                struct_vcp_res = scan_structural_vcp(sym, df)
-                if struct_vcp_res is not None:
-                    structural_vcp_list.append(struct_vcp_res)
-                    
-                vpa_res = scan_vpa_trend(sym, df)
-                if vpa_res is not None:
-                    vpa_list.append(vpa_res)
-                        
+                # Throttle UI Updates (every 25 iterations or at the end)
+                if (i + 1) % 25 == 0 or i + 1 == n_stocks:
+                    status_box.text(f"Phase 3/3: Scanning ({i+1}/{n_stocks})")
+                    prog_bar.progress((i + 1) / n_stocks)
+
         # Clean progress assets
         prog_bar.empty()
         status_box.empty()
