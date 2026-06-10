@@ -614,7 +614,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         cells.append(wl_cell)
         
         # Clickable TradingView Symbol Link
-        cells.append(f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{r["symbol"]}" target="_blank" style="color: #29b6f6; text-decoration: none;">{r["symbol"]}</a></td>')
+        tv_sym = r["symbol"].replace('.NS', '')
+        cells.append(f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{tv_sym}" target="_blank" rel="noopener noreferrer" style="color: #29b6f6; text-decoration: none;">{r["symbol"]}</a></td>')
                 
         # Sector column
         sector = get_stock_sector(r["symbol"])
@@ -3024,7 +3025,8 @@ with tab_ai:
             row_cols = st.columns([1.2, 1.2, 2.0, 1.2, 1.2, 2.2, 1.0])
             
             # Symbol & Origin styling
-            row_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{sym}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{sym}</a>", unsafe_allow_html=True)
+            tv_sym = sym.replace('.NS', '')
+            row_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{tv_sym}' target='_blank' rel='noopener noreferrer' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{sym}</a>", unsafe_allow_html=True)
             
             origin = symbol_origins.get(sym, "📊 Breakout")
             origin_color = "#29b6f6" if "Breakout" in origin else "#ab47bc"
@@ -3095,7 +3097,8 @@ with tab_ai:
         
         for idx, rec in enumerate(recent_records):
             row_cols = st.columns([1.5, 2.5, 1.5, 1.5, 2.0, 1.5])
-            row_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{rec['symbol']}' target='_blank' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{rec['symbol']}</a>", unsafe_allow_html=True)
+            tv_sym = rec['symbol'].replace('.NS', '')
+            row_cols[0].markdown(f"<a href='https://in.tradingview.com/chart/?symbol=NSE:{tv_sym}' target='_blank' rel='noopener noreferrer' style='color: #29b6f6; font-weight: bold; text-decoration: none;'>{rec['symbol']}</a>", unsafe_allow_html=True)
             row_cols[1].markdown(f"<span style='color:#ffa000; font-weight:500;'>{rec['pattern_name']}</span>", unsafe_allow_html=True)
             
             # Direction styling
@@ -4199,7 +4202,7 @@ with tab_monthly_mom:
             mm_rows_html.append(
                 f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04); transition:background 0.2s;">'
                 f'{wl_cell_mm}'
-                f'<td style="padding:8px 10px; font-weight:bold; color:#29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{r["symbol"]}" target="_blank" style="color:#29b6f6; text-decoration:none;">{r["symbol"]}</a></td>'
+                f'<td style="padding:8px 10px; font-weight:bold; color:#29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{r["symbol"].replace(".NS", "")}" target="_blank" rel="noopener noreferrer" style="color:#29b6f6; text-decoration:none;">{r["symbol"]}</a></td>'
                 f'<td style="padding:8px 10px; color:#94a3b8; font-size:0.8rem;">{r.get("company_name", "")}</td>'
                 f'<td style="padding:8px 10px; color:#e2e8f0; font-weight:500;">₹{cmp_v:,.2f}</td>'
                 f'<td style="padding:8px 10px;">{chg_b}</td>'
@@ -4526,7 +4529,7 @@ with tab_weekly_mom:
             wm_rows_html.append(
                 f'<tr style="border-bottom:1px solid rgba(255,255,255,0.04);">'
                 f'{wl_cell_wm}'
-                f'<td style="padding:8px 10px; font-weight:bold;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{r["symbol"]}" target="_blank" style="color:#29b6f6; text-decoration:none;">{r["symbol"]}</a></td>'
+                f'<td style="padding:8px 10px; font-weight:bold;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{r["symbol"].replace(".NS", "")}" target="_blank" rel="noopener noreferrer" style="color:#29b6f6; text-decoration:none;">{r["symbol"]}</a></td>'
                 f'<td style="padding:8px 10px; color:#94a3b8; font-size:0.78rem;">{r.get("company_name","")}</td>'
                 f'<td style="padding:8px 10px; color:#e2e8f0; font-weight:600;">₹{cmp_v:,.2f}</td>'
                 f'<td style="padding:8px 10px;">{chg_b}</td>'
