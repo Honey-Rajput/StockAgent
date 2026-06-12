@@ -1292,17 +1292,11 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
     all_scans AS (
         SELECT symbol, scan_date, 'VDU Breakout' as source FROM scanned_breakouts WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'Coiled Squeeze' as source FROM scanned_squeezes WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Gap Up' as source FROM scanned_gapups WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, setup_type as source FROM scanned_trend_setups WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'WT Cross' as source FROM scanned_wt_cross WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Minervini Stage-2' as source FROM scanned_trend_setups WHERE setup_type = 'minervini' AND scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'VCS' as source FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'VPA' as source FROM scanned_vpa WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Monthly Momentum' as source FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
     )
     SELECT symbol, COUNT(*) as total_appearances, 
            COUNT(DISTINCT scan_date) as days_appeared,

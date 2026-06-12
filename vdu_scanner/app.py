@@ -4972,10 +4972,32 @@ with tab_vpa:
             else:
                 return "Neutral / Choppy"
         
+        def get_signal(short, mid, max_t):
+            return "Buy" if (max_t == 1 and mid == 1) or (max_t <= 0 and mid == 1 and short == 1) else "Hold" if max_t == 1 else "Sell"
+
+        only_buy_signals = st.checkbox("🟢 Show Only 'Buy' Signals", value=False)
+        
         daily_export = []
+        weekly_export = []
+        monthly_export = []
+        
+        rank = 1
+        filtered_vpa_data = []
         for r in vpa_data:
-            d = r['daily']
+            d = r['daily']; w = r['weekly']; m = r['monthly']
+            
+            # Use daily signal as the primary filter if we want to filter globally, or filter per timeframe.
+            # Actually, since the timeframe can be selected in UI, let's filter the data based on the selected timeframe later.
+            # For the exports, we'll export all but add Rank.
+            
+            d_sig = get_signal(d['minor'], d['mid'], d['major'])
+            if only_buy_signals and d_sig != "Buy":
+                continue
+                
+            filtered_vpa_data.append((rank, r))
+            
             daily_export.append({
+                'Rank': rank,
                 'Symbol': r['symbol'],
                 'CMP': r['cmp'],
                 'Change %': round(r['day_change_pct'], 2),
@@ -4984,13 +5006,14 @@ with tab_vpa:
                 'Mid Trend': "Up" if d['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if d['minor'] == 1 else "Down",
                 'Action': get_action_signal_text(d['minor'], d['mid'], d['major']),
-                'Signal': "Buy" if (d['major'] == 1 and d['mid'] == 1) or (d['major'] <= 0 and d['mid'] == 1 and d['minor'] == 1) else "Hold" if d['major'] == 1 else "Sell"
+                'Signal': d_sig
             })
+            rank += 1
             
-        weekly_export = []
-        for r in vpa_data:
+        for rank, r in filtered_vpa_data:
             w = r['weekly']
             weekly_export.append({
+                'Rank': rank,
                 'Symbol': r['symbol'],
                 'CMP': r['cmp'],
                 'Change %': round(r['day_change_pct'], 2),
@@ -4999,13 +5022,13 @@ with tab_vpa:
                 'Mid Trend': "Up" if w['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if w['minor'] == 1 else "Down",
                 'Action': get_action_signal_text(w['minor'], w['mid'], w['major']),
-                'Signal': "Buy" if (w['major'] == 1 and w['mid'] == 1) or (w['major'] <= 0 and w['mid'] == 1 and w['minor'] == 1) else "Hold" if w['major'] == 1 else "Sell"
+                'Signal': get_signal(w['minor'], w['mid'], w['major'])
             })
             
-        monthly_export = []
-        for r in vpa_data:
+        for rank, r in filtered_vpa_data:
             m = r['monthly']
             monthly_export.append({
+                'Rank': rank,
                 'Symbol': r['symbol'],
                 'CMP': r['cmp'],
                 'Change %': round(r['day_change_pct'], 2),
@@ -5014,7 +5037,7 @@ with tab_vpa:
                 'Mid Trend': "Up" if m['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if m['minor'] == 1 else "Down",
                 'Action': get_action_signal_text(m['minor'], m['mid'], m['major']),
-                'Signal': "Buy" if (m['major'] == 1 and m['mid'] == 1) or (m['major'] <= 0 and m['mid'] == 1 and m['minor'] == 1) else "Hold" if m['major'] == 1 else "Sell"
+                'Signal': get_signal(m['minor'], m['mid'], m['major'])
             })
         
         col1, col2, col3 = st.columns(3)
@@ -5069,7 +5092,7 @@ with tab_vpa:
                 return "<span style='color: #9ca3af; font-weight: bold;'>⚪ Neutral / Choppy</span>"
             
         html_rows = []
-        for r in vpa_data:
+        for rank, r in filtered_vpa_data:
             if selected_tf == "Daily":
                 tf_data = r['daily']
             elif selected_tf == "Weekly":
@@ -5085,6 +5108,7 @@ with tab_vpa:
             
             # Zero indentation to prevent Streamlit markdown codeblock rendering
             row = f"""<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+<td style="padding: 10px; font-weight: bold; color: #94a3b8;">#{rank}</td>
 <td style="padding: 10px;"><strong>{r['symbol']}</strong></td>
 <td style="padding: 10px;">{r['cmp']}</td>
 <td style="padding: 10px;">{get_day_change_badge_html(r['day_change_pct'])}</td>
@@ -5102,6 +5126,7 @@ with tab_vpa:
 <table style="width: 100%; text-align: left; border-collapse: collapse; font-size: 0.95rem;">
 <thead>
 <tr style="background-color: rgba(255,255,255,0.05); border-bottom: 1px solid rgba(255,255,255,0.1);">
+<th style="padding: 10px;">Rank</th>
 <th style="padding: 10px;">Symbol</th>
 <th style="padding: 10px;">CMP</th>
 <th style="padding: 10px;">Chg %</th>
