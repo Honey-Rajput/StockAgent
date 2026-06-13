@@ -1475,83 +1475,93 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 formatted = f"{formatted}.NS"
             all_tickers_ns.append(formatted)
             
-        open_price_map = {}
-        close_price_map = {}
-        volume_map = {}
-        high_price_map = {}
-        low_price_map = {}
+        today_date_str = datetime.now(IST_TIMEZONE).strftime('%Y-%m-%d')
+        cache_key_p1 = f"p1_quotes_{universe_key}_{today_date_str}"
         
-        status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
-        import time
-        chunk_size = 300
-        ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
-        
-        for idx, chunk in enumerate(ticker_chunks):
-            prog_bar.progress(idx / len(ticker_chunks))
-            status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {idx+1}/{len(ticker_chunks)})...")
-            retries = 0
-            max_retries = 3
-            backoff = 2.0
-            while retries <= max_retries:
-                try:
-                    # yfinance 1.x: auto_adjust=True by default, threads param removed
-                    quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
-                    if not quotes_df.empty:
-                        # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
-                        if isinstance(quotes_df.columns, pd.MultiIndex):
-                            # Level 0 = price type (Close/Open/etc), Level 1 = ticker symbol
-                            price_types = quotes_df.columns.get_level_values(0).unique().tolist()
-                            tickers_in_idx = quotes_df.columns.get_level_values(1).unique().tolist()
-                            # Build per-field Series indexed by ticker (with .NS suffix preserved)
-                            def _get_field_series(field):
-                                if field in price_types:
-                                    s = quotes_df[field].iloc[-1]
-                                    return s
-                                return pd.Series(dtype=float)
-                            close_series = _get_field_series('Close')
-                            open_series = _get_field_series('Open')
-                            volume_series = _get_field_series('Volume')
-                            high_series = _get_field_series('High')
-                            low_series = _get_field_series('Low')
-                        else:
-                            # Single ticker fallback
-                            ticker_key = chunk[0]
-                            close_series = pd.Series({ticker_key: quotes_df['Close'].iloc[-1]})
-                            open_series = pd.Series({ticker_key: quotes_df['Open'].iloc[-1]}) if 'Open' in quotes_df else close_series
-                            volume_series = pd.Series({ticker_key: quotes_df['Volume'].iloc[-1]}) if 'Volume' in quotes_df else pd.Series({ticker_key: 0})
-                            high_series = pd.Series({ticker_key: quotes_df['High'].iloc[-1]}) if 'High' in quotes_df else close_series
-                            low_series = pd.Series({ticker_key: quotes_df['Low'].iloc[-1]}) if 'Low' in quotes_df else close_series
+        if cache_key_p1 in st.session_state:
+            open_price_map, close_price_map, volume_map, high_price_map, low_price_map = st.session_state[cache_key_p1]
+            status_box.text("Phase 1/3: Loaded real-time quotes from session cache!")
+            prog_bar.progress(1.0)
+        else:
+            open_price_map = {}
+            close_price_map = {}
+            volume_map = {}
+            high_price_map = {}
+            low_price_map = {}
+            
+            status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
+            import time
+            chunk_size = 300
+            ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
+            
+            for idx, chunk in enumerate(ticker_chunks):
+                prog_bar.progress(idx / len(ticker_chunks))
+                status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {idx+1}/{len(ticker_chunks)})...")
+                retries = 0
+                max_retries = 3
+                backoff = 2.0
+                while retries <= max_retries:
+                    try:
+                        # yfinance 1.x: auto_adjust=True by default, threads param removed
+                        quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
+                        if not quotes_df.empty:
+                            # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
+                            if isinstance(quotes_df.columns, pd.MultiIndex):
+                                # Level 0 = price type (Close/Open/etc), Level 1 = ticker symbol
+                                price_types = quotes_df.columns.get_level_values(0).unique().tolist()
+                                tickers_in_idx = quotes_df.columns.get_level_values(1).unique().tolist()
+                                # Build per-field Series indexed by ticker (with .NS suffix preserved)
+                                def _get_field_series(field):
+                                    if field in price_types:
+                                        s = quotes_df[field].iloc[-1]
+                                        return s
+                                    return pd.Series(dtype=float)
+                                close_series = _get_field_series('Close')
+                                open_series = _get_field_series('Open')
+                                volume_series = _get_field_series('Volume')
+                                high_series = _get_field_series('High')
+                                low_series = _get_field_series('Low')
+                            else:
+                                # Single ticker fallback
+                                ticker_key = chunk[0]
+                                close_series = pd.Series({ticker_key: quotes_df['Close'].iloc[-1]})
+                                open_series = pd.Series({ticker_key: quotes_df['Open'].iloc[-1]}) if 'Open' in quotes_df else close_series
+                                volume_series = pd.Series({ticker_key: quotes_df['Volume'].iloc[-1]}) if 'Volume' in quotes_df else pd.Series({ticker_key: 0})
+                                high_series = pd.Series({ticker_key: quotes_df['High'].iloc[-1]}) if 'High' in quotes_df else close_series
+                                low_series = pd.Series({ticker_key: quotes_df['Low'].iloc[-1]}) if 'Low' in quotes_df else close_series
 
-                        # Map prices back to plain symbols (strip .NS suffix)
-                        # IMPORTANT: index still has .NS suffix, so use k directly for lookup
-                        for k, v in close_series.items():
-                            clean_k = str(k).replace(".NS", "").upper()
-                            if not pd.isna(v) and float(v) > 0:
-                                close_price_map[clean_k] = float(v)
-                                # Use original k (with .NS) to look up in the other series
-                                if k in open_series.index and not pd.isna(open_series[k]):
-                                    open_price_map[clean_k] = float(open_series[k])
-                                if k in volume_series.index and not pd.isna(volume_series[k]):
-                                    volume_map[clean_k] = int(volume_series[k])
-                                if k in high_series.index and not pd.isna(high_series[k]):
-                                    high_price_map[clean_k] = float(high_series[k])
-                                if k in low_series.index and not pd.isna(low_series[k]):
-                                    low_price_map[clean_k] = float(low_series[k])
-                        # Successfully loaded chunk
-                        break
-                    else:
-                        raise ValueError("Empty DataFrame returned")
-                except Exception as chunk_ex:
-                    retries += 1
-                    if retries > max_retries:
-                        print(f"Error downloading quote chunk {idx+1}/{len(ticker_chunks)} after {max_retries} retries: {chunk_ex}")
-                        break
-                    print(f"Rate limited or quote download failed for chunk {idx+1}/{len(ticker_chunks)}. Retrying in {backoff}s... (Error: {chunk_ex})")
-                    time.sleep(backoff)
-                    backoff *= 2.0
-                    
-            # Short cooldown between successful chunks to keep Yahoo Finance happy
-            time.sleep(1.0)
+                            # Map prices back to plain symbols (strip .NS suffix)
+                            # IMPORTANT: index still has .NS suffix, so use k directly for lookup
+                            for k, v in close_series.items():
+                                clean_k = str(k).replace(".NS", "").upper()
+                                if not pd.isna(v) and float(v) > 0:
+                                    close_price_map[clean_k] = float(v)
+                                    # Use original k (with .NS) to look up in the other series
+                                    if k in open_series.index and not pd.isna(open_series[k]):
+                                        open_price_map[clean_k] = float(open_series[k])
+                                    if k in volume_series.index and not pd.isna(volume_series[k]):
+                                        volume_map[clean_k] = int(volume_series[k])
+                                    if k in high_series.index and not pd.isna(high_series[k]):
+                                        high_price_map[clean_k] = float(high_series[k])
+                                    if k in low_series.index and not pd.isna(low_series[k]):
+                                        low_price_map[clean_k] = float(low_series[k])
+                            # Successfully loaded chunk
+                            break
+                        else:
+                            raise ValueError("Empty DataFrame returned")
+                    except Exception as chunk_ex:
+                        retries += 1
+                        if retries > max_retries:
+                            print(f"Error downloading quote chunk {idx+1}/{len(ticker_chunks)} after {max_retries} retries: {chunk_ex}")
+                            break
+                        print(f"Rate limited or quote download failed for chunk {idx+1}/{len(ticker_chunks)}. Retrying in {backoff}s... (Error: {chunk_ex})")
+                        time.sleep(backoff)
+                        backoff *= 2.0
+                        
+                # Short cooldown between successful chunks to keep Yahoo Finance happy
+                time.sleep(1.0)
+            
+            st.session_state[cache_key_p1] = (open_price_map, close_price_map, volume_map, high_price_map, low_price_map)
                 
         # Fast filter Price > 200 (reduces scanning load immensely by removing penny and low-priced stocks)
         scan_symbols = [s for s in raw_symbols if close_price_map.get(s.strip().upper(), 0.0) > 200.0]
@@ -1575,74 +1585,82 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         max_dry = dry_zone_range[1]
             
         # Parallel bulk pre-download of historical OHLCV data to boost scan speed by 25x!
+        cache_key_p2 = f"p2_bulk_{universe_key}_{scan_timeframe}_{today_date_str}"
         bulk_data = {}
         if n_stocks > 0:
-            from config import LOOKBACK_DAYS
-            if "Weekly" in scan_timeframe:
-                yf_interval = "1wk"
-                yf_period = "4y"
-            elif "Monthly" in scan_timeframe:
-                yf_interval = "1mo"
-                yf_period = "17y"
+            if cache_key_p2 in st.session_state:
+                bulk_data = st.session_state[cache_key_p2]
+                status_box.text(f"Phase 2/3: Loaded {scan_timeframe} historical data from session cache!")
+                prog_bar.progress(1.0)
             else:
-                yf_interval = "1d"
-                yf_period = f"{LOOKBACK_DAYS}d"
+                from config import LOOKBACK_DAYS
+                if "Weekly" in scan_timeframe:
+                    yf_interval = "1wk"
+                    yf_period = "4y"
+                elif "Monthly" in scan_timeframe:
+                    yf_interval = "1mo"
+                    yf_period = "17y"
+                else:
+                    yf_interval = "1d"
+                    yf_period = f"{LOOKBACK_DAYS}d"
 
-            status_box.text(f"Phase 2/3: Downloading {scan_timeframe} historical OHLCV data...")
-            prog_bar.progress(0)
-            chunk_size = 100
-            sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
-            
-            def download_chunk(chunk_idx, chunk):
-                chunk_data = {}
-                chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
-                try:
-                    # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
-                    df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False)
-                    for sym in chunk:
-                        sym_ns = f"{sym.strip().upper()}.NS"
-                        try:
-                            if isinstance(df_bulk.columns, pd.MultiIndex):
-                                # yfinance 1.x multi-ticker: columns are (price_type, ticker)
-                                # Find the ticker in level 1
-                                all_tickers_bulk = df_bulk.columns.get_level_values(1).unique().tolist()
-                                matched = next((t for t in all_tickers_bulk if t.upper() == sym_ns.upper()), None)
-                                if matched is None:
-                                    continue
-                                # Extract slice for this ticker across all price types
-                                ticker_df = df_bulk.xs(matched, axis=1, level=1).copy()
-                            else:
-                                # Single ticker download (fallback)
-                                if len(chunk_ns) == 1:
-                                    ticker_df = df_bulk.copy()
-                                else:
-                                    continue
-
-                            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-                            if all(col in ticker_df.columns for col in required_cols):
-                                ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
-                                ticker_df = ticker_df[ticker_df['Volume'] > 0]
-                                if not ticker_df.empty:
-                                    ticker_df = ticker_df.reset_index()
-                                    ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
-                                    chunk_data[sym.strip().upper()] = ticker_df
-                        except Exception as sym_ex:
-                            print(f"Error extracting {sym_ns} from bulk download: {sym_ex}")
-                except Exception as chunk_ex:
-                    print(f"Error downloading parallel chunk {chunk_idx+1}: {chunk_ex}")
-                return chunk_data
-
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                futures = []
-                for chunk_idx, chunk in enumerate(sym_chunks):
-                    futures.append(executor.submit(download_chunk, chunk_idx, chunk))
+                status_box.text(f"Phase 2/3: Downloading {scan_timeframe} historical OHLCV data...")
+                prog_bar.progress(0)
+                chunk_size = 100
+                sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
                 
-                for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                    bulk_data.update(future.result())
-                    prog_bar.progress((i + 1) / len(sym_chunks))
-                    status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
+                def download_chunk(chunk_idx, chunk):
+                    chunk_data = {}
+                    chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
+                    try:
+                        # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
+                        df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False)
+                        for sym in chunk:
+                            sym_ns = f"{sym.strip().upper()}.NS"
+                            try:
+                                if isinstance(df_bulk.columns, pd.MultiIndex):
+                                    # yfinance 1.x multi-ticker: columns are (price_type, ticker)
+                                    # Find the ticker in level 1
+                                    all_tickers_bulk = df_bulk.columns.get_level_values(1).unique().tolist()
+                                    matched = next((t for t in all_tickers_bulk if t.upper() == sym_ns.upper()), None)
+                                    if matched is None:
+                                        continue
+                                    # Extract slice for this ticker across all price types
+                                    ticker_df = df_bulk.xs(matched, axis=1, level=1).copy()
+                                else:
+                                    # Single ticker download (fallback)
+                                    if len(chunk_ns) == 1:
+                                        ticker_df = df_bulk.copy()
+                                    else:
+                                        continue
+
+                                required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                                if all(col in ticker_df.columns for col in required_cols):
+                                    ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
+                                    ticker_df = ticker_df[ticker_df['Volume'] > 0]
+                                    if not ticker_df.empty:
+                                        ticker_df = ticker_df.reset_index()
+                                        ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
+                                        ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                        chunk_data[sym.strip().upper()] = ticker_df
+                            except Exception as sym_ex:
+                                print(f"Error extracting {sym_ns} from bulk download: {sym_ex}")
+                    except Exception as chunk_ex:
+                        print(f"Error downloading parallel chunk {chunk_idx+1}: {chunk_ex}")
+                    return chunk_data
+
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                    futures = []
+                    for chunk_idx, chunk in enumerate(sym_chunks):
+                        futures.append(executor.submit(download_chunk, chunk_idx, chunk))
+                    
+                    for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                        bulk_data.update(future.result())
+                        prog_bar.progress((i + 1) / len(sym_chunks))
+                        status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
+                
+                st.session_state[cache_key_p2] = bulk_data
         
         mcap_cache = {}
         status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities (Price > ₹200)...")
