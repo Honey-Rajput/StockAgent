@@ -1593,9 +1593,8 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
             chunk_size = 100
             sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
             
-            for chunk_idx, chunk in enumerate(sym_chunks):
-                prog_bar.progress(chunk_idx / len(sym_chunks))
-                status_box.text(f"Phase 2/3: Downloading historical data (Chunk {chunk_idx+1}/{len(sym_chunks)})...")
+            def download_chunk(chunk_idx, chunk):
+                chunk_data = {}
                 chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
                 try:
                     # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
@@ -1627,11 +1626,23 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                                     ticker_df = ticker_df.reset_index()
                                     ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
                                     ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
-                                    bulk_data[sym.strip().upper()] = ticker_df
+                                    chunk_data[sym.strip().upper()] = ticker_df
                         except Exception as sym_ex:
                             print(f"Error extracting {sym_ns} from bulk download: {sym_ex}")
                 except Exception as chunk_ex:
                     print(f"Error downloading parallel chunk {chunk_idx+1}: {chunk_ex}")
+                return chunk_data
+
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = []
+                for chunk_idx, chunk in enumerate(sym_chunks):
+                    futures.append(executor.submit(download_chunk, chunk_idx, chunk))
+                
+                for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                    bulk_data.update(future.result())
+                    prog_bar.progress((i + 1) / len(sym_chunks))
+                    status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
         
         mcap_cache = {}
         status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities (Price > ₹200)...")
@@ -1850,13 +1861,16 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         prog_bar.progress(0)
         
         # Parallel Execution Core
+        def process_and_fetch_if_needed(sym, df, *args):
+            if df is None:
+                df = fetch_ohlcv(sym)
+            return process_single_symbol(sym, df, *args)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, os.cpu_count() * 2 if os.cpu_count() else 8)) as executor:
             future_to_sym = {}
             for sym in scan_symbols:
                 df = bulk_data.get(sym.strip().upper())
-                if df is None:
-                    df = fetch_ohlcv(sym)
-                future = executor.submit(process_single_symbol, sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness)
+                future = executor.submit(process_and_fetch_if_needed, sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness)
                 future_to_sym[future] = sym
                 
             for i, future in enumerate(concurrent.futures.as_completed(future_to_sym)):
