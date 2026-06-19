@@ -39,6 +39,8 @@ def render():
     display_df['Consistency %'] = (df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
     display_df['Total Alerts'] = df['total_appearances']
     display_df['Days Appeared'] = df['days_appeared']
+    display_df['RSI'] = df['rsi'].fillna(0).round(2)
+    display_df['CCI'] = df['cci'].fillna(0).round(2)
     display_df['First Alert'] = df['first_seen_date']
     display_df['Most Recent'] = df['last_seen_date']
     display_df['Triggered Strategies'] = df['strategies']

@@ -1415,16 +1415,22 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         SELECT symbol, scan_date, 'VCS' as source FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'Monthly Momentum' as source FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+    ),
+    aggregated AS (
+        SELECT symbol, 
+               COUNT(DISTINCT scan_date) as total_appearances, 
+               COUNT(DISTINCT scan_date) as days_appeared,
+               MIN(scan_date) as first_seen_date, 
+               MAX(scan_date) as last_seen_date,
+               STRING_AGG(DISTINCT source, ', ') as strategies
+        FROM all_scans
+        GROUP BY symbol
+        HAVING COUNT(DISTINCT scan_date) > 1
     )
-    SELECT symbol, COUNT(*) as total_appearances, 
-           COUNT(DISTINCT scan_date) as days_appeared,
-           MIN(scan_date) as first_seen_date, 
-           MAX(scan_date) as last_seen_date,
-           STRING_AGG(DISTINCT source, ', ') as strategies
-    FROM all_scans
-    GROUP BY symbol
-    HAVING COUNT(DISTINCT scan_date) > 1
-    ORDER BY days_appeared DESC, total_appearances DESC
+    SELECT a.*, v.daily_rsi as rsi, v.daily_cci as cci
+    FROM aggregated a
+    LEFT JOIN scanned_vpa v ON a.symbol = v.symbol AND a.last_seen_date = v.scan_date
+    ORDER BY a.days_appeared DESC, a.total_appearances DESC
     LIMIT 200;
     """
     conn = None
@@ -1440,6 +1446,8 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
             r_dict = dict(r)
             r_dict['first_seen_date'] = r_dict['first_seen_date'].strftime('%Y-%m-%d')
             r_dict['last_seen_date'] = r_dict['last_seen_date'].strftime('%Y-%m-%d')
+            r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
+            r_dict['cci'] = float(r_dict.get('cci') or 0.0)
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading frequent stocks from database: {e}")
