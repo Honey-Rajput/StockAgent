@@ -4785,6 +4785,15 @@ with tab_stage2:
     
     if 'stage2_results' not in st.session_state:
         st.session_state.stage2_results = None
+        # Try loading from DB
+        today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+        try:
+            cached_stage2 = database.get_cached_stage2(today_str)
+            if cached_stage2:
+                st.session_state.stage2_results = cached_stage2
+                # Note: No need to show success message on silent load, just let the table render
+        except Exception as e:
+            print(f"Failed to load cached stage2: {e}")
         
     s2_col1, s2_col2 = st.columns([2, 8])
     with s2_col1:
@@ -4854,6 +4863,11 @@ with tab_stage2:
             # Sort by signal strength (score)
             s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
             st.session_state.stage2_results = s2_res
+            try:
+                today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+                database.save_stage2_only(today_ist_str, s2_res)
+            except Exception as e:
+                print(f"Failed to cache stage2 scan: {e}")
             st.success(f"Stage 2 Scan Complete! Found {len(s2_res)} setups.")
             
     st.markdown("---")
@@ -5037,6 +5051,8 @@ with tab_vpa:
                 'Major Trend': "Up" if d['major'] == 1 else "Down",
                 'Mid Trend': "Up" if d['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if d['minor'] == 1 else "Down",
+                'RSI': d.get('rsi', 0.0),
+                'CCI': d.get('cci', 0.0),
                 'Action': get_action_signal_text(d['minor'], d['mid'], d['major']),
                 'Signal': d_sig
             })
@@ -5053,6 +5069,8 @@ with tab_vpa:
                 'Major Trend': "Up" if w['major'] == 1 else "Down",
                 'Mid Trend': "Up" if w['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if w['minor'] == 1 else "Down",
+                'RSI': w.get('rsi', 0.0),
+                'CCI': w.get('cci', 0.0),
                 'Action': get_action_signal_text(w['minor'], w['mid'], w['major']),
                 'Signal': get_signal(w['minor'], w['mid'], w['major'])
             })
@@ -5068,6 +5086,8 @@ with tab_vpa:
                 'Major Trend': "Up" if m['major'] == 1 else "Down",
                 'Mid Trend': "Up" if m['mid'] == 1 else "Down",
                 'Minor Trend': "Up" if m['minor'] == 1 else "Down",
+                'RSI': m.get('rsi', 0.0),
+                'CCI': m.get('cci', 0.0),
                 'Action': get_action_signal_text(m['minor'], m['mid'], m['major']),
                 'Signal': get_signal(m['minor'], m['mid'], m['major'])
             })

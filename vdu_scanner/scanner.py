@@ -1342,7 +1342,7 @@ def calc_vpa_trends(df: pd.DataFrame) -> dict:
     Long term: 10, 40
     """
     if df is None or len(df) < 3:
-        return {"major": 0, "mid": 0, "minor": 0}
+        return {"major": 0, "mid": 0, "minor": 0, "rsi": 0.0, "cci": 0.0}
         
     def get_rsh(ps):
         low_shifted = df['Low'].shift(ps)
@@ -1402,13 +1402,30 @@ def calc_vpa_trends(df: pd.DataFrame) -> dict:
     # Evaluate Major trend
     major_trend = 1 if latest_j > 1 else (-1 if latest_j < -1 else 0)
     
-    # Evaluate Minor trend
-    minor_trend = 1 if latest_j2 > 1 else (-1 if latest_k2 > 1 else 0)
+    # Calculate RSI (14)
+    close_series = df['Close']
+    delta = close_series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    ema_gain = gain.ewm(com=13, adjust=False).mean()
+    ema_loss = loss.ewm(com=13, adjust=False).mean()
+    rs = ema_gain / (ema_loss + 1e-9)
+    rsi_series = 100 - (100 / (1 + rs))
+    rsi_val = float(rsi_series.iloc[-1]) if len(rsi_series) > 0 else 0.0
+
+    # Calculate CCI (14)
+    tp = (df['High'] + df['Low'] + close_series) / 3
+    sma_tp = tp.rolling(window=14).mean()
+    mad_manual = tp.rolling(window=14).apply(lambda x: abs(x - x.mean()).mean(), raw=True)
+    cci_series = (tp - sma_tp) / (0.015 * mad_manual + 1e-9)
+    cci_val = float(cci_series.iloc[-1]) if len(cci_series) > 0 and not pd.isna(cci_series.iloc[-1]) else 0.0
     
     return {
         "major": major_trend,
         "mid": mid_trend,
-        "minor": minor_trend
+        "minor": minor_trend,
+        "rsi": round(rsi_val, 2),
+        "cci": round(cci_val, 2)
     }
 
 def scan_vpa_trend(symbol: str, df: pd.DataFrame) -> dict | None:

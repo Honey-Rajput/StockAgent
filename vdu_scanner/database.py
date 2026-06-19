@@ -240,6 +240,29 @@ def init_db() -> bool:
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS scanned_stage2 (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            score DOUBLE PRECISION,
+            recommendation TEXT,
+            historical_high DOUBLE PRECISION,
+            base_bottom DOUBLE PRECISION,
+            sma7 DOUBLE PRECISION,
+            extension DOUBLE PRECISION,
+            rsi DOUBLE PRECISION,
+            cci DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
         """
     ]
     
@@ -317,7 +340,14 @@ def init_db() -> bool:
             "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
             "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
             "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS recommendation TEXT;"
+            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS recommendation TEXT;",
+            
+            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_rsi DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_cci DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_rsi DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_cci DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_rsi DOUBLE PRECISION;",
+            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_cci DOUBLE PRECISION;"
         ]
         for m in migrations:
             try:
@@ -686,9 +716,9 @@ def get_cached_vpa(date_str: str) -> list[dict]:
     """
     query = """
     SELECT symbol, company_name, cmp, day_change_pct, volume, vpa_score,
-           daily_major, daily_mid, daily_minor,
-           weekly_major, weekly_mid, weekly_minor,
-           monthly_major, monthly_mid, monthly_minor,
+           daily_major, daily_mid, daily_minor, daily_rsi, daily_cci,
+           weekly_major, weekly_mid, weekly_minor, weekly_rsi, weekly_cci,
+           monthly_major, monthly_mid, monthly_minor, monthly_rsi, monthly_cci,
            scan_date
     FROM scanned_vpa
     WHERE scan_date = %s;
@@ -710,17 +740,23 @@ def get_cached_vpa(date_str: str) -> list[dict]:
             r_dict['daily'] = {
                 "major": int(r_dict.get('daily_major') or 0),
                 "mid": int(r_dict.get('daily_mid') or 0),
-                "minor": int(r_dict.get('daily_minor') or 0)
+                "minor": int(r_dict.get('daily_minor') or 0),
+                "rsi": float(r_dict.get('daily_rsi') or 0.0),
+                "cci": float(r_dict.get('daily_cci') or 0.0)
             }
             r_dict['weekly'] = {
                 "major": int(r_dict.get('weekly_major') or 0),
                 "mid": int(r_dict.get('weekly_mid') or 0),
-                "minor": int(r_dict.get('weekly_minor') or 0)
+                "minor": int(r_dict.get('weekly_minor') or 0),
+                "rsi": float(r_dict.get('weekly_rsi') or 0.0),
+                "cci": float(r_dict.get('weekly_cci') or 0.0)
             }
             r_dict['monthly'] = {
                 "major": int(r_dict.get('monthly_major') or 0),
                 "mid": int(r_dict.get('monthly_mid') or 0),
-                "minor": int(r_dict.get('monthly_minor') or 0)
+                "minor": int(r_dict.get('monthly_minor') or 0),
+                "rsi": float(r_dict.get('monthly_rsi') or 0.0),
+                "cci": float(r_dict.get('monthly_cci') or 0.0)
             }
             results.append(r_dict)
     except Exception as e:
@@ -781,10 +817,10 @@ def save_vpa_only(date_str: str, vpa_results: list[dict]) -> bool:
         
         insert_vpa_query = """
         INSERT INTO scanned_vpa (symbol, company_name, cmp, day_change_pct, volume, vpa_score, 
-                                 daily_major, daily_mid, daily_minor, 
-                                 weekly_major, weekly_mid, weekly_minor, 
-                                 monthly_major, monthly_mid, monthly_minor, scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                                 daily_major, daily_mid, daily_minor, daily_rsi, daily_cci,
+                                 weekly_major, weekly_mid, weekly_minor, weekly_rsi, weekly_cci,
+                                 monthly_major, monthly_mid, monthly_minor, monthly_rsi, monthly_cci, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         for r in vpa_results:
             cur.execute(insert_vpa_query, (
@@ -797,12 +833,18 @@ def save_vpa_only(date_str: str, vpa_results: list[dict]) -> bool:
                 int(r.get('daily', {}).get('major', 0)),
                 int(r.get('daily', {}).get('mid', 0)),
                 int(r.get('daily', {}).get('minor', 0)),
+                float(r.get('daily', {}).get('rsi', 0.0)),
+                float(r.get('daily', {}).get('cci', 0.0)),
                 int(r.get('weekly', {}).get('major', 0)),
                 int(r.get('weekly', {}).get('mid', 0)),
                 int(r.get('weekly', {}).get('minor', 0)),
+                float(r.get('weekly', {}).get('rsi', 0.0)),
+                float(r.get('weekly', {}).get('cci', 0.0)),
                 int(r.get('monthly', {}).get('major', 0)),
                 int(r.get('monthly', {}).get('mid', 0)),
                 int(r.get('monthly', {}).get('minor', 0)),
+                float(r.get('monthly', {}).get('rsi', 0.0)),
+                float(r.get('monthly', {}).get('cci', 0.0)),
                 date_str
             ))
         conn.commit()
@@ -812,6 +854,82 @@ def save_vpa_only(date_str: str, vpa_results: list[dict]) -> bool:
         if conn:
             conn.close()
         print(f"Error saving VPA only: {e}")
+        return False
+
+def get_cached_stage2(date_str: str) -> list[dict]:
+    """
+    Retrieves the cached Early Stage 2 setups scanned on a specific date.
+    """
+    query = """
+    SELECT symbol, company_name, cmp, buy_price, exit_price, target_price, confidence, score, recommendation,
+           historical_high, base_bottom, sma7, extension, rsi, cci, scan_date
+    FROM scanned_stage2
+    WHERE scan_date = %s;
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            # Convert decimal back to float if needed
+            for k in ['cmp', 'buy_price', 'exit_price', 'target_price', 'score', 'historical_high', 'base_bottom', 'sma7', 'extension', 'rsi', 'cci']:
+                if r_dict.get(k) is not None:
+                    r_dict[k] = float(r_dict[k])
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading cached stage2 from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+
+def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
+    """
+    UPSERTs only the Stage 2 results for the given date.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_stage2 WHERE scan_date = %s;", (date_str,))
+        
+        insert_query = """
+        INSERT INTO scanned_stage2 (symbol, company_name, cmp, buy_price, exit_price, target_price, confidence, 
+                                    score, recommendation, historical_high, base_bottom, sma7, extension, rsi, cci, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        for r in stage2_results:
+            cur.execute(insert_query, (
+                str(r['symbol']),
+                str(r.get('company_name', "")),
+                float(r['cmp']),
+                float(r['buy_price']),
+                float(r['exit_price']),
+                float(r['target_price']),
+                str(r['confidence']),
+                float(r['score']),
+                str(r['recommendation']),
+                float(r['historical_high']),
+                float(r['base_bottom']),
+                float(r['sma7']),
+                float(r['extension']),
+                float(r.get('rsi', 0.0)),
+                float(r.get('cci', 0.0)),
+                date_str
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        if conn:
+            conn.close()
+        print(f"Error saving stage2 only: {e}")
         return False
 
 def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], wt_cross: list[dict], total_scanned: int, vcs_results: list[dict] = None, vpa_results: list[dict] = None) -> bool:
