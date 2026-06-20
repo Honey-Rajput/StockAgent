@@ -938,7 +938,7 @@ def get_cached_stage2(date_str: str) -> list[dict]:
     return results
 
 def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
-    """Saves only the Volume Profile results without overwriting the main scan log."""
+    """Saves only the Volume Profile results. Accepts raw scanner output format."""
     if not vp_results:
         return True
         
@@ -964,17 +964,57 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
         """
         vp_data = []
         for v in vp_results:
+            # Handle both raw scanner output and formatted export keys
+            sym = v.get('symbol', v.get('Symbol', ''))
+            cmp = v.get('cmp', v.get('CMP', 0))
+            mcap = v.get('market_cap_cr', v.get('Market Cap (Cr)', 0))
+            
+            # Extract zone/pos from nested dicts (raw) or flat keys (formatted)
+            d = v.get('daily')
+            w = v.get('weekly')
+            m = v.get('monthly')
+            
+            if isinstance(d, dict):
+                daily_zone = d.get('zone', '') if d else ''
+                daily_pos = d.get('position_pct', None) if d else None
+            else:
+                daily_zone = v.get('Daily Zone', '')
+                daily_pos = v.get('Daily Pos', None)
+                if daily_pos == '':
+                    daily_pos = None
+                    
+            if isinstance(w, dict):
+                weekly_zone = w.get('zone', '') if w else ''
+                weekly_pos = w.get('position_pct', None) if w else None
+            else:
+                weekly_zone = v.get('Weekly Zone', '')
+                weekly_pos = v.get('Weekly Pos', None)
+                if weekly_pos == '':
+                    weekly_pos = None
+                    
+            if isinstance(m, dict):
+                monthly_zone = m.get('zone', '') if m else ''
+                monthly_pos = m.get('position_pct', None) if m else None
+            else:
+                monthly_zone = v.get('Monthly Zone', '')
+                monthly_pos = v.get('Monthly Pos', None)
+                if monthly_pos == '':
+                    monthly_pos = None
+            
+            # Clean symbol (remove .NS suffix for storage)
+            clean_sym = str(sym).replace('.NS', '').strip().upper()
+            
             vp_data.append((
-                v['Symbol'],
-                v.get('Company Name', ''),
-                v['CMP'],
-                v.get('Market Cap (Cr)', 0),
-                v.get('Daily Zone', ''),
-                v.get('Daily Pos', 0.0) if v.get('Daily Pos') != '' else None,
-                v.get('Weekly Zone', ''),
-                v.get('Weekly Pos', 0.0) if v.get('Weekly Pos') != '' else None,
-                v.get('Monthly Zone', ''),
-                v.get('Monthly Pos', 0.0) if v.get('Monthly Pos') != '' else None,
+                clean_sym,
+                '',  # company_name not available from scanner
+                float(cmp) if cmp else 0,
+                float(mcap) if mcap else 0,
+                daily_zone,
+                float(daily_pos) if daily_pos is not None else None,
+                weekly_zone,
+                float(weekly_pos) if weekly_pos is not None else None,
+                monthly_zone,
+                float(monthly_pos) if monthly_pos is not None else None,
                 date_str
             ))
             

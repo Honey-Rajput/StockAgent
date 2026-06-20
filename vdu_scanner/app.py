@@ -5224,6 +5224,21 @@ if selected_module == "📊 Volume Profile":
     st.markdown("### 📊 Volume Profile Zones (Daily, Weekly, Monthly)")
     st.info("Scans ALL NSE listed stocks for POC, VAH, VAL levels. Filters: Price > ₹100, Market Cap > 2000 Cr.")
     
+    # Auto-load cached results from database on first visit
+    if 'vp_results' not in st.session_state or not st.session_state.vp_results:
+        try:
+            # Try loading today's cached results first, then search last 10 days
+            from datetime import timedelta
+            for days_back in range(10):
+                check_date = (datetime.now(IST_TIMEZONE) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+                cached = database.get_cached_volume_profile(check_date)
+                if cached:
+                    st.session_state.vp_results = cached
+                    st.caption(f"📅 Loaded cached results from {check_date}")
+                    break
+        except Exception as e:
+            print(f"Failed to auto-load VP cache: {e}")
+    
     col1, col2 = st.columns([3, 7])
     with col1:
         run_vp_btn = st.button("🚀 Run Advanced Volume Profile Scan", use_container_width=True)
@@ -5239,8 +5254,6 @@ if selected_module == "📊 Volume Profile":
                 from data_fetcher import get_all_nse_symbols
                 import yfinance as yf
                 import pandas as pd
-                import joblib
-                import os
                 import concurrent.futures
                 from scanner import scan_volume_profile
                 
