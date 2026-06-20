@@ -3,6 +3,16 @@ import pandas as pd
 import numpy as np
 from config import DRY_VOLUME_THRESHOLD, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS
 
+# Pre-load scipy at module level to avoid repeated import overhead in scan_structural_vcp
+try:
+    from scipy.signal import find_peaks as _scipy_find_peaks
+except ImportError:
+    _scipy_find_peaks = None
+
+# Import the pre-computation accelerator
+from indicators import build_rich_analysis_from_indicators
+
+
 def scan_stock(
     symbol: str, 
     df: pd.DataFrame, 
@@ -10,7 +20,8 @@ def scan_stock(
     max_dry_days: int = DRY_ZONE_MAX_DAYS,
     min_volume_ratio: float = MIN_VOLUME_RATIO,
     min_price_change: float = MIN_PRICE_CHANGE,
-    min_dry_spikes: int = 2
+    min_dry_spikes: int = 2,
+    indicators: dict = None
 ) -> dict | None:
     """
     Evaluates a stock's OHLCV history for the Volume Dry-Up (VDU) Breakout pattern.
@@ -97,16 +108,20 @@ def scan_stock(
         return None
         
     # --- STEP 4: Signal Strength Score (0 to 100) & Indicators ---
-    df_indicators = df.copy()
-    df_indicators['MA50'] = df_indicators['Close'].rolling(window=50).mean()
+    # Use pre-computed indicators DataFrame if available, otherwise compute
+    if indicators is not None and 'df' in indicators:
+        df_indicators = indicators['df']
+    else:
+        df_indicators = df.copy()
+        df_indicators['MA50'] = df_indicators['Close'].rolling(window=50).mean()
+        df_indicators['MA200'] = df_indicators['Close'].rolling(window=200).mean()
     
-    today_ma = df_indicators['MA50'].iloc[-1]
+    today_ma = df_indicators['MA50'].iloc[-1] if 'MA50' in df_indicators.columns else np.nan
     above_50dma = False
     if not pd.isna(today_ma):
         above_50dma = today['Close'] > today_ma
         
-    df_indicators['MA200'] = df_indicators['Close'].rolling(window=200).mean()
-    today_ma200 = df_indicators['MA200'].iloc[-1]
+    today_ma200 = df_indicators['MA200'].iloc[-1] if 'MA200' in df_indicators.columns else np.nan
     above_200dma = False
     if not pd.isna(today_ma200):
         above_200dma = today['Close'] > today_ma200
@@ -153,7 +168,7 @@ def scan_stock(
         f"Buy around CMP ₹{buy_price:.2f}. Set stop loss at swing low ₹{exit_price:.2f} (risk {(buy_price-exit_price)/buy_price*100:.1f}%) "
         f"with a target of ₹{target_price:.2f} (potential +15.0%)."
     )
-    recommendation = compute_rich_analysis(df_indicators, symbol, "VDU Breakout", base_rec)
+    recommendation = compute_rich_analysis(df_indicators, symbol, "VDU Breakout", base_rec, indicators=indicators)
     
     from config import get_company_name
     company_name = get_company_name(symbol)
@@ -184,7 +199,7 @@ def scan_stock(
         "recommendation": recommendation
     }
 
-def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = -40.0) -> dict | None:
+def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = -40.0, indicators: dict = None) -> dict | None:
     """
     Scans a stock's history to calculate WaveTrend with Crosses [LazyBear] (WT_CROSS_LB).
     Returns WT details if wt1 <= wt_oversold_threshold (oversold zone).
@@ -203,25 +218,25 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     if df is None or len(df) < 40:
         return None
         
-    df_copy = df.copy()
-    
-    # Typical price: hlc3
-    ap = (df_copy['High'] + df_copy['Low'] + df_copy['Close']) / 3.0
-    
-    # esa = ema(ap, 10)
-    esa = ap.ewm(span=10, adjust=False).mean()
-    
-    # d = ema(abs(ap - esa), 10)
-    d = (ap - esa).abs().ewm(span=10, adjust=False).mean()
-    
-    # ci = (ap - esa) / (0.015 * d)
-    ci = (ap - esa) / (0.015 * d + 1e-10)
-    
-    # wt1 = tci = ema(ci, 21)
-    wt1 = ci.ewm(span=21, adjust=False).mean()
-    
-    # wt2 = sma(wt1, 4)
-    wt2 = wt1.rolling(window=4).mean()
+    # Use pre-computed WaveTrend from indicators if available
+    if indicators is not None and 'df' in indicators and 'WT1' in indicators['df'].columns:
+        df_copy = indicators['df']
+        wt1 = df_copy['WT1']
+        wt2 = df_copy['WT2']
+    else:
+        df_copy = df.copy()
+        # Typical price: hlc3
+        ap = (df_copy['High'] + df_copy['Low'] + df_copy['Close']) / 3.0
+        # esa = ema(ap, 10)
+        esa = ap.ewm(span=10, adjust=False).mean()
+        # d = ema(abs(ap - esa), 10)
+        d = (ap - esa).abs().ewm(span=10, adjust=False).mean()
+        # ci = (ap - esa) / (0.015 * d)
+        ci = (ap - esa) / (0.015 * d + 1e-10)
+        # wt1 = tci = ema(ci, 21)
+        wt1 = ci.ewm(span=21, adjust=False).mean()
+        # wt2 = sma(wt1, 4)
+        wt2 = wt1.rolling(window=4).mean()
     
     today_wt1 = wt1.iloc[-1]
     today_wt2 = wt2.iloc[-1]
@@ -257,9 +272,11 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     exit_price = round(buy_price * 0.95, 2)
     target_price = round(buy_price * 1.12, 2)
     
-    # Calculate SMAs to see if price is trading above 20 SMA & 50 SMA
-    df_copy['SMA20'] = df_copy['Close'].rolling(window=20).mean()
-    df_copy['SMA50'] = df_copy['Close'].rolling(window=50).mean()
+    # Use pre-computed SMAs if available, otherwise compute
+    if 'SMA20' not in df_copy.columns:
+        df_copy['SMA20'] = df_copy['Close'].rolling(window=20).mean()
+    if 'SMA50' not in df_copy.columns:
+        df_copy['SMA50'] = df_copy['Close'].rolling(window=50).mean()
     today_sma20 = df_copy['SMA20'].iloc[-1]
     today_sma50 = df_copy['SMA50'].iloc[-1]
     above_20sma = bool(buy_price > today_sma20) if not pd.isna(today_sma20) else False
@@ -279,7 +296,7 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
             f"No green dot cross yet, but prime for accumulation. Buy on pullbacks near ₹{buy_price:.2f} "
             f"with stop loss at ₹{exit_price:.2f} and target bounce of ₹{target_price:.2f}."
         )
-    recommendation = compute_rich_analysis(df_copy, symbol, "WaveTrend Cross", base_rec)
+    recommendation = compute_rich_analysis(df_copy, symbol, "WaveTrend Cross", base_rec, indicators=indicators)
 
     from config import get_company_name
     company_name = get_company_name(symbol)
@@ -303,11 +320,16 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
         "above_50sma": above_50sma
     }
 
-def compute_rich_analysis(df, symbol, strategy_name, base_rec_text):
+def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=None):
     """
     Computes CCI, RSI, EMA, SMA and checklist triggers, 
     and returns a structured JSON recommendation string.
+    When indicators dict is provided, delegates to the fast pre-computed version.
     """
+    # FAST PATH: use pre-computed indicators if available
+    if indicators is not None:
+        return build_rich_analysis_from_indicators(indicators, symbol, strategy_name, base_rec_text)
+
     if df is None or len(df) < 14:
         return base_rec_text
         
@@ -940,7 +962,7 @@ def run_weekly_momentum_update(base_date_str: str, today_str: str) -> list[dict]
         
     return updated_results
 
-def scan_vcs(symbol: str, df: pd.DataFrame, lenShort=13, lenLong=63, lenVol=50, sensitivity=2.0, max_score=10.0) -> dict | None:
+def scan_vcs(symbol: str, df: pd.DataFrame, lenShort=13, lenLong=63, lenVol=50, sensitivity=2.0, max_score=10.0, indicators: dict = None) -> dict | None:
     """
     Scans a stock for Volatility Contraction (VCS) based on ATR, StdDev, and Volume contraction.
     """
@@ -948,32 +970,45 @@ def scan_vcs(symbol: str, df: pd.DataFrame, lenShort=13, lenLong=63, lenVol=50, 
         return None
 
     try:
-        df_copy = df.copy()
+        # Use pre-computed indicators DataFrame if available (all VCS columns are pre-computed)
+        if indicators is not None and 'df' in indicators:
+            df_copy = indicators['df'].copy()
+            # The ratioATR, ratioStd, volRatio_vcs columns are already computed
+            if 'ratioATR' in df_copy.columns and 'ratioStd' in df_copy.columns:
+                # Rename volRatio_vcs back to volRatio for VCS scoring
+                if 'volRatio_vcs' in df_copy.columns:
+                    df_copy['volRatio'] = df_copy['volRatio_vcs']
+            else:
+                # Fallback: compute VCS ratios (shouldn't happen but safety)
+                indicators = None
 
-        df_copy["prev_close"] = df_copy["Close"].shift(1)
+        if indicators is None:
+            df_copy = df.copy()
 
-        tr1 = df_copy["High"] - df_copy["Low"]
-        tr2 = (df_copy["High"] - df_copy["prev_close"]).abs()
-        tr3 = (df_copy["Low"] - df_copy["prev_close"]).abs()
+            df_copy["prev_close"] = df_copy["Close"].shift(1)
 
-        df_copy["TR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            tr1 = df_copy["High"] - df_copy["Low"]
+            tr2 = (df_copy["High"] - df_copy["prev_close"]).abs()
+            tr3 = (df_copy["Low"] - df_copy["prev_close"]).abs()
 
-        # ATR contraction (Normalized by price)
-        df_copy["TR_pct"] = df_copy["TR"] / df_copy["prev_close"].replace(0, pd.NA)
-        df_copy["trShort"] = df_copy["TR_pct"].rolling(lenShort).mean()
-        df_copy["trLong"] = df_copy["TR_pct"].rolling(lenLong).mean()
-        df_copy["ratioATR"] = df_copy["trShort"] / df_copy["trLong"]
+            df_copy["TR"] = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-        # STANDARD DEVIATION CONTRACTION (Using daily returns)
-        df_copy["ret"] = df_copy["Close"].pct_change()
-        df_copy["stdShort"] = df_copy["ret"].rolling(lenShort).std()
-        df_copy["stdLong"] = df_copy["ret"].rolling(lenLong).std()
-        df_copy["ratioStd"] = df_copy["stdShort"] / df_copy["stdLong"]
+            # ATR contraction (Normalized by price)
+            df_copy["TR_pct"] = df_copy["TR"] / df_copy["prev_close"].replace(0, pd.NA)
+            df_copy["trShort"] = df_copy["TR_pct"].rolling(lenShort).mean()
+            df_copy["trLong"] = df_copy["TR_pct"].rolling(lenLong).mean()
+            df_copy["ratioATR"] = df_copy["trShort"] / df_copy["trLong"]
 
-        # VOLUME CONTRACTION
-        df_copy["volAvg"] = df_copy["Volume"].rolling(lenVol).mean()
-        df_copy["volShort"] = df_copy["Volume"].rolling(5).mean()
-        df_copy["volRatio"] = df_copy["volShort"] / df_copy["volAvg"]
+            # STANDARD DEVIATION CONTRACTION (Using daily returns)
+            df_copy["ret"] = df_copy["Close"].pct_change()
+            df_copy["stdShort"] = df_copy["ret"].rolling(lenShort).std()
+            df_copy["stdLong"] = df_copy["ret"].rolling(lenLong).std()
+            df_copy["ratioStd"] = df_copy["stdShort"] / df_copy["stdLong"]
+
+            # VOLUME CONTRACTION
+            df_copy["volAvg"] = df_copy["Volume"].rolling(lenVol).mean()
+            df_copy["volShort"] = df_copy["Volume"].rolling(5).mean()
+            df_copy["volRatio"] = df_copy["volShort"] / df_copy["volAvg"]
 
         # TREND FILTER (Minervini VCP requires an uptrend)
         is_weekly = False
@@ -1038,7 +1073,7 @@ def scan_vcs(symbol: str, df: pd.DataFrame, lenShort=13, lenLong=63, lenVol=50, 
             confidence = "High" if today_score < 5 else "Medium"
             
             base_rec = f"VCS final score is {today_score:.2f} (below {max_score}), indicating strict setup conditions met. Buy near ₹{buy_price:.2f}, SL ₹{exit_price:.2f}, Target ₹{target_price:.2f}."
-            recommendation = compute_rich_analysis(df_copy, symbol, "VCS Setup", base_rec)
+            recommendation = compute_rich_analysis(df_copy, symbol, "VCS Setup", base_rec, indicators=indicators)
 
             return {
                 "symbol": symbol.strip().upper(),
@@ -1186,20 +1221,9 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
         print(f"Stage 2 Early Breakout scan error for {symbol}: {e}")
         return None
 
-def calc_atr(df: pd.DataFrame, length: int) -> pd.Series:
-    """Calculate Average True Range (RMA method as in Pine Script atr)"""
-    high = df['High']
-    low = df['Low']
-    close_prev = df['Close'].shift(1)
-    
-    tr1 = high - low
-    tr2 = (high - close_prev).abs()
-    tr3 = (low - close_prev).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    
-    # Pine Script atr() uses RMA (alpha = 1/length)
-    atr = tr.ewm(alpha=1/length, adjust=False).mean()
-    return atr
+def calc_atr_from_tr(tr: pd.Series, length: int) -> pd.Series:
+    """Calculate Average True Range using pre-computed TR (RMA method as in Pine Script)"""
+    return tr.ewm(alpha=1/length, adjust=False).mean()
 
 def calc_vpa_trends(df: pd.DataFrame) -> dict:
     """
@@ -1210,14 +1234,21 @@ def calc_vpa_trends(df: pd.DataFrame) -> dict:
     if df is None or len(df) < 3:
         return {"major": 0, "mid": 0, "minor": 0, "rsi": 0.0, "cci": 0.0}
         
+    # Pre-compute True Range ONCE instead of 72 times
+    close_prev = df['Close'].shift(1)
+    tr1 = df['High'] - df['Low']
+    tr2 = (df['High'] - close_prev).abs()
+    tr3 = (df['Low'] - close_prev).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        
     def get_rsh(ps):
         low_shifted = df['Low'].shift(ps)
-        atr_val = calc_atr(df, ps)
+        atr_val = calc_atr_from_tr(tr, ps)
         return (df['High'] - low_shifted) / (atr_val * np.sqrt(ps))
 
     def get_rsl(ps):
         high_shifted = df['High'].shift(ps)
-        atr_val = calc_atr(df, ps)
+        atr_val = calc_atr_from_tr(tr, ps)
         return (high_shifted - df['Low']) / (atr_val * np.sqrt(ps))
         
     def get_max_rsh(start_ps, end_ps):
@@ -1297,7 +1328,7 @@ def calc_vpa_trends(df: pd.DataFrame) -> dict:
         "cci": round(cci_val, 2)
     }
 
-def scan_vpa_trend(symbol: str, df: pd.DataFrame) -> dict | None:
+def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> dict | None:
     """
     Scans a stock for VPA Trend across Daily, Weekly, and Monthly timeframes.
     Returns a dictionary of results.
@@ -1358,7 +1389,7 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame) -> dict | None:
         print(f"Error in VPA scan for {symbol}: {e}")
         return None
 
-def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivot_tolerance: float = 0.05, max_dist_to_pivot: float = 0.10) -> dict | None:
+def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivot_tolerance: float = 0.05, max_dist_to_pivot: float = 0.10, indicators: dict = None) -> dict | None:
     """
     Scans for a structural Volatility Contraction Pattern (VCP).
     Looks for a flat top resistance (pivot), successive higher lows, and volume dry-up.
@@ -1367,8 +1398,11 @@ def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivo
         return None
         
     try:
-        from scipy.signal import find_peaks
-        import numpy as np
+        # Use module-level scipy import instead of per-call import
+        if _scipy_find_peaks is None:
+            print("scipy is required for structural VCP scan. Please run: pip install scipy")
+            return None
+        find_peaks = _scipy_find_peaks
         
         df_recent = df.tail(lookback).copy()
         
@@ -1435,7 +1469,7 @@ def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivo
                    f"Volume dried up to {vol_5d_avg/vol_50d_avg*100:.0f}% of 50d avg. " \
                    f"Buy near ₹{buy_price:.2f}, SL ₹{exit_price:.2f}, Target ₹{target_price:.2f}."
         
-        recommendation = compute_rich_analysis(df, symbol, "Structural VCP", base_rec)
+        recommendation = compute_rich_analysis(df, symbol, "Structural VCP", base_rec, indicators=indicators)
             
         return {
             "symbol": symbol.strip().upper(),
@@ -1454,9 +1488,6 @@ def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivo
             "confidence": confidence,
             "recommendation": recommendation
         }
-    except ImportError:
-        print("scipy is required for structural VCP scan. Please run: pip install scipy")
-        return None
     except Exception as e:
         print(f"Error in structural VCP scan for {symbol}: {e}")
         return None

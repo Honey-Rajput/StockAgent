@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
 from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector
 from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
+from indicators import precompute_indicators
 
 import watchlist
 from utils import inject_premium_css, get_signal_badge_html, get_day_change_badge_html
@@ -1007,7 +1008,7 @@ def run_background_momentum_scans():
                                     price_map_wm[sym_clean] = val
                 except Exception as e:
                     print(f"Background quote chunk {chunk_idx+1} failed: {e}")
-                _time.sleep(0.3)
+                _time.sleep(0.05)  # Reduced from 0.3s — yfinance rate-limits at request level
 
             # ==========================================
             # STEP 2: FETCH MARKET CAPS FOR PASSED STOCKS
@@ -1047,7 +1048,7 @@ def run_background_momentum_scans():
             else:
                 MOMENTUM_SCAN_STATUS["status_text"] = f"Step 3/5 - Scanning {len(mm_candidates)} stocks for Monthly Momentum..."
                 mm_results = []
-                monthly_chunk_size = 50
+                monthly_chunk_size = 80  # Increased from 50 for fewer API calls
                 mm_chunks = [mm_candidates[i:i+monthly_chunk_size] for i in range(0, len(mm_candidates), monthly_chunk_size)]
                 
                 for chunk_idx, chunk in enumerate(mm_chunks):
@@ -1091,7 +1092,7 @@ def run_background_momentum_scans():
                                 pass
                     except Exception as e:
                         print(f"Monthly download chunk {chunk_idx+1} failed: {e}")
-                    _time.sleep(0.3)
+                    _time.sleep(0.05)  # Reduced from 0.3s — yfinance rate-limits at request level
 
             # ==========================================
             # STEP 4: WEEKLY MOMENTUM SCAN OR UPDATE
@@ -1103,7 +1104,7 @@ def run_background_momentum_scans():
             else:
                 MOMENTUM_SCAN_STATUS["status_text"] = f"Step 4/5 - Scanning {len(wm_candidates)} stocks for Weekly Momentum..."
                 wm_results = []
-                weekly_chunk_size = 60
+                weekly_chunk_size = 100  # Increased from 60 for fewer API calls
                 wm_chunks = [wm_candidates[i:i+weekly_chunk_size] for i in range(0, len(wm_candidates), weekly_chunk_size)]
                 
                 for chunk_idx, chunk in enumerate(wm_chunks):
@@ -1470,12 +1471,16 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
             
             status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
             import time
-            chunk_size = 300
+            chunk_size = 500  # Increased from 300 for fewer API calls
             ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
             
-            for idx, chunk in enumerate(ticker_chunks):
-                prog_bar.progress(idx / len(ticker_chunks))
-                status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {idx+1}/{len(ticker_chunks)})...")
+            # Thread-safe accumulators for parallel quote downloads
+            import threading as _p1_threading
+            _p1_lock = _p1_threading.Lock()
+            
+            def _download_quote_chunk(idx_chunk_pair):
+                idx, chunk = idx_chunk_pair
+                _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
                 retries = 0
                 max_retries = 3
                 backoff = 2.0
@@ -1514,18 +1519,18 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                             for k, v in close_series.items():
                                 clean_k = str(k).replace(".NS", "").upper()
                                 if not pd.isna(v) and float(v) > 0:
-                                    close_price_map[clean_k] = float(v)
+                                    _close[clean_k] = float(v)
                                     # Use original k (with .NS) to look up in the other series
                                     if k in open_series.index and not pd.isna(open_series[k]):
-                                        open_price_map[clean_k] = float(open_series[k])
+                                        _open[clean_k] = float(open_series[k])
                                     if k in volume_series.index and not pd.isna(volume_series[k]):
-                                        volume_map[clean_k] = int(volume_series[k])
+                                        _vol[clean_k] = int(volume_series[k])
                                     if k in high_series.index and not pd.isna(high_series[k]):
-                                        high_price_map[clean_k] = float(high_series[k])
+                                        _high[clean_k] = float(high_series[k])
                                     if k in low_series.index and not pd.isna(low_series[k]):
-                                        low_price_map[clean_k] = float(low_series[k])
+                                        _low[clean_k] = float(low_series[k])
                             # Successfully loaded chunk
-                            break
+                            return (_open, _close, _vol, _high, _low)
                         else:
                             raise ValueError("Empty DataFrame returned")
                     except Exception as chunk_ex:
@@ -1536,11 +1541,23 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                         print(f"Rate limited or quote download failed for chunk {idx+1}/{len(ticker_chunks)}. Retrying in {backoff}s... (Error: {chunk_ex})")
                         time.sleep(backoff)
                         backoff *= 2.0
-                        
-                # Short cooldown between successful chunks to keep Yahoo Finance happy
-                time.sleep(1.0)
+                return ({}, {}, {}, {}, {})
+            
+            # Parallel execution of Phase 1 quote downloads
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(ticker_chunks))) as p1_executor:
+                chunk_pairs = list(enumerate(ticker_chunks))
+                for i, result in enumerate(p1_executor.map(_download_quote_chunk, chunk_pairs)):
+                    _o, _c, _v, _h, _l = result
+                    open_price_map.update(_o)
+                    close_price_map.update(_c)
+                    volume_map.update(_v)
+                    high_price_map.update(_h)
+                    low_price_map.update(_l)
+                    prog_bar.progress((i + 1) / len(ticker_chunks))
+                    status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {i+1}/{len(ticker_chunks)})...")
             
             st.session_state[cache_key_p1] = (open_price_map, close_price_map, volume_map, high_price_map, low_price_map)
+
                 
         # Fast filter Price > 200 (reduces scanning load immensely by removing penny and low-priced stocks)
         scan_symbols = [s for s in raw_symbols if close_price_map.get(s.strip().upper(), 0.0) > 200.0]
@@ -1692,7 +1709,16 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
             if today_close_val <= 200.0:
                 res["failed"] = True
                 return res
-                
+            
+            # =====================================================================
+            # PRE-COMPUTE ALL INDICATORS ONCE (eliminates 5-8x redundant recalc)
+            # =====================================================================
+            from indicators import precompute_indicators
+            ind = precompute_indicators(df)
+            # Use the enriched DataFrame from pre-computation for all subsequent work
+            if ind is not None and 'df' in ind:
+                df = ind['df']
+            
             today_open_val = float(df['Open'].iloc[-1])
             today_close_val = float(df['Close'].iloc[-1])
             yesterday_close_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else today_open_val
@@ -1712,7 +1738,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                 base_gap_rec = (f"Bullish gap-up breakout of {gap_pct:.2f}% on strong momentum. Buy near ₹{gap_buy_price:.2f} "
                                 f"with a stop loss below today's open price at ₹{gap_exit_price:.2f} "
                                 f"targeting dynamic swing target ₹{gap_target_price:.2f} ({target_pct_str}).")
-                gap_recommendation = compute_rich_analysis(df, sym, "Gap-Up", base_gap_rec)
+                gap_recommendation = compute_rich_analysis(df, sym, "Gap-Up", base_gap_rec, indicators=ind)
                 res["gapup"] = {
                     "symbol": sym.strip().upper(), "company_name": get_company_name(sym),
                     "prev_close": yesterday_close_val, "open_price": today_open_val, "cmp": today_close_val,
@@ -1722,12 +1748,8 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     "confidence": gap_confidence, "recommendation": gap_recommendation
                 }
                 
-            df_ma = df.copy()
-            df_ma['SMA20'] = df_ma['Close'].rolling(window=20).mean()
-            df_ma['SMA50'] = df_ma['Close'].rolling(window=50).mean()
-            df_ma['SMA65'] = df_ma['Close'].rolling(window=65).mean()
-            df_ma['SMA150'] = df_ma['Close'].rolling(window=150).mean()
-            df_ma['SMA200'] = df_ma['Close'].rolling(window=200).mean()
+            # Use pre-computed SMAs from indicators — no need to recalculate
+            df_ma = df  # Already has SMA20, SMA50, SMA65, SMA150, SMA200 from precompute_indicators()
             
             if len(df_ma) >= 200:
                 today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]
@@ -1750,7 +1772,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                         "dist_50sma_pct": round((today_close_val - sma50) / sma50 * 100, 2),
                         "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
                         "target_price": above_target_price, "confidence": above_confidence,
-                        "recommendation": compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec)
+                        "recommendation": compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec, indicators=ind)
                     }
                     
                 yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
@@ -1769,7 +1791,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
                         "dist_65sma_pct": round((today_close_val - sma65) / sma65 * 100, 2), "setup_type": "support_ma",
                         "buy_price": support_buy_price, "exit_price": support_exit_price, "target_price": support_target_price,
-                        "confidence": support_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec)
+                        "confidence": support_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec, indicators=ind)
                     }
                     
                 crossed_golden = (yesterday_row['SMA50'] <= yesterday_row['SMA200']) and (today_row['SMA50'] > today_row['SMA200'])
@@ -1790,7 +1812,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                         "dist_50sma_pct": round((today_close_val - sma50) / sma50 * 100, 2),
                         "dist_200sma_pct": round((today_close_val - sma200) / sma200 * 100, 2), "setup_type": "crossover_ma",
                         "buy_price": cross_buy_price, "exit_price": cross_exit_price, "target_price": cross_target_price,
-                        "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec)
+                        "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec, indicators=ind)
                     }
 
             if len(df_ma) >= 250:
@@ -1819,10 +1841,10 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
                         "setup_type": "minervini", "run_up_200": run_up_200, "run_up_52w": run_up_52w, "is_early": is_early,
                         "buy_price": round(c_val, 2), "exit_price": exit_price, "target_price": target_price,
-                        "confidence": min_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec)
+                        "confidence": min_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec, indicators=ind)
                     }
                     
-            scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes)
+            scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes, indicators=ind)
             if scan_res is not None:
                 scan_res['market_cap_cr'] = 0.0
                 if scan_res['signal_strength'] >= min_signal_str:
@@ -1832,15 +1854,15 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                         
             df_wt = df
             if df_wt is not None and len(df_wt) >= 40:
-                wt_res = scan_wt_cross(sym, df_wt)
+                wt_res = scan_wt_cross(sym, df_wt, indicators=ind)
                 if wt_res is not None:
                     wt_res['timeframe'] = "Daily"
                     res["wt"] = wt_res
                     
             if df is not None:
-                res["vcs"] = scan_vcs(sym, df)
-                res["structural_vcp"] = scan_structural_vcp(sym, df)
-                res["vpa"] = scan_vpa_trend(sym, df)
+                res["vcs"] = scan_vcs(sym, df, indicators=ind)
+                res["structural_vcp"] = scan_structural_vcp(sym, df, indicators=ind)
+                res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
                 
             return res
 
