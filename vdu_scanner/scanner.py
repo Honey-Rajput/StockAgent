@@ -1688,16 +1688,16 @@ def classify_vp(price, poc, val, vah):
 
     position_pct = ((price - val) / (vah - val)) * 100
 
-    if price > vah:
-        zone = 'Above VAH'
-    elif price > poc:
-        zone = 'Above POC'
+    if price < val:
+        zone = '⛔ Avoid (Below Support)'
     elif position_pct <= BUY_ZONE_THRESHOLD:
-        zone = 'Buy Zone'
-    elif position_pct <= 50:
-        zone = 'Neutral'
+        zone = '✅ Can Buy (Near Support)'
+    elif price <= poc:
+        zone = '⏳ Hold (Moving to Target)'
+    elif price <= vah:
+        zone = '🎯 Take Profit (Near Resistance)'
     else:
-        zone = 'Expensive'
+        zone = '🚀 Overextended (Breakout)'
 
     return round(position_pct, 2), zone
 

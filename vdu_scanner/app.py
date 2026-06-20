@@ -5399,11 +5399,11 @@ with tab_volprofile:
         with col1:
             st.metric("Total Scanned", len(df_vp))
         with col2:
-            st.metric("Daily Buy Zone", len(df_vp[df_vp['D Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+            st.metric("Daily Buy Zone", len(df_vp[df_vp['D Zone'] == '✅ Can Buy (Near Support)']) if not df_vp.empty else 0)
         with col3:
-            st.metric("Weekly Buy Zone", len(df_vp[df_vp['W Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+            st.metric("Weekly Buy Zone", len(df_vp[df_vp['W Zone'] == '✅ Can Buy (Near Support)']) if not df_vp.empty else 0)
         with col4:
-            st.metric("Monthly Buy Zone", len(df_vp[df_vp['M Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+            st.metric("Monthly Buy Zone", len(df_vp[df_vp['M Zone'] == '✅ Can Buy (Near Support)']) if not df_vp.empty else 0)
         
         # Column groups per timeframe
         daily_cols = ['Rank', 'Symbol', 'CMP', 'D Zone', 'D Buy Range (VAL)', 'D Target (POC)', 'D Resistance (VAH)', 'D VA%']
@@ -5429,7 +5429,7 @@ with tab_volprofile:
             df_daily = df_daily.sort_values('D VA%', ascending=True)
             df_daily['Rank'] = range(1, len(df_daily) + 1)
             
-            buy_daily = df_daily[df_daily['D Zone'] == 'Buy Zone']
+            buy_daily = df_daily[df_daily['D Zone'] == '✅ Can Buy (Near Support)']
             st.markdown(f"**{len(buy_daily)}** stocks in Daily Buy Zone | **{len(df_daily)}** total with daily data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             st.dataframe(df_daily, use_container_width=True, hide_index=True)
@@ -5447,7 +5447,7 @@ with tab_volprofile:
             df_weekly = df_weekly.sort_values('W VA%', ascending=True)
             df_weekly['Rank'] = range(1, len(df_weekly) + 1)
             
-            buy_weekly = df_weekly[df_weekly['W Zone'] == 'Buy Zone']
+            buy_weekly = df_weekly[df_weekly['W Zone'] == '✅ Can Buy (Near Support)']
             st.markdown(f"**{len(buy_weekly)}** stocks in Weekly Buy Zone | **{len(df_weekly)}** total with weekly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             st.dataframe(df_weekly, use_container_width=True, hide_index=True)
@@ -5465,7 +5465,7 @@ with tab_volprofile:
             df_monthly = df_monthly.sort_values('M VA%', ascending=True)
             df_monthly['Rank'] = range(1, len(df_monthly) + 1)
             
-            buy_monthly = df_monthly[df_monthly['M Zone'] == 'Buy Zone']
+            buy_monthly = df_monthly[df_monthly['M Zone'] == '✅ Can Buy (Near Support)']
             st.markdown(f"**{len(buy_monthly)}** stocks in Monthly Buy Zone | **{len(df_monthly)}** total with monthly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             st.dataframe(df_monthly, use_container_width=True, hide_index=True)
@@ -5485,9 +5485,9 @@ with tab_volprofile:
             with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
                 df_vp.to_excel(writer, sheet_name='All Stocks', index=False)
                 if not df_vp.empty:
-                    df_d_buy = df_vp[df_vp['D Zone'] == 'Buy Zone']
-                    df_w_buy = df_vp[df_vp['W Zone'] == 'Buy Zone']
-                    df_m_buy = df_vp[df_vp['M Zone'] == 'Buy Zone']
+                    df_d_buy = df_vp[df_vp['D Zone'] == '✅ Can Buy (Near Support)']
+                    df_w_buy = df_vp[df_vp['W Zone'] == '✅ Can Buy (Near Support)']
+                    df_m_buy = df_vp[df_vp['M Zone'] == '✅ Can Buy (Near Support)']
                     
                     if not df_d_buy.empty:
                         df_d_buy[daily_cols].to_excel(writer, sheet_name='Daily Buy Zone', index=False)
