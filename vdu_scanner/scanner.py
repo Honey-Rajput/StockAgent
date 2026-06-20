@@ -1630,11 +1630,11 @@ def build_volume_profile(swing_df, levels=25):
     bins = np.linspace(low_price, high_price, levels + 1)
     volume_profile = np.zeros(levels)
 
-    for _, row in swing_df.iterrows():
-        candle_low = row['Low']
-        candle_high = row['High']
-        vol = row['Volume']
+    lows = swing_df['Low'].values
+    highs = swing_df['High'].values
+    vols = swing_df['Volume'].values
 
+    for candle_low, candle_high, vol in zip(lows, highs, vols):
         touched = np.where(
             (bins[:-1] <= candle_high) &
             (bins[1:] >= candle_low)

@@ -5313,7 +5313,7 @@ if selected_module == "📊 Volume Profile":
                     chunks = [items_list[i:i + chunk_size] for i in range(0, total_to_process, chunk_size)]
                     
                     for chunk in chunks:
-                        results = Parallel(n_jobs=10, backend="threading")(
+                        results = Parallel(n_jobs=5, backend="threading")(
                             delayed(scan_volume_profile)(sym, df, market_caps.get(sym, 0)) 
                             for sym, df in chunk
                         )
