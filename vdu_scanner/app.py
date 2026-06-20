@@ -3491,7 +3491,7 @@ if selected_module == "🌊 Wave Trend":
             st.session_state.wt_results_by_tf[wt_cache_key] = wt_tf_results
             st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete!", icon="✅")
             
-    wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, [])
+    wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, None)
     
     st.markdown(f"### 🌊 WaveTrend Oversold Buy Signals ({wt_timeframe} Timeframe)")
     st.markdown(f"<p style='font-size:0.9rem; color:#94a3b8;'>Scan for stocks in the WaveTrend oversold zone (WT1 below {wt_oversold_threshold}) using LazyBear's WaveTrend with Crosses indicator. Stocks showing a <b style=\"color:#00e676;\">green dot 🟢 buy signal</b> (WT1 crossing above WT2) in oversold territory are prime mean-reversion candidates.</p>", unsafe_allow_html=True)
