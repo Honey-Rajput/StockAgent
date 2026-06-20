@@ -1,7 +1,7 @@
 # app.py
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import yfinance as yf
 from plotly.subplots import make_subplots
