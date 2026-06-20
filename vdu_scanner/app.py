@@ -70,23 +70,22 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
         if not symbols_list:
             return
         # Exclude already processed items to speed up background process
-        to_scan = []
+        # Bulk query existing patterns to prevent N+1 DB lookups
+        existing_patterns = {} if force else database.get_all_patterns_by_date(date_str)
+        
         for s in symbols_list:
             if force:
                 to_scan.append(s)
             else:
-                try:
-                    exist = database.get_pattern_by_date(s, date_str)
-                    if not exist or exist.get('pattern_name') in ["Error", "Pending"]:
-                        to_scan.append(s)
-                except Exception:
+                exist = existing_patterns.get(s)
+                if not exist or exist.get('pattern_name') in ["Error", "Pending"]:
                     to_scan.append(s)
                 
         if not to_scan:
             print("All symbols already analyzed by AI. Skipping background daemon.")
             return
             
-        max_workers = min(5, len(to_scan))
+        max_workers = min(20, len(to_scan)) # Increased from 5 to 20 for faster parallel processing
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             executor.map(scan_and_save, to_scan)
         print("Background AI scan daemon thread finished successfully!")
@@ -1645,7 +1644,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
@@ -2915,11 +2914,11 @@ with tab_ai:
         today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
         
         flagged_db_records = {}
+        all_today_patterns = database.get_all_patterns_by_date(today_str)
         for s in active_flagged_symbols:
-            rec = database.get_pattern_by_date(s, today_str)
+            rec = all_today_patterns.get(s)
             if rec:
                 flagged_db_records[s] = rec
-                
         # Count stats
         scanned_count = len(flagged_db_records)
         unscanned_count = len(active_flagged_symbols) - scanned_count

@@ -397,6 +397,36 @@ def get_pattern_by_date(symbol: str, date_str: str) -> dict | None:
         if conn:
             conn.close()
 
+def get_all_patterns_by_date(date_str: str) -> dict:
+    """
+    Retrieves all cached technical pattern analyses for a specific date in one query.
+    Returns a dictionary mapping symbol to pattern dict to prevent N+1 queries.
+    """
+    query = """
+    SELECT symbol, pattern_name, confidence, direction, analysis_text, price_data_snapshot, analyzed_date
+    FROM ai_chart_patterns
+    WHERE analyzed_date = %s;
+    """
+    conn = None
+    results = {}
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for row in rows:
+            row_dict = dict(row)
+            # Standardize date output as string
+            row_dict['analyzed_date'] = row_dict['analyzed_date'].strftime("%Y-%m-%d")
+            results[row_dict['symbol']] = row_dict
+    except Exception as e:
+        print(f"Error loading cached patterns from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+
 def save_pattern(
     symbol: str, 
     pattern_name: str, 
