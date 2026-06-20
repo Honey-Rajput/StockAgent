@@ -1718,7 +1718,7 @@ def scan_volume_profile(symbol: str, df: pd.DataFrame, market_cap: float) -> dic
     if df is None or len(df) < 100:
         return None
     close_price = float(df['Close'].iloc[-1])
-    if close_price < 100 or market_cap < 2000:
+    if close_price < 100 or (market_cap > 0 and market_cap < 2000):
         return None
 
     try:

@@ -5221,10 +5221,10 @@ with tab_vol_profile:
                 scan_progress = st.progress(0)
                 status_text = st.empty()
                 
-                from data_fetcher import get_all_nse_symbols, get_market_caps
+                from data_fetcher import get_all_nse_symbols
                 raw_symbols = get_all_nse_symbols()
                 all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
-                market_caps = get_market_caps()
+                market_caps = {}
                 
                 total_symbols = len(all_symbols)
                 
