@@ -1030,7 +1030,7 @@ def run_background_momentum_scans():
                     return sym, 0.0
 
             processed_mcap_count = 0
-            with _cf.ThreadPoolExecutor(max_workers=4) as pool:
+            with _cf.ThreadPoolExecutor(max_workers=30) as pool:
                 for sym_r, mcap_cr in pool.map(_fetch_single_mcap, passed_price_both):
                     mcap_map[sym_r] = mcap_cr
                     processed_mcap_count += 1
@@ -1653,7 +1653,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
@@ -4833,7 +4833,7 @@ if selected_module == "🚀 Early Stage 2 Breakout":
                 return chunk_res
 
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
                 futures = []
                 for c_idx, chunk in enumerate(chunks):
                     futures.append(executor.submit(download_s2_chunk, c_idx, chunk))
@@ -4953,7 +4953,7 @@ if selected_module == "🚥 VPA Trend":
                     return chunk_data, chunk_filtered
                     
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vpa_chunk, chunk_idx, chunk))
@@ -5277,7 +5277,7 @@ if selected_module == "📊 Volume Profile":
                         pass
                     return chunk_data
                     
-                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vp_chunk, chunk_idx, chunk))
