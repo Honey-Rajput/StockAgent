@@ -3417,22 +3417,27 @@ if selected_module == "🌊 Wave Trend":
     run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", use_container_width=True)
     
     if run_wt_btn:
-        # Resolve symbols to scan: use all scanned breakout symbols or fallback to NIFTY 100/50
-        symbols_to_scan = []
-        if st.session_state.scan_results:
-            symbols_to_scan.extend([r['symbol'] for r in st.session_state.scan_results])
-        if st.session_state.above_ma_results:
-            symbols_to_scan.extend([r['symbol'] for r in st.session_state.above_ma_results])
+        # Resolve the universe selected in the global sidebar
+        if "NIFTY 50" in universe_selection:
+            universe_key = "NIFTY 50"
+        elif "NIFTY 100" in universe_selection:
+            universe_key = "NIFTY 100"
+        elif "WATCHLIST" in universe_selection.upper():
+            universe_key = "WATCHLIST"
+        else:
+            universe_key = "ALL NSE"
             
-        # Clean unique list
-        symbols_to_scan = list(set([s.upper() for s in symbols_to_scan]))
-        
-        # Fallback if empty to NIFTY 100
-        if not symbols_to_scan:
-            from config import NIFTY100_SYMBOLS
-            symbols_to_scan = NIFTY100_SYMBOLS
+        if universe_key == "WATCHLIST":
+            import watchlist
+            wl = watchlist.load_watchlist()
+            raw_symbols = [s for s in wl['symbol'].tolist() if pd.notna(s)]
+        else:
+            from data_fetcher import get_index_stocks
+            raw_symbols = get_index_stocks(universe_key)
             
-        with st.spinner(f"Running real-time WaveTrend {wt_timeframe} scan for active breakout & watchlist universe ({len(symbols_to_scan)} stocks)..."):
+        symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            
+        with st.spinner(f"Running Advanced WaveTrend {wt_timeframe} scan on {universe_key} ({len(symbols_to_scan)} stocks)..."):
             from scanner import scan_wt_cross
             
             # Map timeframes
