@@ -873,6 +873,10 @@ if 'ai_selected_stock' not in st.session_state:
     st.session_state.ai_selected_stock = ""
 if 'ai_custom_sym_input' not in st.session_state:
     st.session_state.ai_custom_sym_input = ""
+if 'vpa_results' not in st.session_state:
+    st.session_state.vpa_results = []
+if 'vp_results' not in st.session_state:
+    st.session_state.vp_results = []
 if 'gapup_results' not in st.session_state:
     st.session_state.gapup_results = None
 if 'above_ma_results' not in st.session_state:
@@ -2020,7 +2024,7 @@ with st.sidebar.expander("🎓 Institutional Buy Signals Guide", expanded=False)
 
 # --- MAIN INTERFACE TABS ---
 try:
-    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_structural_vcp, tab_stage2, tab_vpa, tab_frequent = st.tabs([
+    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_structural_vcp, tab_stage2, tab_vpa, tab_frequent, tab_vol_profile = st.tabs([
         "📊 Scanner Results",
         "📈 Stock Detail",
         "📋 My Watchlist",
@@ -2038,7 +2042,8 @@ try:
         "🎯 Structural VCP",
         "🚀 Early Stage 2 Breakout",
         "🚥 VPA Trend",
-        "🔄 Consistent Alerts"
+        "🔄 Consistent Alerts",
+        "📊 Volume Profile"
     ])
 except Exception as tab_err:
     st.error(f"❌ Tab rendering error: {tab_err}")
@@ -5194,3 +5199,125 @@ with tab_vpa:
 with tab_frequent:
     import tabs.tab_frequent as tab_freq_mod
     tab_freq_mod.render()
+
+
+# --- VOLUME PROFILE SCANNER TAB ---
+with tab_vol_profile:
+    st.markdown("### 📊 Volume Profile Zones (Daily, Weekly, Monthly)")
+    st.info("Scans ALL NSE listed stocks for POC, VAH, VAL levels. Filters: Price > ₹100, Market Cap > 2000 Cr.")
+    
+    col1, col2 = st.columns([3, 7])
+    with col1:
+        run_vp_btn = st.button("🚀 Run Advanced Volume Profile Scan", use_container_width=True)
+    
+    if run_vp_btn:
+        st.session_state.vp_results = []
+        with st.spinner("Initializing Volume Profile Scan on ALL NSE Stocks..."):
+            try:
+                vp_list = []
+                scan_progress = st.progress(0)
+                status_text = st.empty()
+                
+                total_symbols = len(all_symbols)
+                
+                import concurrent.futures
+                from vdu_scanner.scanner import scan_volume_profile
+                
+                def _scan_vp(symbol):
+                    df = fetch_ohlcv(symbol, period='2y')
+                    mc = market_caps.get(symbol, 0)
+                    if df is not None and len(df) >= 100:
+                        return scan_volume_profile(symbol, df, mc)
+                    return None
+                    
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(20, total_symbols)) as executor:
+                    futures = {executor.submit(_scan_vp, sym): sym for sym in all_symbols}
+                    done_count = 0
+                    for future in concurrent.futures.as_completed(futures):
+                        done_count += 1
+                        res = future.result()
+                        if res:
+                            vp_list.append(res)
+                        if done_count % 10 == 0:
+                            scan_progress.progress(done_count / total_symbols)
+                            status_text.text(f"Scanning: {done_count}/{total_symbols} | Found: {len(vp_list)}")
+                
+                scan_progress.progress(1.0)
+                status_text.text(f"Scan Complete! Found {len(vp_list)} matches.")
+                
+                if vp_list:
+                    st.session_state.vp_results = vp_list
+                    try:
+                        today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+                        database.save_volume_profile_only(today_ist_str, vp_list)
+                    except Exception as e:
+                        print(f"Failed to cache Volume Profile scan: {e}")
+                    st.success(f"Volume Profile Scan complete! Found {len(vp_list)} stocks.")
+                    
+            except Exception as e:
+                st.error(f"Scan failed: {e}")
+                
+    if not st.session_state.get('vp_results'):
+        st.info("No Volume Profile data available. Click 'Run Advanced Volume Profile Scan' to process.")
+    else:
+        vp_data = st.session_state.vp_results
+        
+        # Format for Dataframe
+        import pandas as pd
+        vp_export = []
+        rank = 1
+        
+        for r in vp_data:
+            d = r['daily']
+            w = r['weekly']
+            m = r['monthly']
+            
+            vp_export.append({
+                'Rank': rank,
+                'Symbol': r['symbol'],
+                'CMP': r['cmp'],
+                'Market Cap (Cr)': round(r.get('market_cap_cr', 0), 2),
+                'Daily Zone': d['zone'] if d else '',
+                'Daily Pos': d['position_pct'] if d else '',
+                'Weekly Zone': w['zone'] if w else '',
+                'Weekly Pos': w['position_pct'] if w else '',
+                'Monthly Zone': m['zone'] if m else '',
+                'Monthly Pos': m['position_pct'] if m else ''
+            })
+            rank += 1
+            
+        df_vp = pd.DataFrame(vp_export)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Scanned", len(df_vp))
+        with col2:
+            st.metric("Daily Buy Zones", len(df_vp[df_vp['Daily Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+        with col3:
+            st.metric("Weekly Buy Zones", len(df_vp[df_vp['Weekly Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+            
+        st.dataframe(df_vp, use_container_width=True)
+        
+        # Excel Export
+        import io
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+            df_vp.to_excel(writer, sheet_name='All Stocks', index=False)
+            if not df_vp.empty:
+                df_daily = df_vp[df_vp['Daily Zone'] == 'Buy Zone']
+                df_weekly = df_vp[df_vp['Weekly Zone'] == 'Buy Zone']
+                df_monthly = df_vp[df_vp['Monthly Zone'] == 'Buy Zone']
+                
+                if not df_daily.empty:
+                    df_daily.to_excel(writer, sheet_name='Daily Buy', index=False)
+                if not df_weekly.empty:
+                    df_weekly.to_excel(writer, sheet_name='Weekly Buy', index=False)
+                if not df_monthly.empty:
+                    df_monthly.to_excel(writer, sheet_name='Monthly Buy', index=False)
+        
+        st.download_button(
+            label="📥 Download Volume Profile Scan (Excel)",
+            data=excel_buffer.getvalue(),
+            file_name=f"Volume_Profile_Scan_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )

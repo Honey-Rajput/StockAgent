@@ -263,6 +263,24 @@ def init_db() -> bool:
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS scanned_volume_profile (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            market_cap_cr DOUBLE PRECISION,
+            daily_zone VARCHAR(50),
+            daily_pos DOUBLE PRECISION,
+            weekly_zone VARCHAR(50),
+            weekly_pos DOUBLE PRECISION,
+            monthly_zone VARCHAR(50),
+            monthly_pos DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
         """
     ]
     
@@ -918,6 +936,97 @@ def get_cached_stage2(date_str: str) -> list[dict]:
         if conn:
             conn.close()
     return results
+
+def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
+    """Saves only the Volume Profile results without overwriting the main scan log."""
+    if not vp_results:
+        return True
+        
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        
+        insert_vp_query = """
+        INSERT INTO scanned_volume_profile 
+        (symbol, company_name, cmp, market_cap_cr, daily_zone, daily_pos, weekly_zone, weekly_pos, monthly_zone, monthly_pos, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            company_name = EXCLUDED.company_name,
+            cmp = EXCLUDED.cmp,
+            market_cap_cr = EXCLUDED.market_cap_cr,
+            daily_zone = EXCLUDED.daily_zone,
+            daily_pos = EXCLUDED.daily_pos,
+            weekly_zone = EXCLUDED.weekly_zone,
+            weekly_pos = EXCLUDED.weekly_pos,
+            monthly_zone = EXCLUDED.monthly_zone,
+            monthly_pos = EXCLUDED.monthly_pos;
+        """
+        vp_data = []
+        for v in vp_results:
+            vp_data.append((
+                v['Symbol'],
+                v.get('Company Name', ''),
+                v['CMP'],
+                v.get('Market Cap (Cr)', 0),
+                v.get('Daily Zone', ''),
+                v.get('Daily Pos', 0.0) if v.get('Daily Pos') != '' else None,
+                v.get('Weekly Zone', ''),
+                v.get('Weekly Pos', 0.0) if v.get('Weekly Pos') != '' else None,
+                v.get('Monthly Zone', ''),
+                v.get('Monthly Pos', 0.0) if v.get('Monthly Pos') != '' else None,
+                date_str
+            ))
+            
+        from psycopg2.extras import execute_batch
+        execute_batch(cur, insert_vp_query, vp_data)
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Database error in save_volume_profile_only: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def get_cached_volume_profile(date_str: str) -> list[dict]:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        cur.execute("""
+            SELECT * FROM scanned_volume_profile 
+            WHERE scan_date = %s
+            ORDER BY market_cap_cr DESC
+        """, (date_str,))
+        
+        rows = cur.fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                'Symbol': row['symbol'],
+                'Company Name': row['company_name'],
+                'CMP': row['cmp'],
+                'Market Cap (Cr)': row['market_cap_cr'],
+                'Daily Zone': row['daily_zone'],
+                'Daily Pos': row['daily_pos'] if row['daily_pos'] is not None else "",
+                'Weekly Zone': row['weekly_zone'],
+                'Weekly Pos': row['weekly_pos'] if row['weekly_pos'] is not None else "",
+                'Monthly Zone': row['monthly_zone'],
+                'Monthly Pos': row['monthly_pos'] if row['monthly_pos'] is not None else ""
+            })
+        return results
+    except Exception as e:
+        print(f"Database error reading cached Volume Profile: {e}")
+        return []
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
 
 def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
     """

@@ -1557,3 +1557,171 @@ def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivo
     except Exception as e:
         print(f"Error in structural VCP scan for {symbol}: {e}")
         return None
+
+
+# ==========================================
+# VOLUME PROFILE SCANNER
+# ==========================================
+
+from scipy.signal import argrelextrema
+
+PIVOT_LENGTH = 20
+PROFILE_LEVELS = 25
+BUY_ZONE_THRESHOLD = 35
+
+def find_last_pivot_swing(df, pivot_length=20):
+    highs = df['High'].values
+    lows = df['Low'].values
+
+    pivot_highs = argrelextrema(
+        highs,
+        np.greater_equal,
+        order=pivot_length
+    )[0]
+
+    pivot_lows = argrelextrema(
+        lows,
+        np.less_equal,
+        order=pivot_length
+    )[0]
+
+    pivots = sorted(
+        [(i, 'H') for i in pivot_highs] +
+        [(i, 'L') for i in pivot_lows],
+        key=lambda x: x[0]
+    )
+
+    if len(pivots) < 2:
+        return None
+
+    start_idx = pivots[-2][0]
+    end_idx = pivots[-1][0]
+
+    if start_idx >= end_idx:
+        return None
+
+    return df.iloc[start_idx:end_idx + 1].copy()
+
+def build_volume_profile(swing_df, levels=25):
+    low_price = swing_df['Low'].min()
+    high_price = swing_df['High'].max()
+
+    if high_price == low_price:
+        return None
+
+    bins = np.linspace(low_price, high_price, levels + 1)
+    volume_profile = np.zeros(levels)
+
+    for _, row in swing_df.iterrows():
+        candle_low = row['Low']
+        candle_high = row['High']
+        vol = row['Volume']
+
+        touched = np.where(
+            (bins[:-1] <= candle_high) &
+            (bins[1:] >= candle_low)
+        )[0]
+
+        if len(touched) > 0:
+            volume_profile[touched] += vol / len(touched)
+
+    return bins, volume_profile
+
+def calculate_vp_levels(bins, profile, value_area_pct=0.68):
+    poc_idx = np.argmax(profile)
+    poc = (bins[poc_idx] + bins[poc_idx + 1]) / 2
+
+    total_volume = profile.sum()
+    target = total_volume * value_area_pct
+    cumulative = profile[poc_idx]
+
+    low_idx = poc_idx
+    high_idx = poc_idx
+
+    while cumulative < target:
+        vol_above = profile[high_idx + 1] if high_idx < len(profile) - 1 else 0
+        vol_below = profile[low_idx - 1] if low_idx > 0 else 0
+
+        if vol_above >= vol_below:
+            high_idx += 1
+            cumulative += vol_above
+        else:
+            low_idx -= 1
+            cumulative += vol_below
+
+    val = bins[low_idx]
+    vah = bins[high_idx + 1]
+    return poc, val, vah
+
+def classify_vp(price, poc, val, vah):
+    if vah <= val:
+        return None, None
+
+    position_pct = ((price - val) / (vah - val)) * 100
+
+    if price > vah:
+        zone = 'Above VAH'
+    elif price > poc:
+        zone = 'Above POC'
+    elif position_pct <= BUY_ZONE_THRESHOLD:
+        zone = 'Buy Zone'
+    elif position_pct <= 50:
+        zone = 'Neutral'
+    else:
+        zone = 'Expensive'
+
+    return round(position_pct, 2), zone
+
+def analyze_vp_timeframe(df):
+    if df is None or len(df) < 50:
+        return None
+    swing = find_last_pivot_swing(df, PIVOT_LENGTH)
+    if swing is None:
+        return None
+    result = build_volume_profile(swing, PROFILE_LEVELS)
+    if result is None:
+        return None
+    bins, profile = result
+    poc, val, vah = calculate_vp_levels(bins, profile)
+    price = float(df['Close'].iloc[-1])
+    position_pct, zone = classify_vp(price, poc, val, vah)
+    if zone is None:
+        return None
+    return {
+        'price': price,
+        'poc': poc,
+        'val': val,
+        'vah': vah,
+        'position_pct': position_pct,
+        'zone': zone
+    }
+
+def scan_volume_profile(symbol: str, df: pd.DataFrame, market_cap: float) -> dict | None:
+    if df is None or len(df) < 100:
+        return None
+    close_price = float(df['Close'].iloc[-1])
+    if close_price < 100 or market_cap < 2000:
+        return None
+
+    try:
+        df_weekly = df.set_index('Date').resample('W-FRI').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
+        df_monthly = df.set_index('Date').resample('ME').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
+
+        daily_result = analyze_vp_timeframe(df)
+        weekly_result = analyze_vp_timeframe(df_weekly)
+        monthly_result = analyze_vp_timeframe(df_monthly)
+
+        if not daily_result and not weekly_result and not monthly_result:
+            return None
+
+        return {
+            'daily': daily_result,
+            'weekly': weekly_result,
+            'monthly': monthly_result,
+            'cmp': close_price,
+            'symbol': symbol,
+            'market_cap_cr': market_cap
+        }
+    except Exception as e:
+        return None
+
