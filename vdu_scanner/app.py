@@ -4990,22 +4990,26 @@ with tab_vpa:
         # Download Button
         import pandas as pd
         
-        def get_action_signal_text(short, mid, max_t):
-            if max_t == 1 and mid == 1 and short == 1:
+        def get_action_signal_text(short, mid, max_t, max_val):
+            if max_val > 2.0:
+                return "Overextended (Trim / Hold)"
+            elif 0.5 < max_val <= 2.0 and mid == 1 and short == 1:
                 return "Perfect Buy / Strong Hold"
-            elif max_t == 1 and mid == 1 and short <= 0:
-                return "Pullback (Wait for Short=Up)"
-            elif max_t == 1 and mid <= 0:
-                return "Warning (Mid Broken) - Trim"
-            elif max_t <= 0 and mid == 1 and short == 1:
+            elif 0 < max_val <= 0.5 and mid == 1 and short == 1:
                 return "Early Breakout Entry"
-            elif max_t <= 0 and mid <= 0:
+            elif max_val > 0.5 and mid == 1 and short <= 0:
+                return "Pullback (Wait for Short=Up)"
+            elif max_val > 0.5 and mid <= 0:
+                return "Warning (Mid Broken) - Trim"
+            elif max_val <= 0 and mid <= 0:
                 return "Avoid / Full Exit"
             else:
                 return "Neutral / Choppy"
         
-        def get_signal(short, mid, max_t):
-            return "Buy" if (max_t == 1 and mid == 1) or (max_t <= 0 and mid == 1 and short == 1) else "Hold" if max_t == 1 else "Sell"
+        def get_signal(short, mid, max_t, max_val):
+            if max_val > 2.0:
+                return "Hold"
+            return "Buy" if (max_val > 0.5 and mid == 1) or (max_val > 0 and mid == 1 and short == 1) else "Hold" if max_val > 0.5 else "Sell"
 
         only_buy_signals = st.checkbox("🟢 Show Only 'Buy' Signals", value=False)
         
@@ -5022,7 +5026,7 @@ with tab_vpa:
             # Actually, since the timeframe can be selected in UI, let's filter the data based on the selected timeframe later.
             # For the exports, we'll export all but add Rank.
             
-            d_sig = get_signal(d['minor'], d['mid'], d['major'])
+            d_sig = get_signal(d['minor'], d['mid'], d['major'], d.get('major_val', 0))
             if only_buy_signals and d_sig != "Buy":
                 continue
                 
@@ -5039,7 +5043,7 @@ with tab_vpa:
                 'Minor Trend': "Up" if d['minor'] == 1 else ("Down" if d['minor'] == -1 else "Neutral"),
                 'RSI': d.get('rsi', 0.0),
                 'CCI': d.get('cci', 0.0),
-                'Action': get_action_signal_text(d['minor'], d['mid'], d['major']),
+                'Action': get_action_signal_text(d['minor'], d['mid'], d['major'], d.get('major_val', 0)),
                 'Signal': d_sig
             })
             rank += 1
@@ -5057,8 +5061,8 @@ with tab_vpa:
                 'Minor Trend': "Up" if w['minor'] == 1 else ("Down" if w['minor'] == -1 else "Neutral"),
                 'RSI': w.get('rsi', 0.0),
                 'CCI': w.get('cci', 0.0),
-                'Action': get_action_signal_text(w['minor'], w['mid'], w['major']),
-                'Signal': get_signal(w['minor'], w['mid'], w['major'])
+                'Action': get_action_signal_text(w['minor'], w['mid'], w['major'], w.get('major_val', 0)),
+                'Signal': get_signal(w['minor'], w['mid'], w['major'], w.get('major_val', 0))
             })
             
         for rank, r in filtered_vpa_data:
@@ -5074,8 +5078,8 @@ with tab_vpa:
                 'Minor Trend': "Up" if m['minor'] == 1 else ("Down" if m['minor'] == -1 else "Neutral"),
                 'RSI': m.get('rsi', 0.0),
                 'CCI': m.get('cci', 0.0),
-                'Action': get_action_signal_text(m['minor'], m['mid'], m['major']),
-                'Signal': get_signal(m['minor'], m['mid'], m['major'])
+                'Action': get_action_signal_text(m['minor'], m['mid'], m['major'], m.get('major_val', 0)),
+                'Signal': get_signal(m['minor'], m['mid'], m['major'], m.get('major_val', 0))
             })
         
         col1, col2, col3 = st.columns(3)

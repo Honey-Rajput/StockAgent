@@ -1380,6 +1380,9 @@ def calc_vpa_trends(df: pd.DataFrame) -> dict:
         "major": major_trend,
         "mid": mid_trend,
         "minor": minor_trend,
+        "major_val": round(float(latest_j), 2) if not pd.isna(latest_j) else 0.0,
+        "mid_val": round(float(latest_ground), 2) if not pd.isna(latest_ground) else 0.0,
+        "minor_val": round(float(latest_j2), 2) if not pd.isna(latest_j2) else 0.0,
         "rsi": round(rsi_val, 2),
         "cci": round(cci_val, 2)
     }
