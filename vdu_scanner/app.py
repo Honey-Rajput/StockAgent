@@ -2032,33 +2032,40 @@ with st.sidebar.expander("🎓 Institutional Buy Signals Guide", expanded=False)
         unsafe_allow_html=True
     )
 
-# --- MAIN INTERFACE TABS ---
-st.sidebar.markdown('---')
-st.sidebar.markdown('### 🧭 Navigation')
-selected_module = st.sidebar.radio(
-    "Select Scan Module",
-    [
-        "📊 Scanner Results",
-        "📈 Stock Detail",
-        "📋 My Watchlist",
-        "🤖 AI Chart Pattern Detector",
-        "🚀 Gap-Up Setups",
-        "📈 Above 20 & 50 SMA",
-        "🛡️ 65 SMA Support",
-        "🔄 MA Crossovers",
-        "🌊 Wave Trend",
-        "🏆 Minervini Stage-2",
-        "📅 Monthly Momentum",
-        "📈 Weekly Momentum",
-        "📅 Scan History",
-        "📉 Volatility Contraction (VCS)",
-        "🎯 Structural VCP",
-        "🚀 Early Stage 2 Breakout",
-        "🚥 VPA Trend",
-        "🔄 Consistent Alerts",
-        "📊 Volume Profile"
-    ]
-)
+# --- MAIN INTERFACE TABS (Top Navigation) ---
+nav_modules = [
+    "📊 Scanner Results",
+    "📈 Stock Detail",
+    "📋 My Watchlist",
+    "🤖 AI Chart Pattern Detector",
+    "🚀 Gap-Up Setups",
+    "📈 Above 20 & 50 SMA",
+    "🛡️ 65 SMA Support",
+    "🔄 MA Crossovers",
+    "🌊 Wave Trend",
+    "🏆 Minervini Stage-2",
+    "📅 Monthly Momentum",
+    "📈 Weekly Momentum",
+    "📅 Scan History",
+    "📉 Volatility Contraction (VCS)",
+    "🎯 Structural VCP",
+    "🚀 Early Stage 2 Breakout",
+    "🚥 VPA Trend",
+    "🔄 Consistent Alerts",
+    "📊 Volume Profile"
+]
+
+st.markdown("---")
+nav_col1, nav_col2 = st.columns([1, 4])
+with nav_col1:
+    st.markdown("### 🧭 Navigate")
+with nav_col2:
+    selected_module = st.selectbox(
+        "Select Scan Module",
+        nav_modules,
+        index=0,
+        label_visibility="collapsed"
+    )
 
 
 
