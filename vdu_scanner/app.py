@@ -5394,11 +5394,11 @@ if selected_module == "📊 Volume Profile":
                 'CMP': r.get('cmp', 0),
                 'Market Cap (Cr)': round(r.get('market_cap_cr', 0), 2),
                 'Daily Zone': daily_zone,
-                'Daily Pos': daily_pos,
+                'Daily VA%': daily_pos,
                 'Weekly Zone': weekly_zone,
-                'Weekly Pos': weekly_pos,
+                'Weekly VA%': weekly_pos,
                 'Monthly Zone': monthly_zone,
-                'Monthly Pos': monthly_pos
+                'Monthly VA%': monthly_pos
             })
             rank += 1
             
@@ -5430,8 +5430,8 @@ if selected_module == "📊 Volume Profile":
             )
         
         with tab_daily:
-            df_daily = df_vp[df_vp['Daily Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Daily Zone', 'Daily Pos']].copy()
-            df_daily = df_daily.sort_values('Daily Pos', ascending=True)
+            df_daily = df_vp[df_vp['Daily Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Daily Zone', 'Daily VA%']].copy()
+            df_daily = df_daily.sort_values('Daily VA%', ascending=True)
             df_daily['Rank'] = range(1, len(df_daily) + 1)
             
             buy_daily = df_daily[df_daily['Daily Zone'] == 'Buy Zone']
@@ -5447,8 +5447,8 @@ if selected_module == "📊 Volume Profile":
             )
         
         with tab_weekly:
-            df_weekly = df_vp[df_vp['Weekly Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Weekly Zone', 'Weekly Pos']].copy()
-            df_weekly = df_weekly.sort_values('Weekly Pos', ascending=True)
+            df_weekly = df_vp[df_vp['Weekly Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Weekly Zone', 'Weekly VA%']].copy()
+            df_weekly = df_weekly.sort_values('Weekly VA%', ascending=True)
             df_weekly['Rank'] = range(1, len(df_weekly) + 1)
             
             buy_weekly = df_weekly[df_weekly['Weekly Zone'] == 'Buy Zone']
@@ -5464,8 +5464,8 @@ if selected_module == "📊 Volume Profile":
             )
         
         with tab_monthly:
-            df_monthly = df_vp[df_vp['Monthly Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Monthly Zone', 'Monthly Pos']].copy()
-            df_monthly = df_monthly.sort_values('Monthly Pos', ascending=True)
+            df_monthly = df_vp[df_vp['Monthly Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Monthly Zone', 'Monthly VA%']].copy()
+            df_monthly = df_monthly.sort_values('Monthly VA%', ascending=True)
             df_monthly['Rank'] = range(1, len(df_monthly) + 1)
             
             buy_monthly = df_monthly[df_monthly['Monthly Zone'] == 'Buy Zone']
