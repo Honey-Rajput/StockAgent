@@ -2139,9 +2139,6 @@ with tab_scan:
         st.error(f"❌ Error rendering scan results: {_tab1_err}")
         st.exception(_tab1_err)
 
-
-        st.markdown('</div></div>', unsafe_allow_html=True)
-
 # ==============================================================================
 # TAB 2: STOCK DETAIL
 # ==============================================================================
