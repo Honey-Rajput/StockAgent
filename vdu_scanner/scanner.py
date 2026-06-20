@@ -1650,6 +1650,8 @@ def calculate_vp_levels(bins, profile, value_area_pct=0.68):
     poc = (bins[poc_idx] + bins[poc_idx + 1]) / 2
 
     total_volume = profile.sum()
+    if total_volume == 0:
+        return poc, bins[0], bins[-1]
     target = total_volume * value_area_pct
     cumulative = profile[poc_idx]
 
@@ -1657,8 +1659,14 @@ def calculate_vp_levels(bins, profile, value_area_pct=0.68):
     high_idx = poc_idx
 
     while cumulative < target:
-        vol_above = profile[high_idx + 1] if high_idx < len(profile) - 1 else 0
-        vol_below = profile[low_idx - 1] if low_idx > 0 else 0
+        can_go_up = high_idx < len(profile) - 1
+        can_go_down = low_idx > 0
+        
+        if not can_go_up and not can_go_down:
+            break
+        
+        vol_above = profile[high_idx + 1] if can_go_up else -1
+        vol_below = profile[low_idx - 1] if can_go_down else -1
 
         if vol_above >= vol_below:
             high_idx += 1

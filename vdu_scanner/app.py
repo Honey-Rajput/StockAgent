@@ -5221,7 +5221,6 @@ if selected_module == "🔄 Consistent Alerts":
 
 # --- VOLUME PROFILE SCANNER TAB ---
 if selected_module == "📊 Volume Profile":
-    st.error("DEBUG: If you see this, tab_vol_profile is executing!")
     st.markdown("### 📊 Volume Profile Zones (Daily, Weekly, Monthly)")
     st.info("Scans ALL NSE listed stocks for POC, VAH, VAL levels. Filters: Price > ₹100, Market Cap > 2000 Cr.")
     
@@ -5247,13 +5246,12 @@ if selected_module == "📊 Volume Profile":
                 
                 raw_symbols = get_all_nse_symbols()
                 all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
-                market_caps = {}
                 
                 total_symbols = len(all_symbols)
                 
-                # Phase 1: Bulk OHLCV Download
+                # Phase 1: Bulk OHLCV Download (10 workers, 200 per chunk)
                 status_text.text(f"Phase 1: Downloading 2 years of history for {total_symbols} stocks...")
-                chunk_size = 300
+                chunk_size = 200
                 sym_chunks = [all_symbols[i:i + chunk_size] for i in range(0, len(all_symbols), chunk_size)]
                 
                 valid_data = {}
@@ -5287,19 +5285,22 @@ if selected_module == "📊 Volume Profile":
                         pass
                     return chunk_data
                     
-                with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vp_chunk, chunk_idx, chunk))
                     
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                        res_data = future.result()
-                        valid_data.update(res_data)
+                        try:
+                            res_data = future.result(timeout=120)
+                            valid_data.update(res_data)
+                        except Exception:
+                            pass
                         scan_progress.progress((i + 1) / len(sym_chunks) * 0.5)
-                        status_text.text(f"Fetching bulk history chunks... ({i+1}/{len(sym_chunks)})")
+                        status_text.text(f"Phase 1: Downloading history... ({i+1}/{len(sym_chunks)} chunks, {len(valid_data)} stocks loaded)")
 
-                # Phase 2: Compute Volume Profile
-                status_text.text("Phase 2: Calculating Volume Profile (Instant)...")
+                # Phase 2: Compute Volume Profile (simple sequential — fast after numpy optimization)
+                status_text.text(f"Phase 2: Computing Volume Profiles for {len(valid_data)} stocks...")
                 
                 total_to_process = len(valid_data)
                 done_count = 0
@@ -5307,23 +5308,18 @@ if selected_module == "📊 Volume Profile":
                     status_text.text("Scan Complete! Found 0 matches.")
                     scan_progress.progress(1.0)
                 else:
-                    from joblib import Parallel, delayed
-                    items_list = list(valid_data.items())
-                    chunk_size = 50
-                    chunks = [items_list[i:i + chunk_size] for i in range(0, total_to_process, chunk_size)]
-                    
-                    for chunk in chunks:
-                        results = Parallel(n_jobs=5, backend="threading")(
-                            delayed(scan_volume_profile)(sym, df, market_caps.get(sym, 0)) 
-                            for sym, df in chunk
-                        )
-                        for res in results:
+                    for sym, df in valid_data.items():
+                        done_count += 1
+                        try:
+                            res = scan_volume_profile(sym, df, 0)
                             if res:
                                 vp_list.append(res)
+                        except Exception:
+                            pass
                         
-                        done_count += len(chunk)
-                        scan_progress.progress(0.5 + (done_count / total_to_process) * 0.5)
-                        status_text.text(f"Scanning Profiles: {done_count}/{total_to_process} | Found: {len(vp_list)}")
+                        if done_count % 50 == 0 or done_count == total_to_process:
+                            scan_progress.progress(0.5 + (done_count / total_to_process) * 0.5)
+                            status_text.text(f"Scanning Profiles: {done_count}/{total_to_process} | Found: {len(vp_list)}")
                     
                     scan_progress.progress(1.0)
                     status_text.text(f"Scan Complete! Found {len(vp_list)} matches.")
