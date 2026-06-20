@@ -618,7 +618,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         sector = get_stock_sector(r["symbol"])
         cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1; font-size: 0.8rem; font-style: italic;">{sector}</td>')
         
-        cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{buy:,.2f}</td>')
+        cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r.get("cmp", 0.0):,.2f}</td>')
         
         if strategy_type == "vdu_breakout":
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
@@ -4764,7 +4764,7 @@ with tab_stage2:
         today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
         try:
             cached_stage2 = database.get_cached_stage2(today_str)
-            if cached_stage2:
+            if cached_stage2 is not None:
                 st.session_state.stage2_results = cached_stage2
                 # Note: No need to show success message on silent load, just let the table render
         except Exception as e:

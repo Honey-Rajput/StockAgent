@@ -1218,7 +1218,10 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
         # Base recommendation
         day_change_pct = ((cmp - float(prev['Close'])) / float(prev['Close']) * 100) if len(df_copy) >= 2 else 0.0
         
-        buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df_copy, cmp)
+        support = round(sma7, 2)
+        buy_price = round(support * 1.01, 2)
+        exit_price = round(support * 0.95, 2)
+        target_price = round(cmp * 1.25, 2)
         
         score = 100.0 - (extension_from_sma * 2.0) # Lower extension = higher score
         score = round(max(0, min(100.0, score)), 1)
