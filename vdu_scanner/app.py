@@ -5285,26 +5285,19 @@ with tab_vol_profile:
                 # Phase 2: Compute Volume Profile
                 status_text.text("Phase 2: Calculating Volume Profile (Instant)...")
                 
-                def _process_vp(sym_df_tuple):
-                    sym, df = sym_df_tuple
-                    mc = market_caps.get(sym, 0)
-                    return scan_volume_profile(sym, df, mc)
-                    
-                n_workers = min(32, os.cpu_count() * 2 if os.cpu_count() else 8)
-                generator = joblib.Parallel(n_jobs=n_workers, return_as="generator_unordered")(
-                    joblib.delayed(_process_vp)(item) for item in valid_data.items()
-                )
-                
-                done_count = 0
                 total_to_process = len(valid_data)
+                done_count = 0
                 if total_to_process == 0:
                     status_text.text("Scan Complete! Found 0 matches.")
                     scan_progress.progress(1.0)
                 else:
-                    for i, res in enumerate(generator):
+                    for sym, df in valid_data.items():
                         done_count += 1
+                        mc = market_caps.get(sym, 0)
+                        res = scan_volume_profile(sym, df, mc)
                         if res:
                             vp_list.append(res)
+                            
                         if done_count % 10 == 0 or done_count == total_to_process:
                             scan_progress.progress(0.5 + (done_count / total_to_process) * 0.5)
                             status_text.text(f"Scanning Profiles: {done_count}/{total_to_process} | Found: {len(vp_list)}")
