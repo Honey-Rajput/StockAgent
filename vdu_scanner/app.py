@@ -5307,16 +5307,23 @@ if selected_module == "📊 Volume Profile":
                     status_text.text("Scan Complete! Found 0 matches.")
                     scan_progress.progress(1.0)
                 else:
-                    for sym, df in valid_data.items():
-                        done_count += 1
-                        mc = market_caps.get(sym, 0)
-                        res = scan_volume_profile(sym, df, mc)
-                        if res:
-                            vp_list.append(res)
-                            
-                        if done_count % 10 == 0 or done_count == total_to_process:
-                            scan_progress.progress(0.5 + (done_count / total_to_process) * 0.5)
-                            status_text.text(f"Scanning Profiles: {done_count}/{total_to_process} | Found: {len(vp_list)}")
+                    from joblib import Parallel, delayed
+                    items_list = list(valid_data.items())
+                    chunk_size = 50
+                    chunks = [items_list[i:i + chunk_size] for i in range(0, total_to_process, chunk_size)]
+                    
+                    for chunk in chunks:
+                        results = Parallel(n_jobs=10, backend="threading")(
+                            delayed(scan_volume_profile)(sym, df, market_caps.get(sym, 0)) 
+                            for sym, df in chunk
+                        )
+                        for res in results:
+                            if res:
+                                vp_list.append(res)
+                        
+                        done_count += len(chunk)
+                        scan_progress.progress(0.5 + (done_count / total_to_process) * 0.5)
+                        status_text.text(f"Scanning Profiles: {done_count}/{total_to_process} | Found: {len(vp_list)}")
                     
                     scan_progress.progress(1.0)
                     status_text.text(f"Scan Complete! Found {len(vp_list)} matches.")
