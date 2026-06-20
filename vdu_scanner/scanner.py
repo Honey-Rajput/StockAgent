@@ -1427,6 +1427,8 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
         prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
         day_change_pct = ((cmp - prev_close) / prev_close) * 100
         
+        buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df, cmp, indicators)
+        
         from config import get_company_name
         company_name = get_company_name(symbol)
         
@@ -1439,7 +1441,10 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
             "daily": daily_trends,
             "weekly": weekly_trends,
             "monthly": monthly_trends,
-            "score": score
+            "score": score,
+            "buy_price": buy_price,
+            "exit_price": exit_price,
+            "target_price": target_price
         }
     except Exception as e:
         print(f"Error in VPA scan for {symbol}: {e}")
