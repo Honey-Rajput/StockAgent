@@ -5360,56 +5360,150 @@ if selected_module == "📊 Volume Profile":
         rank = 1
         
         for r in vp_data:
-            d = r['daily']
-            w = r['weekly']
-            m = r['monthly']
+            d = r.get('daily')
+            w = r.get('weekly')
+            m = r.get('monthly')
+            
+            # Handle both dict-style (raw) and flat-style (cached) data
+            if isinstance(d, dict):
+                daily_zone = d.get('zone', '') if d else ''
+                daily_pos = d.get('position_pct', '') if d else ''
+            else:
+                daily_zone = ''
+                daily_pos = ''
+                
+            if isinstance(w, dict):
+                weekly_zone = w.get('zone', '') if w else ''
+                weekly_pos = w.get('position_pct', '') if w else ''
+            else:
+                weekly_zone = ''
+                weekly_pos = ''
+                
+            if isinstance(m, dict):
+                monthly_zone = m.get('zone', '') if m else ''
+                monthly_pos = m.get('position_pct', '') if m else ''
+            else:
+                monthly_zone = ''
+                monthly_pos = ''
+            
+            clean_sym = str(r.get('symbol', '')).replace('.NS', '').strip().upper()
             
             vp_export.append({
                 'Rank': rank,
-                'Symbol': r['symbol'],
-                'CMP': r['cmp'],
+                'Symbol': clean_sym,
+                'CMP': r.get('cmp', 0),
                 'Market Cap (Cr)': round(r.get('market_cap_cr', 0), 2),
-                'Daily Zone': d['zone'] if d else '',
-                'Daily Pos': d['position_pct'] if d else '',
-                'Weekly Zone': w['zone'] if w else '',
-                'Weekly Pos': w['position_pct'] if w else '',
-                'Monthly Zone': m['zone'] if m else '',
-                'Monthly Pos': m['position_pct'] if m else ''
+                'Daily Zone': daily_zone,
+                'Daily Pos': daily_pos,
+                'Weekly Zone': weekly_zone,
+                'Weekly Pos': weekly_pos,
+                'Monthly Zone': monthly_zone,
+                'Monthly Pos': monthly_pos
             })
             rank += 1
             
         df_vp = pd.DataFrame(vp_export)
         
-        col1, col2, col3 = st.columns(3)
+        # Summary Metrics
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Total Scanned", len(df_vp))
         with col2:
-            st.metric("Daily Buy Zones", len(df_vp[df_vp['Daily Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+            st.metric("Daily Buy Zone", len(df_vp[df_vp['Daily Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
         with col3:
-            st.metric("Weekly Buy Zones", len(df_vp[df_vp['Weekly Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+            st.metric("Weekly Buy Zone", len(df_vp[df_vp['Weekly Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+        with col4:
+            st.metric("Monthly Buy Zone", len(df_vp[df_vp['Monthly Zone'] == 'Buy Zone']) if not df_vp.empty else 0)
+        
+        # Timeframe Tabs
+        tab_all, tab_daily, tab_weekly, tab_monthly = st.tabs(["📊 All Stocks", "📅 Daily", "📅 Weekly", "📅 Monthly"])
+        
+        with tab_all:
+            st.dataframe(df_vp, use_container_width=True, hide_index=True)
+            csv_all = df_vp.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download All Stocks (CSV)",
+                data=csv_all,
+                file_name=f"VP_All_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="dl_vp_all"
+            )
+        
+        with tab_daily:
+            df_daily = df_vp[df_vp['Daily Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Daily Zone', 'Daily Pos']].copy()
+            df_daily = df_daily.sort_values('Daily Pos', ascending=True)
+            df_daily['Rank'] = range(1, len(df_daily) + 1)
             
-        st.dataframe(df_vp, use_container_width=True)
+            buy_daily = df_daily[df_daily['Daily Zone'] == 'Buy Zone']
+            st.markdown(f"**{len(buy_daily)}** stocks in Daily Buy Zone | **{len(df_daily)}** total with daily data")
+            st.dataframe(df_daily, use_container_width=True, hide_index=True)
+            csv_daily = df_daily.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Daily Timeframe (CSV)",
+                data=csv_daily,
+                file_name=f"VP_Daily_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="dl_vp_daily"
+            )
         
-        # Excel Export
-        import io
-        excel_buffer = io.BytesIO()
-        with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-            df_vp.to_excel(writer, sheet_name='All Stocks', index=False)
-            if not df_vp.empty:
-                df_daily = df_vp[df_vp['Daily Zone'] == 'Buy Zone']
-                df_weekly = df_vp[df_vp['Weekly Zone'] == 'Buy Zone']
-                df_monthly = df_vp[df_vp['Monthly Zone'] == 'Buy Zone']
-                
-                if not df_daily.empty:
-                    df_daily.to_excel(writer, sheet_name='Daily Buy', index=False)
-                if not df_weekly.empty:
-                    df_weekly.to_excel(writer, sheet_name='Weekly Buy', index=False)
-                if not df_monthly.empty:
-                    df_monthly.to_excel(writer, sheet_name='Monthly Buy', index=False)
+        with tab_weekly:
+            df_weekly = df_vp[df_vp['Weekly Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Weekly Zone', 'Weekly Pos']].copy()
+            df_weekly = df_weekly.sort_values('Weekly Pos', ascending=True)
+            df_weekly['Rank'] = range(1, len(df_weekly) + 1)
+            
+            buy_weekly = df_weekly[df_weekly['Weekly Zone'] == 'Buy Zone']
+            st.markdown(f"**{len(buy_weekly)}** stocks in Weekly Buy Zone | **{len(df_weekly)}** total with weekly data")
+            st.dataframe(df_weekly, use_container_width=True, hide_index=True)
+            csv_weekly = df_weekly.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Weekly Timeframe (CSV)",
+                data=csv_weekly,
+                file_name=f"VP_Weekly_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="dl_vp_weekly"
+            )
         
-        st.download_button(
-            label="📥 Download Volume Profile Scan (Excel)",
-            data=excel_buffer.getvalue(),
-            file_name=f"Volume_Profile_Scan_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with tab_monthly:
+            df_monthly = df_vp[df_vp['Monthly Zone'] != ''][['Rank', 'Symbol', 'CMP', 'Market Cap (Cr)', 'Monthly Zone', 'Monthly Pos']].copy()
+            df_monthly = df_monthly.sort_values('Monthly Pos', ascending=True)
+            df_monthly['Rank'] = range(1, len(df_monthly) + 1)
+            
+            buy_monthly = df_monthly[df_monthly['Monthly Zone'] == 'Buy Zone']
+            st.markdown(f"**{len(buy_monthly)}** stocks in Monthly Buy Zone | **{len(df_monthly)}** total with monthly data")
+            st.dataframe(df_monthly, use_container_width=True, hide_index=True)
+            csv_monthly = df_monthly.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Monthly Timeframe (CSV)",
+                data=csv_monthly,
+                file_name=f"VP_Monthly_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="dl_vp_monthly"
+            )
+        
+        # Combined Excel download with all sheets
+        try:
+            import io
+            excel_buffer = io.BytesIO()
+            with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                df_vp.to_excel(writer, sheet_name='All Stocks', index=False)
+                if not df_vp.empty:
+                    df_d_buy = df_vp[df_vp['Daily Zone'] == 'Buy Zone']
+                    df_w_buy = df_vp[df_vp['Weekly Zone'] == 'Buy Zone']
+                    df_m_buy = df_vp[df_vp['Monthly Zone'] == 'Buy Zone']
+                    
+                    if not df_d_buy.empty:
+                        df_d_buy.to_excel(writer, sheet_name='Daily Buy Zone', index=False)
+                    if not df_w_buy.empty:
+                        df_w_buy.to_excel(writer, sheet_name='Weekly Buy Zone', index=False)
+                    if not df_m_buy.empty:
+                        df_m_buy.to_excel(writer, sheet_name='Monthly Buy Zone', index=False)
+            
+            st.download_button(
+                label="📥 Download Complete Report (Excel - All Sheets)",
+                data=excel_buffer.getvalue(),
+                file_name=f"Volume_Profile_Scan_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_vp_excel"
+            )
+        except ImportError:
+            st.caption("ℹ️ Excel export unavailable — use CSV downloads above instead.")
