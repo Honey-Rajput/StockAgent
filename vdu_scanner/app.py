@@ -1030,7 +1030,7 @@ def run_background_momentum_scans():
                     return sym, 0.0
 
             processed_mcap_count = 0
-            with _cf.ThreadPoolExecutor(max_workers=10) as pool:
+            with _cf.ThreadPoolExecutor(max_workers=4) as pool:
                 for sym_r, mcap_cr in pool.map(_fetch_single_mcap, passed_price_both):
                     mcap_map[sym_r] = mcap_cr
                     processed_mcap_count += 1
@@ -1253,9 +1253,13 @@ if st.session_state.weekly_momentum_results is None:
         except Exception as e:
             print(f"Error loading weekly cache on boot: {e}")
 
+st.sidebar.markdown('### ⚡ Performance Settings')
+enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", value=False, help="Disable this on Streamlit Cloud to prevent UI freezing due to heavy thread execution.")
+
 # Automatically trigger scanning in background if results are missing for today
-if (st.session_state.monthly_momentum_results is None or st.session_state.weekly_momentum_results is None) and not MOMENTUM_SCAN_STATUS["is_running"]:
-    run_background_momentum_scans()
+if enable_background_scans:
+    if (st.session_state.monthly_momentum_results is None or st.session_state.weekly_momentum_results is None) and not MOMENTUM_SCAN_STATUS["is_running"]:
+        run_background_momentum_scans()
 
 # --- Automatic Daily Database Cache Loader ---
 # CRITICAL: Only hit the database when results are not yet in session state.
@@ -1317,7 +1321,7 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                     all_syms.extend([r['symbol'] for r in st.session_state.scan_results])
 
                 all_syms = list(set(all_syms))
-                if all_syms:
+                if all_syms and enable_background_scans:
                     try:
                         run_background_ai_scan(all_syms, latest_date_str)
                     except Exception as auto_scan_err:
@@ -1649,7 +1653,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
@@ -2025,8 +2029,11 @@ with st.sidebar.expander("🎓 Institutional Buy Signals Guide", expanded=False)
     )
 
 # --- MAIN INTERFACE TABS ---
-try:
-    tab_scan, tab_detail, tab_watchlist, tab_ai, tab_gapup, tab_above_ma, tab_support_ma, tab_crossover_ma, tab_wavetrend, tab_minervini, tab_monthly_mom, tab_weekly_mom, tab_history, tab_vcs, tab_structural_vcp, tab_stage2, tab_vpa, tab_frequent, tab_vol_profile = st.tabs([
+st.sidebar.markdown('---')
+st.sidebar.markdown('### 🧭 Navigation')
+selected_module = st.sidebar.radio(
+    "Select Scan Module",
+    [
         "📊 Scanner Results",
         "📈 Stock Detail",
         "📋 My Watchlist",
@@ -2046,11 +2053,8 @@ try:
         "🚥 VPA Trend",
         "🔄 Consistent Alerts",
         "📊 Volume Profile"
-    ])
-except Exception as tab_err:
-    st.error(f"❌ Tab rendering error: {tab_err}")
-    st.exception(tab_err)
-    st.stop()
+    ]
+)
 
 
 
@@ -2060,7 +2064,7 @@ scan_data = st.session_state.scan_results
 # ==============================================================================
 # TAB 1: SCANNER RESULTS
 # ==============================================================================
-with tab_scan:
+if selected_module == "📊 Scanner Results":
     try:
         # 1. Premium Metrics Row
         m1, m2, m3, m4 = st.columns(4)
@@ -2142,7 +2146,7 @@ with tab_scan:
 # ==============================================================================
 # TAB 2: STOCK DETAIL
 # ==============================================================================
-with tab_detail:
+if selected_module == "📈 Stock Detail":
     # Mode selector for analysis target
     search_mode = st.radio(
         "Choose Analysis Target Mode:",
@@ -2456,7 +2460,7 @@ with tab_detail:
 # ==============================================================================
 # TAB 3: WATCHLIST
 # ==============================================================================
-with tab_watchlist:
+if selected_module == "📋 My Watchlist":
     st.markdown("### 📋 My Watchlist Monitor")
     
     # Read persistent DB
@@ -2648,7 +2652,7 @@ with tab_watchlist:
 # ==============================================================================
 # TAB 4: AI CHART PATTERN DETECTOR
 # ==============================================================================
-with tab_ai:
+if selected_module == "🤖 AI Chart Pattern Detector":
     st.markdown("### 🤖 Technical Chart Pattern Recognition with AI")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Inspect daily candle charts with Euri / Groq AI technical analysts and save/cache findings in Neon PostgreSQL database.</p>", unsafe_allow_html=True)
     st.info("💡 **Trading Note on Live Data**: Scans performed during active NSE market hours (9:15 AM - 3:30 PM IST) dynamically process real-time updates for today's active candle. Indicators (RSI, CCI) and scanner scores will naturally vary as today's close prices fluctuate. Scans run after market hours are 100% static and deterministic.")
@@ -3161,7 +3165,7 @@ with tab_ai:
 # ==============================================================================
 # TAB 6: GAP-UP SETUPS
 # ==============================================================================
-with tab_gapup:
+if selected_module == "🚀 Gap-Up Setups":
     st.markdown("### 🚀 Daily Gap-Up Momentum Setups")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for momentum setups opening higher than yesterday's close — price breaking out of overhead levels immediately upon market open.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -3232,7 +3236,7 @@ with tab_gapup:
 # ==============================================================================
 # TAB 7: ABOVE 20 & 50 SMA
 # ==============================================================================
-with tab_above_ma:
+if selected_module == "📈 Above 20 & 50 SMA":
     st.markdown("### 📈 Stocks Trading Above 20 SMA & 50 SMA")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Identify stocks in a strong medium-term uptrend where price is trading comfortably above both their 20-day and 50-day Simple Moving Averages.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -3283,7 +3287,7 @@ with tab_above_ma:
 # ==============================================================================
 # TAB 8: 65 SMA SUPPORT
 # ==============================================================================
-with tab_support_ma:
+if selected_module == "🛡️ 65 SMA Support":
     st.markdown("### 🛡️ Stocks Taking Support at 65 SMA")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for institutional pullbacks where the price is testing or bouncing precisely off the 65-day Simple Moving Average (65 SMA), offering high-probability low-risk entries.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -3333,7 +3337,7 @@ with tab_support_ma:
 # ==============================================================================
 # TAB 9: MA CROSSOVERS
 # ==============================================================================
-with tab_crossover_ma:
+if selected_module == "🔄 MA Crossovers":
     st.markdown("### 🔄 Moving Average Crossover Signals")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Identify stocks triggering critical trend reversal crossovers (50 SMA crossing 150/200 SMA, or price crossing above 50/150/200 SMA) in the latest session.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -3382,7 +3386,7 @@ with tab_crossover_ma:
 # ==============================================================================
 # TAB 10: WAVE TREND (LazyBear)
 # ==============================================================================
-with tab_wavetrend:
+if selected_module == "🌊 Wave Trend":
     # 0. Timeframe & Threshold selector inside tab
     wt_col1, wt_col2 = st.columns(2)
     with wt_col1:
@@ -3623,7 +3627,7 @@ with tab_wavetrend:
 # ==============================================================================
 # TAB 11: MARK MINERVINI STAGE-2 TREND TEMPLATE
 # ==============================================================================
-with tab_minervini:
+if selected_module == "🏆 Minervini Stage-2":
     st.markdown("### 🏆 Mark Minervini Stage-2 Trend Template")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for institutional Stage-2 uptrend breakout setups using the legendary Mark Minervini Trend Template. We prioritize <b style=\"color:#00e676;\">Early Stage-2</b> candidates (within 20% of their 200 SMA support) to capture high-velocity breakouts with tight risk protection.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -3817,7 +3821,7 @@ with tab_minervini:
 # ==============================================================================
 # TAB 12: SCAN HISTORY VIEWER
 # ==============================================================================
-with tab_history:
+if selected_module == "📅 Scan History":
     st.markdown("### 📅 Historical Scan Database")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Browse the archive of all historical stock scans saved in Neon PostgreSQL. Retrieve and analyze past breakouts, pullbacks, and mean-reversion trade setups.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -3931,7 +3935,7 @@ with tab_history:
 # ==============================================================================
 # TAB: MONTHLY MOMENTUM SCANNER (EMA Stack + ROC + RSI + Volume > Vol SMA)
 # ==============================================================================
-with tab_monthly_mom:
+if selected_module == "📅 Monthly Momentum":
     st.markdown("### 📅 Monthly Momentum Scanner")
     st.markdown(
         "<p style='font-size:0.9rem; color:#94a3b8;'>Scans <b>all NSE-listed stocks</b> (Market Cap ≥ ₹3000 Cr, Price ≥ ₹100) for "
@@ -4250,7 +4254,7 @@ with tab_monthly_mom:
 # ==============================================================================
 # TAB: WEEKLY MOMENTUM SCANNER
 # ==============================================================================
-with tab_weekly_mom:
+if selected_module == "📈 Weekly Momentum":
     st.markdown("### 📈 Weekly Momentum Breakout Scanner")
     st.markdown(
         "<p style='font-size:0.9rem; color:#94a3b8;'>Scans <b>all NSE-listed stocks</b> (MCap ≥ ₹5000 Cr, Price ≥ ₹200) for the "
@@ -4579,7 +4583,7 @@ with tab_weekly_mom:
 # ==============================================================================
 # TAB VCS: VOLATILITY CONTRACTION SCANNER
 # ==============================================================================
-with tab_vcs:
+if selected_module == "📉 Volatility Contraction (VCS)":
     st.markdown("### 📉 Volatility Contraction Scanner (VCS)")
     st.markdown("Identifies stocks with tightening ATR, Standard Deviation, and Volume contraction.")
     st.markdown("---")
@@ -4718,7 +4722,7 @@ with tab_vcs:
 # ==============================================================================
 # TAB: STRUCTURAL VCP
 # ==============================================================================
-with tab_structural_vcp:
+if selected_module == "🎯 Structural VCP":
     st.markdown("### 🎯 Structural Volatility Contraction Pattern (VCP)")
     st.markdown("Hunts for textbook VCP patterns: Flat-top resistance, successive higher lows (tightening), and extreme volume dry-up on the right side.")
     
@@ -4753,7 +4757,7 @@ with tab_structural_vcp:
 # ==============================================================================
 # TAB: EARLY STAGE 2 BREAKOUT
 # ==============================================================================
-with tab_stage2:
+if selected_module == "🚀 Early Stage 2 Breakout":
     st.markdown("### 🚀 Early Stage 2 Base Breakout Scanner")
     st.markdown("Identifies stocks moving out of a long-term Stage 1 base on the monthly timeframe.")
     
@@ -4829,7 +4833,7 @@ with tab_stage2:
                 return chunk_res
 
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                 futures = []
                 for c_idx, chunk in enumerate(chunks):
                     futures.append(executor.submit(download_s2_chunk, c_idx, chunk))
@@ -4883,7 +4887,7 @@ with tab_stage2:
 # ==============================================================================
 # TAB 17: VPA TREND
 # ==============================================================================
-with tab_vpa:
+if selected_module == "🚥 VPA Trend":
     st.markdown("### 🚥 VPA Trend Indicator (Daily, Weekly, Monthly)")
     st.info("Scans ALL NSE listed stocks. Filters: Price > ₹100. Shows Major, Mid, and Minor trends across timeframes.")
     
@@ -4920,7 +4924,7 @@ with tab_vpa:
                     chunk_data = {}
                     chunk_filtered = []
                     try:
-                        df_bulk = yf.download(tickers=chunk, period="5y", interval="1d", progress=False, threads=True)
+                        df_bulk = yf.download(tickers=chunk, period="5y", interval="1d", progress=False, threads=False)
                         if isinstance(df_bulk.columns, pd.MultiIndex):
                             for sym in chunk:
                                 try:
@@ -4949,7 +4953,7 @@ with tab_vpa:
                     return chunk_data, chunk_filtered
                     
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vpa_chunk, chunk_idx, chunk))
@@ -5200,13 +5204,13 @@ with tab_vpa:
         st.markdown(table_html, unsafe_allow_html=True)
 
 # TAB: FREQUENT FLYERS (CONSISTENT ALERTS)
-with tab_frequent:
+if selected_module == "🔄 Consistent Alerts":
     import tabs.tab_frequent as tab_freq_mod
     tab_freq_mod.render()
 
 
 # --- VOLUME PROFILE SCANNER TAB ---
-with tab_vol_profile:
+if selected_module == "📊 Volume Profile":
     st.error("DEBUG: If you see this, tab_vol_profile is executing!")
     st.markdown("### 📊 Volume Profile Zones (Daily, Weekly, Monthly)")
     st.info("Scans ALL NSE listed stocks for POC, VAH, VAL levels. Filters: Price > ₹100, Market Cap > 2000 Cr.")
@@ -5247,7 +5251,7 @@ with tab_vol_profile:
                 def download_vp_chunk(chunk_idx, chunk):
                     chunk_data = {}
                     try:
-                        df_bulk = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=True)
+                        df_bulk = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False)
                         if isinstance(df_bulk.columns, pd.MultiIndex):
                             for sym in chunk:
                                 try:
@@ -5273,7 +5277,7 @@ with tab_vol_profile:
                         pass
                     return chunk_data
                     
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vp_chunk, chunk_idx, chunk))
