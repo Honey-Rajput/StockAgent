@@ -1695,14 +1695,19 @@ def classify_vp(price, poc, val, vah):
 
     if price < val:
         zone = '⛔ Avoid (Below Support)'
-    elif position_pct <= BUY_ZONE_THRESHOLD:
-        zone = '✅ Can Buy (Near Support)'
-    elif price <= poc:
-        zone = '⏳ Hold (Moving to Target)'
-    elif price <= vah:
+    elif price > vah:
+        zone = '🚀 Overextended (Breakout)'
+    elif price >= poc:
         zone = '🎯 Take Profit (Near Resistance)'
     else:
-        zone = '🚀 Overextended (Breakout)'
+        if poc > val:
+            distance_pct = (price - val) / (poc - val)
+            if distance_pct <= 0.5:
+                zone = '✅ Can Buy (Near Support)'
+            else:
+                zone = '⏳ Hold (Moving to Target)'
+        else:
+            zone = '✅ Can Buy (Near Support)'
 
     return round(position_pct, 2), zone
 
