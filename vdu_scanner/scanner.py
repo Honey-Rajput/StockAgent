@@ -296,6 +296,11 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     
     if pd.isna(today_wt1) or pd.isna(today_wt2):
         return None
+
+    # Price filter: exclude stocks below ₹100
+    last_close = float(df.iloc[-1]['Close'])
+    if last_close < 100.0:
+        return None
         
     # Check if wt1 is in oversold zone (below threshold)
     if today_wt1 > wt_oversold_threshold:

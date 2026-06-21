@@ -3475,6 +3475,15 @@ with tab_wave:
 
                                     wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=wt_oversold_threshold)
                                     if wt_res is not None:
+                                        # Market cap filter: exclude stocks below ₹2000 Cr
+                                        try:
+                                            mcap = getattr(yf.Ticker(sym_ns).fast_info, 'market_cap', None) or 0
+                                            mcap_cr = mcap / 1e7  # Convert to Crore
+                                            if mcap_cr < 2000.0:
+                                                continue
+                                            wt_res['market_cap_cr'] = round(mcap_cr, 1)
+                                        except Exception:
+                                            pass  # Allow through if market cap fetch fails
                                         wt_res['timeframe'] = wt_timeframe
                                         # Inject threshold logic
                                         wt_res['is_oversold'] = wt_res['wt_value'] <= wt_oversold_threshold
@@ -3490,7 +3499,7 @@ with tab_wave:
     wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, None)
     
     st.markdown(f"### 🌊 WaveTrend Oversold Buy Signals ({wt_timeframe} Timeframe)")
-    st.markdown(f"<p style='font-size:0.9rem; color:#94a3b8;'>Scan for stocks in the WaveTrend oversold zone (WT1 below {wt_oversold_threshold}) using LazyBear's WaveTrend with Crosses indicator. Stocks showing a <b style=\"color:#00e676;\">green dot 🟢 buy signal</b> (WT1 crossing above WT2) in oversold territory are prime mean-reversion candidates.</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='font-size:0.9rem; color:#94a3b8;'>Scan for stocks in the WaveTrend oversold zone (WT1 below {wt_oversold_threshold}) using LazyBear's WaveTrend with Crosses indicator. <span style=\"color:#ffa000; font-weight:600;\">Filters: Price ≥ ₹100 | Market Cap ≥ ₹2000 Cr</span>. Stocks showing a <b style=\"color:#00e676;\">green dot 🟢 buy signal</b> (WT1 crossing above WT2) in oversold territory are prime mean-reversion candidates.</p>", unsafe_allow_html=True)
     st.markdown("---")
     
     # 1. Premium Metrics Row
