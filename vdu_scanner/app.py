@@ -2127,7 +2127,7 @@ with tab_results:
                     "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                 })
             export_df = pd.DataFrame(export_rows)
-            csv_data = export_df.to_csv(index=False).encode('utf-8')
+            csv_data = export_df.to_csv(index=False).encode('utf-8-sig')
             
             st.download_button(
                 label="📥 Download Scan Results (CSV)",
@@ -3220,7 +3220,7 @@ with tab_gapup:
                 "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_g_df = pd.DataFrame(export_gapup)
-        csv_g_data = export_g_df.to_csv(index=False).encode('utf-8')
+        csv_g_data = export_g_df.to_csv(index=False).encode('utf-8-sig')
         
         st.download_button(
             label="📥 Download Gap-Up Setups (CSV)",
@@ -3271,7 +3271,7 @@ with tab_sma:
                 "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_a_df = pd.DataFrame(export_above)
-        csv_a_data = export_a_df.to_csv(index=False).encode('utf-8')
+        csv_a_data = export_a_df.to_csv(index=False).encode('utf-8-sig')
         
         st.download_button(
             label="📥 Download Above 20/50 SMA Results (CSV)",
@@ -3321,7 +3321,7 @@ with tab_sma65:
                 "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_s_df = pd.DataFrame(export_support)
-        csv_s_data = export_s_df.to_csv(index=False).encode('utf-8')
+        csv_s_data = export_s_df.to_csv(index=False).encode('utf-8-sig')
         
         st.download_button(
             label="📥 Download 65 SMA Support Results (CSV)",
@@ -3370,7 +3370,7 @@ with tab_macross:
                 "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
             })
         export_x_df = pd.DataFrame(export_crossover)
-        csv_x_data = export_x_df.to_csv(index=False).encode('utf-8')
+        csv_x_data = export_x_df.to_csv(index=False).encode('utf-8-sig')
         
         st.download_button(
             label="📥 Download MA Crossover Results (CSV)",
@@ -3604,7 +3604,7 @@ with tab_wave:
                     "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                 })
             export_wt_df = pd.DataFrame(export_wt)
-            csv_wt_data = export_wt_df.to_csv(index=False).encode('utf-8')
+            csv_wt_data = export_wt_df.to_csv(index=False).encode('utf-8-sig')
             
             st.download_button(
                 label="📥 Download WaveTrend Results (CSV)",
@@ -3715,7 +3715,7 @@ with tab_minervini:
                         "Actionable Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                     })
                 export_m_df = pd.DataFrame(export_min)
-                csv_m_data = export_m_df.to_csv(index=False).encode('utf-8')
+                csv_m_data = export_m_df.to_csv(index=False).encode('utf-8-sig')
                 
                 st.download_button(
                     label="📥 Download Minervini Template Results (CSV)",
@@ -3794,7 +3794,7 @@ with tab_minervini:
                             "Actionable Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
                         })
                     export_m_df_h = pd.DataFrame(export_min_h)
-                    csv_m_data_h = export_m_df_h.to_csv(index=False).encode('utf-8')
+                    csv_m_data_h = export_m_df_h.to_csv(index=False).encode('utf-8-sig')
                     
                     st.download_button(
                         label="📥 Download Historical Minervini Template Results (CSV)",
@@ -4194,7 +4194,7 @@ with tab_monthly:
             "Confidence": r['confidence'],
             "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
         } for r in sorted_mm]
-        mm_csv = pd.DataFrame(mm_export).to_csv(index=False).encode('utf-8')
+        mm_csv = pd.DataFrame(mm_export).to_csv(index=False).encode('utf-8-sig')
         st.download_button(
             label="📥 Download Monthly Momentum Results (CSV)",
             data=mm_csv,
@@ -4516,7 +4516,7 @@ with tab_weekly:
             "Confidence": r['confidence'],
             "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
         } for r in sorted_wm]
-        wm_csv = pd.DataFrame(wm_export).to_csv(index=False).encode('utf-8')
+        wm_csv = pd.DataFrame(wm_export).to_csv(index=False).encode('utf-8-sig')
         st.download_button(
             label="📥 Download Weekly Momentum Results (CSV)",
             data=wm_csv,
@@ -4735,7 +4735,7 @@ with tab_vcs:
                     row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
                 v_export_list.append(row)
             vcs_df = pd.DataFrame(v_export_list)
-            csv_data = vcs_df.to_csv(index=False).encode('utf-8')
+            csv_data = vcs_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="⬇️ Download CSV",
                 data=csv_data,
@@ -4769,7 +4769,7 @@ with tab_vcp:
                     row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
                 sv_export_list.append(row)
             sv_df = pd.DataFrame(sv_export_list)
-            sv_csv = sv_df.to_csv(index=False).encode('utf-8')
+            sv_csv = sv_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="⬇️ Download CSV",
                 data=sv_csv,
@@ -4898,7 +4898,7 @@ with tab_stage2:
                     row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
                 s2_export_list.append(row)
             s2_df = pd.DataFrame(s2_export_list)
-            csv_data = s2_df.to_csv(index=False).encode('utf-8')
+            csv_data = s2_df.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="⬇️ Download CSV",
                 data=csv_data,
@@ -5129,7 +5129,7 @@ with tab_vpa:
         with col1:
             st.download_button(
                 label="📥 Download Daily VPA (CSV)",
-                data=pd.DataFrame(daily_export).to_csv(index=False).encode('utf-8'),
+                data=pd.DataFrame(daily_export).to_csv(index=False).encode('utf-8-sig'),
                 file_name="vpa_daily_trend.csv",
                 mime="text/csv",
                 use_container_width=True
@@ -5137,7 +5137,7 @@ with tab_vpa:
         with col2:
             st.download_button(
                 label="📥 Download Weekly VPA (CSV)",
-                data=pd.DataFrame(weekly_export).to_csv(index=False).encode('utf-8'),
+                data=pd.DataFrame(weekly_export).to_csv(index=False).encode('utf-8-sig'),
                 file_name="vpa_weekly_trend.csv",
                 mime="text/csv",
                 use_container_width=True
@@ -5145,7 +5145,7 @@ with tab_vpa:
         with col3:
             st.download_button(
                 label="📥 Download Monthly VPA (CSV)",
-                data=pd.DataFrame(monthly_export).to_csv(index=False).encode('utf-8'),
+                data=pd.DataFrame(monthly_export).to_csv(index=False).encode('utf-8-sig'),
                 file_name="vpa_monthly_trend.csv",
                 mime="text/csv",
                 use_container_width=True
@@ -5447,7 +5447,7 @@ with tab_volprofile:
         
         with tab_all:
             st.dataframe(df_vp, use_container_width=True, hide_index=True)
-            csv_all = df_vp.to_csv(index=False).encode('utf-8')
+            csv_all = df_vp.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download All Stocks (CSV)",
                 data=csv_all,
@@ -5465,7 +5465,7 @@ with tab_volprofile:
             st.markdown(f"**{len(buy_daily)}** stocks in Daily Buy Zone | **{len(df_daily)}** total with daily data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             st.dataframe(df_daily, use_container_width=True, hide_index=True)
-            csv_daily = df_daily.to_csv(index=False).encode('utf-8')
+            csv_daily = df_daily.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Daily Timeframe (CSV)",
                 data=csv_daily,
@@ -5483,7 +5483,7 @@ with tab_volprofile:
             st.markdown(f"**{len(buy_weekly)}** stocks in Weekly Buy Zone | **{len(df_weekly)}** total with weekly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             st.dataframe(df_weekly, use_container_width=True, hide_index=True)
-            csv_weekly = df_weekly.to_csv(index=False).encode('utf-8')
+            csv_weekly = df_weekly.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Weekly Timeframe (CSV)",
                 data=csv_weekly,
@@ -5501,7 +5501,7 @@ with tab_volprofile:
             st.markdown(f"**{len(buy_monthly)}** stocks in Monthly Buy Zone | **{len(df_monthly)}** total with monthly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             st.dataframe(df_monthly, use_container_width=True, hide_index=True)
-            csv_monthly = df_monthly.to_csv(index=False).encode('utf-8')
+            csv_monthly = df_monthly.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Monthly Timeframe (CSV)",
                 data=csv_monthly,
