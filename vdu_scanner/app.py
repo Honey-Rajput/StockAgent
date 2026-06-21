@@ -5356,12 +5356,12 @@ with tab_volprofile:
             if isinstance(tf, dict) and tf:
                 return {
                     'zone': tf.get('zone', ''),
-                    'va_pct': tf.get('position_pct', ''),
-                    'poc': round(tf['poc'], 2) if tf.get('poc') is not None else '',
-                    'val': round(tf['val'], 2) if tf.get('val') is not None else '',
-                    'vah': round(tf['vah'], 2) if tf.get('vah') is not None else ''
+                    'va_pct': tf.get('position_pct') if tf.get('position_pct') is not None and tf.get('position_pct') != '' else None,
+                    'poc': round(tf['poc'], 2) if tf.get('poc') is not None else None,
+                    'val': round(tf['val'], 2) if tf.get('val') is not None else None,
+                    'vah': round(tf['vah'], 2) if tf.get('vah') is not None else None
                 }
-            return {'zone': '', 'va_pct': '', 'poc': '', 'val': '', 'vah': ''}
+            return {'zone': '', 'va_pct': None, 'poc': None, 'val': None, 'vah': None}
         
         # Format for Dataframe
         import pandas as pd
