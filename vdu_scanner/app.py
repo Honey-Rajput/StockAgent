@@ -928,10 +928,10 @@ def run_background_momentum_scans():
             today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
             CRORE = 1_00_00_000
 
-            # 1. Resolve Universe (using NIFTY 500 to prevent Streamlit Cloud OOM)
-            MOMENTUM_SCAN_STATUS["status_text"] = "Resolving NIFTY 500 listed symbols..."
-            from data_fetcher import get_index_stocks
-            universe = get_index_stocks("NIFTY 500")
+            # 1. Resolve Universe (using ALL NSE for comprehensive coverage)
+            MOMENTUM_SCAN_STATUS["status_text"] = "Resolving ALL NSE listed symbols..."
+            from data_fetcher import get_all_nse_symbols
+            universe = get_all_nse_symbols()
             
             if not universe:
                 MOMENTUM_SCAN_STATUS["status_text"] = "Error: Could not resolve NSE symbols universe."
@@ -999,6 +999,9 @@ def run_background_momentum_scans():
                 MOMENTUM_SCAN_STATUS["progress"] = 0.05 + (chunk_idx / len(ticker_chunks)) * 0.15
                 try:
                     q_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
+                    if q_df is None or q_df.empty:
+                        print("⚠️ Yahoo Finance Rate Limit hit. Aborting background scan chunk.")
+                        break
                     if not q_df.empty and isinstance(q_df.columns, pd.MultiIndex):
                         price_types = q_df.columns.get_level_values(0).unique().tolist()
                         cl_s = q_df['Close'].iloc[-1] if 'Close' in price_types else pd.Series(dtype=float)
@@ -1061,6 +1064,9 @@ def run_background_momentum_scans():
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
                         df_mbulk = yf.download(tickers=chunk_ns, period="10y", interval="1mo", progress=False, threads=False)
+                        if df_mbulk is None or df_mbulk.empty:
+                            print("⚠️ Yahoo Finance Rate Limit hit. Aborting background monthly scan chunk.")
+                            break
                         for sym in chunk:
                             sym_ns = f"{sym}.NS"
                             try:
@@ -1117,6 +1123,9 @@ def run_background_momentum_scans():
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
                         df_wbulk = yf.download(tickers=chunk_ns, period="3y", interval="1wk", progress=False, threads=False)
+                        if df_wbulk is None or df_wbulk.empty:
+                            print("⚠️ Yahoo Finance Rate Limit hit. Aborting background weekly scan chunk.")
+                            break
                         for sym in chunk:
                             sym_ns = f"{sym}.NS"
                             try:
@@ -1343,7 +1352,7 @@ st.sidebar.markdown('### ⚙️ Scan Universe')
 universe_selection = st.sidebar.selectbox(
     "Select Universe to Scan",
     options=["NIFTY 100 (Recommended)", "NIFTY 50 (Ultra Fast)", "All NSE Listed Equities (Full Scan)"],
-    index=0,
+    index=2,
     help="Select the universe of stocks to scan. NIFTY 100/50 are extremely fast and completely bypass Yahoo Finance rate limits."
 )
 
@@ -1622,6 +1631,8 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
                     try:
                         # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
                         df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False)
+                        if df_bulk is None or df_bulk.empty:
+                            return chunk_data
                         for sym in chunk:
                             sym_ns = f"{sym.strip().upper()}.NS"
                             try:
@@ -4067,6 +4078,9 @@ with tab_monthly:
             mm_status.text(f"Step 1/3 — Quotes chunk {mm_cidx+1}/{len(mm_ticker_chunks)}...")
             try:
                 q_df = yf.download(tickers=mm_chunk, period="1d", progress=False, threads=False)
+                if q_df is None or q_df.empty:
+                    mm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
+                    break
                 if not q_df.empty and isinstance(q_df.columns, pd.MultiIndex):
                     price_types_mm = q_df.columns.get_level_values(0).unique().tolist()
                     cl_s = q_df['Close'].iloc[-1] if 'Close' in price_types_mm else pd.Series(dtype=float)
@@ -4102,6 +4116,9 @@ with tab_monthly:
                     interval="1mo",
                     progress=False
                 )
+                if df_mbulk is None or df_mbulk.empty:
+                    mm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
+                    break
                 for sym_m in c_chunk:
                     sym_ns_m = f"{sym_m.strip().upper()}.NS"
                     try:
@@ -4385,6 +4402,9 @@ with tab_weekly:
             wm_status.text(f"Step 1/3 — Quote chunk {wm_cidx+1}/{len(wm_q_chunks)}...")
             try:
                 wq_df = yf.download(tickers=wm_chunk, period="1d", progress=False, threads=False)
+                if wq_df is None or wq_df.empty:
+                    wm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
+                    break
                 if not wq_df.empty and isinstance(wq_df.columns, pd.MultiIndex):
                     wpt = wq_df.columns.get_level_values(0).unique().tolist()
                     wcl = wq_df['Close'].iloc[-1] if 'Close' in wpt else pd.Series(dtype=float)
