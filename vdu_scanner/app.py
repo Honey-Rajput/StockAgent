@@ -928,10 +928,10 @@ def run_background_momentum_scans():
             today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
             CRORE = 1_00_00_000
 
-            # 1. Resolve Universe (using ALL NSE for comprehensive coverage)
-            MOMENTUM_SCAN_STATUS["status_text"] = "Resolving ALL NSE listed symbols..."
-            from data_fetcher import get_all_nse_symbols
-            universe = get_all_nse_symbols()
+            # 1. Resolve Universe (using NIFTY 500 to prevent Streamlit Cloud OOM)
+            MOMENTUM_SCAN_STATUS["status_text"] = "Resolving NIFTY 500 listed symbols..."
+            from data_fetcher import get_index_stocks
+            universe = get_index_stocks("NIFTY 500")
             
             if not universe:
                 MOMENTUM_SCAN_STATUS["status_text"] = "Error: Could not resolve NSE symbols universe."
@@ -1343,7 +1343,7 @@ st.sidebar.markdown('### ⚙️ Scan Universe')
 universe_selection = st.sidebar.selectbox(
     "Select Universe to Scan",
     options=["NIFTY 100 (Recommended)", "NIFTY 50 (Ultra Fast)", "All NSE Listed Equities (Full Scan)"],
-    index=2,
+    index=0,
     help="Select the universe of stocks to scan. NIFTY 100/50 are extremely fast and completely bypass Yahoo Finance rate limits."
 )
 
