@@ -1295,10 +1295,10 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                     st.session_state.crossover_ma_results = []
                 try:
                     st.session_state.wt_results = database.get_cached_wt_cross(latest_date_str)
-                    st.session_state.wt_results_by_tf = {"Daily": st.session_state.wt_results}
+                    st.session_state.wt_results_by_tf = {"Daily_-40.0": st.session_state.wt_results, "Daily": st.session_state.wt_results}
                 except Exception:
                     st.session_state.wt_results = []
-                    st.session_state.wt_results_by_tf = {"Daily": []}
+                    st.session_state.wt_results_by_tf = {"Daily_-40.0": [], "Daily": []}
                 try:
                     st.session_state.minervini_results = ensure_minervini_fields(database.get_cached_trend_setups(latest_date_str, 'minervini'))
                 except Exception:
@@ -1945,7 +1945,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         st.session_state.structural_vcp_results = structural_vcp_list
         st.session_state.vpa_results = vpa_list
         st.session_state.wt_results = wt_list
-        st.session_state.wt_results_by_tf = {"Daily": wt_list}
+        st.session_state.wt_results_by_tf = {"Daily_-40.0": wt_list, "Daily": wt_list}
         st.session_state.total_scanned = n_stocks
         st.session_state.failed_count = failed_count
         st.session_state.last_scanned = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p")
@@ -3443,12 +3443,12 @@ with tab_wave:
             sym_chunks = [symbols_to_scan[i:i + chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
             
             for chunk in sym_chunks:
-                chunk_ns = [f"{s}.NS" for s in chunk]
+                chunk_ns = [s if s.endswith('.NS') else f"{s}.NS" for s in chunk]
                 try:
                     # yfinance 1.x: group_by, threads, auto_adjust=False removed
                     df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False)
                     for sym in chunk:
-                        sym_ns = f"{sym}.NS"
+                        sym_ns = sym if sym.endswith('.NS') else f"{sym}.NS"
                         try:
                             if isinstance(df_bulk.columns, pd.MultiIndex):
                                 # yfinance 1.x: (price_type, ticker) MultiIndex
