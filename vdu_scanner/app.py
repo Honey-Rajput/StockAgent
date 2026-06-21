@@ -1,6 +1,21 @@
 # app.py
 import streamlit as st
 import pandas as pd
+
+import pytz
+IST_TIMEZONE = pytz.timezone('Asia/Kolkata')
+
+def get_market_date():
+    from datetime import datetime, timedelta
+    today = datetime.now(IST_TIMEZONE)
+    if today.isoweekday() == 7:
+        return (today - timedelta(days=2)).strftime('%Y-%m-%d')
+    elif today.isoweekday() == 6:
+        return (today - timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        return today.strftime('%Y-%m-%d')
+
+
 from datetime import datetime, timedelta
 import os
 import yfinance as yf
@@ -925,7 +940,7 @@ def run_background_momentum_scans():
         import json
         
         try:
-            today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+            today_str = get_market_date()
             CRORE = 1_00_00_000
 
             # 1. Resolve Universe (using ALL NSE for comprehensive coverage)
@@ -1208,7 +1223,7 @@ if 'monthly_momentum_results' not in st.session_state:
 if 'weekly_momentum_results' not in st.session_state:
     st.session_state.weekly_momentum_results = None
 
-today_str_check = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+today_str_check = get_market_date()
 
 if st.session_state.monthly_momentum_results is None:
     # 1. Try fetching from PostgreSQL database first
@@ -1963,7 +1978,7 @@ if st.sidebar.button("🔍 Run Scanner", use_container_width=True):
         
         # Save to database cache daily
         try:
-            today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+            today_ist_str = get_market_date()
             trend_setups_list = above_ma_list + support_ma_list + crossover_ma_list + minervini_list
             database.save_scan_results(
                 date_str=today_ist_str,
@@ -2707,7 +2722,7 @@ with tab_ai:
         btn_analyze = st.button("🤖 Analyze Pattern with AI", key="run_ai_analysis_btn")
         
         # Get today's date in IST
-        today_date_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+        today_date_str = get_market_date()
         
         # Check cache first (always check cache automatically to show today's output immediately!)
         cached_result = database.get_pattern_by_date(ticker_to_analyze, today_date_str)
@@ -2922,7 +2937,7 @@ with tab_ai:
         st.info("💡 Run a market scan first from the sidebar to find breakout or contraction setups and dynamically batch-analyze them with AI here!")
     else:
         # Load cached patterns from database for all active flagged symbols
-        today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+        today_str = get_market_date()
         
         flagged_db_records = {}
         all_today_patterns = database.get_all_patterns_by_date(today_str)
@@ -4712,7 +4727,7 @@ with tab_vcs:
             
             st.session_state.vcs_results = custom_vcs_results
             try:
-                today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+                today_ist_str = get_market_date()
                 database.save_vcs_only(today_ist_str, custom_vcs_results)
             except Exception as e:
                 print(f"Failed to cache custom VCS scan: {e}")
@@ -4790,7 +4805,7 @@ with tab_stage2:
     if 'stage2_results' not in st.session_state:
         st.session_state.stage2_results = None
         # Try loading from DB
-        today_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+        today_str = get_market_date()
         try:
             cached_stage2 = database.get_cached_stage2(today_str)
             if cached_stage2 is not None:
@@ -4876,7 +4891,7 @@ with tab_stage2:
             s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
             st.session_state.stage2_results = s2_res
             try:
-                today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+                today_ist_str = get_market_date()
                 database.save_stage2_only(today_ist_str, s2_res)
             except Exception as e:
                 print(f"Failed to cache stage2 scan: {e}")
@@ -5009,7 +5024,7 @@ with tab_vpa:
                 status.empty()
                 st.session_state.vpa_results = vpa_list
                 try:
-                    today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+                    today_ist_str = get_market_date()
                     database.save_vpa_only(today_ist_str, vpa_list)
                 except Exception as e:
                     print(f"Failed to cache custom VPA scan: {e}")
@@ -5359,7 +5374,7 @@ with tab_volprofile:
                 if vp_list:
                     st.session_state.vp_results = vp_list
                     try:
-                        today_ist_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d")
+                        today_ist_str = get_market_date()
                         database.save_volume_profile_only(today_ist_str, vp_list)
                     except Exception as e:
                         print(f"Failed to cache Volume Profile scan: {e}")
