@@ -5029,19 +5029,30 @@ with tab_vpa:
         # Download Button
         import pandas as pd
         
-        def get_clean_action_signal(short, mid, max_t):
-            if max_t == 1 and mid == 1 and short == 1:
-                return "Perfect Buy / Strong Hold", "Buy"
-            elif max_t == 1 and mid == 1 and short <= 0:
-                return "Pullback (Wait for Short=Up)", "Hold"
-            elif max_t == 1 and mid <= 0:
-                return "Warning (Mid Broken) - Trim", "Sell"
-            elif max_t <= 0 and mid == 1 and short == 1:
-                return "Early Breakout Entry", "Buy"
-            elif max_t <= 0 and mid <= 0:
-                return "Avoid / Full Exit", "Sell"
+        def get_action_signal_text(short, mid, max_t, max_val):
+            if max_val > 4.0:
+                return "Hyper-Extended / Parabolic (Avoid Fresh Entry)"
+            elif 2.0 < max_val <= 4.0:
+                return "Slightly Overextended (Avoid Fresh Entry)"
+            elif 0.5 < max_val <= 2.0 and mid == 1 and short == 1:
+                return "Perfect Buy / Strong Hold"
+            elif 0 < max_val <= 0.5 and mid == 1 and short == 1:
+                return "Early Breakout Entry"
+            elif max_val > 0.5 and mid == 1 and short <= 0:
+                return "Pullback (Wait for Short=Up)"
+            elif max_val > 0.5 and mid <= 0:
+                return "Warning (Mid Broken) - Trim"
+            elif max_val <= 0 and mid <= 0:
+                return "Avoid / Full Exit"
             else:
-                return "Neutral / Choppy", "Hold"
+                return "Neutral / Choppy"
+        
+        def get_signal(short, mid, max_t, max_val):
+            if max_val > 4.0:
+                return "Buy"
+            elif max_val > 2.0:
+                return "Buy"
+            return "Buy" if (max_val > 0.5 and mid == 1) or (max_val > 0 and mid == 1 and short == 1) else "Hold" if max_val > 0.5 else "Sell"
 
         only_buy_signals = st.checkbox("🟢 Show Only 'Buy' Signals", value=False)
         
@@ -5058,7 +5069,7 @@ with tab_vpa:
             # Actually, since the timeframe can be selected in UI, let's filter the data based on the selected timeframe later.
             # For the exports, we'll export all but add Rank.
             
-            d_act, d_sig = get_clean_action_signal(d['minor'], d['mid'], d['major'])
+            d_sig = get_signal(d['minor'], d['mid'], d['major'], d.get('major_val', 0))
             if only_buy_signals and d_sig != "Buy":
                 continue
                 
@@ -5075,14 +5086,13 @@ with tab_vpa:
                 'Minor Trend': "Up" if d['minor'] == 1 else ("Down" if d['minor'] == -1 else "Neutral"),
                 'RSI': d.get('rsi', 0.0),
                 'CCI': d.get('cci', 0.0),
-                'Action': d_act,
+                'Action': get_action_signal_text(d['minor'], d['mid'], d['major'], d.get('major_val', 0)),
                 'Signal': d_sig
             })
             rank += 1
             
         for rank, r in filtered_vpa_data:
             w = r['weekly']
-            w_act, w_sig = get_clean_action_signal(w['minor'], w['mid'], w['major'])
             weekly_export.append({
                 'Rank': rank,
                 'Symbol': r['symbol'],
@@ -5094,13 +5104,12 @@ with tab_vpa:
                 'Minor Trend': "Up" if w['minor'] == 1 else ("Down" if w['minor'] == -1 else "Neutral"),
                 'RSI': w.get('rsi', 0.0),
                 'CCI': w.get('cci', 0.0),
-                'Action': w_act,
-                'Signal': w_sig
+                'Action': get_action_signal_text(w['minor'], w['mid'], w['major'], w.get('major_val', 0)),
+                'Signal': get_signal(w['minor'], w['mid'], w['major'], w.get('major_val', 0))
             })
             
         for rank, r in filtered_vpa_data:
             m = r['monthly']
-            m_act, m_sig = get_clean_action_signal(m['minor'], m['mid'], m['major'])
             monthly_export.append({
                 'Rank': rank,
                 'Symbol': r['symbol'],
@@ -5112,8 +5121,8 @@ with tab_vpa:
                 'Minor Trend': "Up" if m['minor'] == 1 else ("Down" if m['minor'] == -1 else "Neutral"),
                 'RSI': m.get('rsi', 0.0),
                 'CCI': m.get('cci', 0.0),
-                'Action': m_act,
-                'Signal': m_sig
+                'Action': get_action_signal_text(m['minor'], m['mid'], m['major'], m.get('major_val', 0)),
+                'Signal': get_signal(m['minor'], m['mid'], m['major'], m.get('major_val', 0))
             })
         
         col1, col2, col3 = st.columns(3)
@@ -5153,19 +5162,22 @@ with tab_vpa:
                 return "<span style='color: #ef4444; font-weight: bold;'>Dn (-1)</span>"
             return "<span style='color: #fbbf24; font-weight: bold;'>Neu (0)</span>"
             
-        def get_action_signal(short, mid, max_t):
-            if max_t == 1 and mid == 1 and short == 1:
-                return "<span style='color: #00e676; font-weight: bold;'>🟢 Perfect Buy / Strong Hold</span>"
-            elif max_t == 1 and mid == 1 and short <= 0:
-                return "<span style='color: #fbbf24; font-weight: bold;'>🟡 Pullback (Wait for Short=Up)</span>"
-            elif max_t == 1 and mid <= 0:
-                return "<span style='color: #f97316; font-weight: bold;'>🟠 Warning (Mid Broken) - Trim</span>"
-            elif max_t <= 0 and mid == 1 and short == 1:
-                return "<span style='color: #3b82f6; font-weight: bold;'>🔵 Early Breakout Entry</span>"
-            elif max_t <= 0 and mid <= 0:
-                return "<span style='color: #ef4444; font-weight: bold;'>🔴 Avoid / Full Exit</span>"
+        def get_action_signal(short, mid, max_t, max_val):
+            text = get_action_signal_text(short, mid, max_t, max_val)
+            if "Perfect Buy" in text:
+                return f"<span style='color: #00e676; font-weight: bold;'>🟢 {text}</span>"
+            elif "Early Breakout" in text:
+                return f"<span style='color: #3b82f6; font-weight: bold;'>🔵 {text}</span>"
+            elif "Pullback" in text:
+                return f"<span style='color: #fbbf24; font-weight: bold;'>🟡 {text}</span>"
+            elif "Warning" in text:
+                return f"<span style='color: #f97316; font-weight: bold;'>🟠 {text}</span>"
+            elif "Avoid" in text:
+                return f"<span style='color: #ef4444; font-weight: bold;'>🔴 {text}</span>"
+            elif "Parabolic" in text or "Overextended" in text:
+                return f"<span style='color: #d946ef; font-weight: bold;'>🟣 {text}</span>"
             else:
-                return "<span style='color: #9ca3af; font-weight: bold;'>⚪ Neutral / Choppy</span>"
+                return f"<span style='color: #9ca3af; font-weight: bold;'>⚪ {text}</span>"
             
         html_rows = []
         for rank, r in filtered_vpa_data:
@@ -5180,7 +5192,7 @@ with tab_vpa:
             t_mid = trend_to_badge(tf_data['mid'])
             t_max = trend_to_badge(tf_data['major'])
             
-            action = get_action_signal(tf_data['minor'], tf_data['mid'], tf_data['major'])
+            action = get_action_signal(tf_data['minor'], tf_data['mid'], tf_data['major'], tf_data.get('major_val', 0))
             
             # Zero indentation to prevent Streamlit markdown codeblock rendering
             row = f"""<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
