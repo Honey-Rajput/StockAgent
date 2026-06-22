@@ -1267,6 +1267,7 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
         return {
             'symbol': symbol.strip().upper(),
             'company_name': company_name,
+            'cmp': round(cmp, 2),
             'buy_price': buy_price,
             'exit_price': exit_price,
             'target_price': target_price,
