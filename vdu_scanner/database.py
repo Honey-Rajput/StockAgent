@@ -1681,7 +1681,7 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
                STRING_AGG(DISTINCT source, ', ') as strategies
         FROM all_scans
         GROUP BY symbol
-        HAVING COUNT(DISTINCT scan_date) > 1
+        HAVING COUNT(DISTINCT scan_date) > 1 OR COUNT(DISTINCT source) > 1
     )
     SELECT a.*, v.daily_rsi as rsi, v.daily_cci as cci
     FROM aggregated a
