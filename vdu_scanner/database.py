@@ -1669,10 +1669,12 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         SELECT symbol, scan_date, 'VCS' as source FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'Monthly Momentum' as source FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Stage-2 Breakout' as source FROM scanned_stage2 WHERE scan_date IN (SELECT scan_date FROM recent_dates)
     ),
     aggregated AS (
         SELECT symbol, 
-               COUNT(DISTINCT scan_date) as total_appearances, 
+               COUNT(*) as total_appearances, 
                COUNT(DISTINCT scan_date) as days_appeared,
                MIN(scan_date) as first_seen_date, 
                MAX(scan_date) as last_seen_date,
