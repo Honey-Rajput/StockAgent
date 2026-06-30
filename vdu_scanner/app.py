@@ -921,6 +921,20 @@ if "MOMENTUM_SCAN_STATUS" not in globals():
         "weekly_results": None
     }
 
+# Initialize global status dictionary for ALL individual tab background scans
+if "ALL_TAB_SCAN_STATUS" not in globals():
+    ALL_TAB_SCAN_STATUS = {
+        "is_running": False,
+        "current_scanner": "",
+        "status_text": "Not started",
+        "progress": 0.0,
+        "wt_results": None,
+        "vcs_results": None,
+        "stage2_results": None,
+        "vpa_results": None,
+        "vp_results": None,
+    }
+
 def run_background_momentum_scans():
     """
     Runs both Monthly and Weekly Momentum scans in a non-blocking background daemon thread.
@@ -1217,7 +1231,362 @@ def run_background_momentum_scans():
     t = threading.Thread(target=target_runner, name="Background_Momentum_Scans", daemon=True)
     t.start()
 
-# --- Boot Cache Loader / Scanner Trigger ---
+def run_background_all_tab_scans():
+    """
+    Runs WaveTrend, VCS, Stage-2, VPA and Volume Profile scanners sequentially
+    in a background daemon thread when Enable Auto-Background Scans is checked.
+    Skips any scanner whose results are already cached in the database for today.
+    """
+    global ALL_TAB_SCAN_STATUS
+    if ALL_TAB_SCAN_STATUS["is_running"]:
+        return
+
+    # Guard to prevent duplicate concurrent background scanning threads
+    is_already_running = any(t.name == "Background_All_Tab_Scans" for t in threading.enumerate())
+    if is_already_running:
+        print("Background all-tab scan thread is already active. Skipping duplicate thread launch.")
+        return
+
+    ALL_TAB_SCAN_STATUS["is_running"] = True
+    ALL_TAB_SCAN_STATUS["status_text"] = "Initializing all-tab background scans..."
+    ALL_TAB_SCAN_STATUS["progress"] = 0.0
+
+    def thread_runner():
+        import yfinance as yf
+        import pandas as pd
+        import concurrent.futures
+        import json
+
+        try:
+            today_str = get_market_date()
+            print(f"[BG All-Tab] Starting background scans for date: {today_str}")
+
+            # ----------------------------------------------------------------
+            # 1/5: WaveTrend Scan (Daily, threshold -40.0)
+            # ----------------------------------------------------------------
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "WaveTrend"
+            ALL_TAB_SCAN_STATUS["status_text"] = "Step 1/5 - Running WaveTrend scan..."
+            ALL_TAB_SCAN_STATUS["progress"] = 0.0
+            print("[BG All-Tab] Step 1/5: WaveTrend scan")
+
+            try:
+                # Check DB cache first
+                cached_wt = database.get_cached_wt_cross(today_str)
+                if cached_wt and len(cached_wt) > 0:
+                    ALL_TAB_SCAN_STATUS["wt_results"] = cached_wt
+                    print(f"[BG All-Tab] WaveTrend: Loaded {len(cached_wt)} results from DB cache. Skipping scan.")
+                else:
+                    from scanner import scan_wt_cross
+                    from data_fetcher import get_index_stocks
+                    raw_symbols = get_index_stocks("ALL NSE")
+                    symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+
+                    wt_tf_results = []
+                    chunk_size = 50
+                    chunks = [symbols_to_scan[i:i+chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
+
+                    for c_idx, chunk in enumerate(chunks):
+                        ALL_TAB_SCAN_STATUS["progress"] = (c_idx / len(chunks)) * 0.2  # 0-20% for WaveTrend
+                        try:
+                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
+                            if not bulk_df.empty:
+                                for sym_ns in chunk:
+                                    try:
+                                        sym = sym_ns.replace('.NS', '')
+                                        if isinstance(bulk_df.columns, pd.MultiIndex):
+                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                            if not matched_t:
+                                                continue
+                                            ticker_df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                        else:
+                                            ticker_df = bulk_df.dropna(subset=['Close'])
+
+                                        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                                        if all(col in ticker_df.columns for col in required_cols):
+                                            ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
+                                            ticker_df = ticker_df[ticker_df['Volume'] > 0]
+                                            if len(ticker_df) >= 40:
+                                                ticker_df = ticker_df.reset_index()
+                                                ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
+                                                ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                                wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=-40.0)
+                                                if wt_res is not None:
+                                                    wt_res['timeframe'] = "Daily"
+                                                    wt_res['is_oversold'] = wt_res['wt_value'] <= -40.0
+                                                    wt_tf_results.append(wt_res)
+                                    except Exception:
+                                        pass
+                        except Exception as chunk_ex:
+                            print(f"[BG All-Tab] WaveTrend chunk {c_idx} error: {chunk_ex}")
+
+                    ALL_TAB_SCAN_STATUS["wt_results"] = wt_tf_results
+                    print(f"[BG All-Tab] WaveTrend scan complete: {len(wt_tf_results)} results")
+            except Exception as wt_err:
+                print(f"[BG All-Tab] WaveTrend scan error: {wt_err}")
+
+            # ----------------------------------------------------------------
+            # 2/5: VCS Scan (Daily, default parameters)
+            # ----------------------------------------------------------------
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "VCS"
+            ALL_TAB_SCAN_STATUS["status_text"] = "Step 2/5 - Running VCS scan..."
+            ALL_TAB_SCAN_STATUS["progress"] = 0.2
+            print("[BG All-Tab] Step 2/5: VCS scan")
+
+            try:
+                cached_vcs = database.get_cached_vcs(today_str)
+                if cached_vcs and len(cached_vcs) > 0:
+                    ALL_TAB_SCAN_STATUS["vcs_results"] = cached_vcs
+                    print(f"[BG All-Tab] VCS: Loaded {len(cached_vcs)} results from DB cache. Skipping scan.")
+                else:
+                    from scanner import scan_vcs
+                    from data_fetcher import get_index_stocks
+                    raw_symbols = get_index_stocks("ALL NSE")
+                    symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+
+                    custom_vcs_results = []
+                    chunk_size = 50
+                    chunks = [symbols_to_scan[i:i+chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
+
+                    for c_idx, chunk in enumerate(chunks):
+                        ALL_TAB_SCAN_STATUS["progress"] = 0.2 + (c_idx / len(chunks)) * 0.2  # 20-40%
+                        try:
+                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
+                            if not bulk_df.empty:
+                                for sym_ns in chunk:
+                                    try:
+                                        sym = sym_ns.replace('.NS', '')
+                                        if isinstance(bulk_df.columns, pd.MultiIndex):
+                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                            if not matched_t:
+                                                continue
+                                            t_df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                        else:
+                                            t_df = bulk_df.dropna(subset=['Close'])
+                                        if not t_df.empty and len(t_df) >= 63:
+                                            t_df = t_df.reset_index()
+                                            t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                            res = scan_vcs(sym, t_df)
+                                            if res:
+                                                res['Timeframe'] = "Daily (1d)"
+                                                res['Action'] = res.get('recommendation', 'Wait')
+                                                custom_vcs_results.append(res)
+                                    except Exception:
+                                        pass
+                        except Exception as chunk_ex:
+                            print(f"[BG All-Tab] VCS chunk {c_idx} error: {chunk_ex}")
+
+                    ALL_TAB_SCAN_STATUS["vcs_results"] = custom_vcs_results
+                    try:
+                        database.save_vcs_only(today_str, custom_vcs_results)
+                    except Exception:
+                        pass
+                    print(f"[BG All-Tab] VCS scan complete: {len(custom_vcs_results)} results")
+            except Exception as vcs_err:
+                print(f"[BG All-Tab] VCS scan error: {vcs_err}")
+
+            # ----------------------------------------------------------------
+            # 3/5: Stage-2 Scan (Monthly, max run-up 20%)
+            # ----------------------------------------------------------------
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
+            ALL_TAB_SCAN_STATUS["status_text"] = "Step 3/5 - Running Stage-2 scan..."
+            ALL_TAB_SCAN_STATUS["progress"] = 0.4
+            print("[BG All-Tab] Step 3/5: Stage-2 scan")
+
+            try:
+                cached_s2 = database.get_cached_stage2(today_str)
+                if cached_s2 and len(cached_s2) > 0:
+                    ALL_TAB_SCAN_STATUS["stage2_results"] = cached_s2
+                    print(f"[BG All-Tab] Stage-2: Loaded {len(cached_s2)} results from DB cache. Skipping scan.")
+                else:
+                    from scanner import scan_monthly_early_stage2
+                    from data_fetcher import get_index_stocks
+                    s2_cands = get_index_stocks("NIFTY 500")
+                    s2_res = []
+                    chunk_size = 50
+                    chunks = [s2_cands[i:i+chunk_size] for i in range(0, len(s2_cands), chunk_size)]
+
+                    for c_idx, chunk in enumerate(chunks):
+                        ALL_TAB_SCAN_STATUS["progress"] = 0.4 + (c_idx / len(chunks)) * 0.2  # 40-60%
+                        try:
+                            tkrs = [f"{s}.NS" for s in chunk]
+                            df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False)
+                            if not df_s2.empty:
+                                for sym in chunk:
+                                    try:
+                                        if isinstance(df_s2.columns, pd.MultiIndex):
+                                            all_tkrs = df_s2.columns.get_level_values(1).unique().tolist()
+                                            matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
+                                            if not matched_t:
+                                                continue
+                                            t_df = df_s2.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                        else:
+                                            t_df = df_s2.dropna(subset=['Close'])
+                                        if not t_df.empty and len(t_df) >= 24:
+                                            t_df = t_df.reset_index()
+                                            t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                            res = scan_monthly_early_stage2(sym, t_df, max_run_up_pct=20.0)
+                                            if res:
+                                                s2_res.append(res)
+                                    except Exception:
+                                        pass
+                        except Exception as chunk_ex:
+                            print(f"[BG All-Tab] Stage-2 chunk {c_idx} error: {chunk_ex}")
+
+                    s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
+                    ALL_TAB_SCAN_STATUS["stage2_results"] = s2_res
+                    try:
+                        database.save_stage2_only(today_str, s2_res)
+                    except Exception:
+                        pass
+                    print(f"[BG All-Tab] Stage-2 scan complete: {len(s2_res)} results")
+            except Exception as s2_err:
+                print(f"[BG All-Tab] Stage-2 scan error: {s2_err}")
+
+            # ----------------------------------------------------------------
+            # 4/5: VPA Scan (All NSE, Price > ₹100)
+            # ----------------------------------------------------------------
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "VPA"
+            ALL_TAB_SCAN_STATUS["status_text"] = "Step 4/5 - Running VPA scan..."
+            ALL_TAB_SCAN_STATUS["progress"] = 0.6
+            print("[BG All-Tab] Step 4/5: VPA scan")
+
+            try:
+                cached_vpa = database.get_cached_vpa(today_str)
+                if cached_vpa and len(cached_vpa) > 0:
+                    ALL_TAB_SCAN_STATUS["vpa_results"] = cached_vpa
+                    print(f"[BG All-Tab] VPA: Loaded {len(cached_vpa)} results from DB cache. Skipping scan.")
+                else:
+                    from scanner import scan_vpa_trend
+                    from data_fetcher import get_all_nse_symbols
+                    raw_symbols = get_all_nse_symbols()
+                    all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+
+                    vpa_list = []
+                    chunk_size = 200
+                    chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
+
+                    for c_idx, chunk in enumerate(chunks):
+                        ALL_TAB_SCAN_STATUS["progress"] = 0.6 + (c_idx / len(chunks)) * 0.2  # 60-80%
+                        try:
+                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
+                            if not bulk_df.empty:
+                                # Filter by price > 100
+                                for sym_ns in chunk:
+                                    try:
+                                        sym = sym_ns.replace('.NS', '')
+                                        if isinstance(bulk_df.columns, pd.MultiIndex):
+                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                            if not matched_t:
+                                                continue
+                                            df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                        else:
+                                            df = bulk_df.dropna(subset=['Close'])
+                                        if not df.empty and len(df) >= 60:
+                                            last_close = float(df['Close'].iloc[-1])
+                                            if last_close < 100:
+                                                continue
+                                            df = df.reset_index()
+                                            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+                                            vpa_res = scan_vpa_trend(sym, df)
+                                            if vpa_res is not None:
+                                                vpa_res['market_cap_cr'] = 0
+                                                vpa_list.append(vpa_res)
+                                    except Exception:
+                                        pass
+                        except Exception as chunk_ex:
+                            print(f"[BG All-Tab] VPA chunk {c_idx} error: {chunk_ex}")
+
+                    ALL_TAB_SCAN_STATUS["vpa_results"] = vpa_list
+                    try:
+                        database.save_vpa_only(today_str, vpa_list)
+                    except Exception:
+                        pass
+                    print(f"[BG All-Tab] VPA scan complete: {len(vpa_list)} results")
+            except Exception as vpa_err:
+                print(f"[BG All-Tab] VPA scan error: {vpa_err}")
+
+            # ----------------------------------------------------------------
+            # 5/5: Volume Profile Scan (2yr history)
+            # ----------------------------------------------------------------
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "Volume Profile"
+            ALL_TAB_SCAN_STATUS["status_text"] = "Step 5/5 - Running Volume Profile scan..."
+            ALL_TAB_SCAN_STATUS["progress"] = 0.8
+            print("[BG All-Tab] Step 5/5: Volume Profile scan")
+
+            try:
+                cached_vp = database.get_cached_volume_profile(today_str)
+                if cached_vp and len(cached_vp) > 0:
+                    ALL_TAB_SCAN_STATUS["vp_results"] = cached_vp
+                    print(f"[BG All-Tab] Volume Profile: Loaded {len(cached_vp)} results from DB cache. Skipping scan.")
+                else:
+                    from scanner import scan_volume_profile
+                    from data_fetcher import get_all_nse_symbols
+                    raw_symbols = get_all_nse_symbols()
+                    all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+
+                    vp_list = []
+                    chunk_size = 200
+                    chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
+
+                    for c_idx, chunk in enumerate(chunks):
+                        ALL_TAB_SCAN_STATUS["progress"] = 0.8 + (c_idx / len(chunks)) * 0.2  # 80-100%
+                        try:
+                            bulk_df = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False)
+                            if not bulk_df.empty:
+                                for sym_ns in chunk:
+                                    try:
+                                        sym = sym_ns.replace('.NS', '')
+                                        if isinstance(bulk_df.columns, pd.MultiIndex):
+                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                            if not matched_t:
+                                                continue
+                                            df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                        else:
+                                            df = bulk_df.dropna(subset=['Close'])
+                                        if not df.empty and len(df) >= 120:
+                                            last_close = float(df['Close'].iloc[-1])
+                                            if last_close < 100:
+                                                continue
+                                            df = df.reset_index()
+                                            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+                                            res = scan_volume_profile(sym, df, 0)
+                                            if res:
+                                                vp_list.append(res)
+                                    except Exception:
+                                        pass
+                        except Exception as chunk_ex:
+                            print(f"[BG All-Tab] Volume Profile chunk {c_idx} error: {chunk_ex}")
+
+                    ALL_TAB_SCAN_STATUS["vp_results"] = vp_list
+                    try:
+                        database.save_volume_profile_only(today_str, vp_list)
+                    except Exception:
+                        pass
+                    print(f"[BG All-Tab] Volume Profile scan complete: {len(vp_list)} results")
+            except Exception as vp_err:
+                print(f"[BG All-Tab] Volume Profile scan error: {vp_err}")
+
+            # All scans complete
+            ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans complete!"
+            ALL_TAB_SCAN_STATUS["progress"] = 1.0
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
+            ALL_TAB_SCAN_STATUS["is_running"] = False
+            print("[BG All-Tab] All background tab scans complete!")
+
+        except Exception as err:
+            ALL_TAB_SCAN_STATUS["status_text"] = f"Background scan error: {err}"
+            ALL_TAB_SCAN_STATUS["is_running"] = False
+            print(f"[BG All-Tab] Fatal error: {err}")
+
+    # Launch daemon thread
+    t = threading.Thread(target=thread_runner, name="Background_All_Tab_Scans", daemon=True)
+    t.start()
+
+
 if 'monthly_momentum_results' not in st.session_state:
     st.session_state.monthly_momentum_results = None
 if 'weekly_momentum_results' not in st.session_state:
@@ -1284,6 +1653,9 @@ enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", va
 if enable_background_scans:
     if (st.session_state.monthly_momentum_results is None or st.session_state.weekly_momentum_results is None) and not MOMENTUM_SCAN_STATUS["is_running"]:
         run_background_momentum_scans()
+    # Auto-trigger all remaining tab scans (WaveTrend, VCS, Stage-2, VPA, Volume Profile)
+    if not ALL_TAB_SCAN_STATUS["is_running"]:
+        run_background_all_tab_scans()
 
 # --- Automatic Daily Database Cache Loader ---
 # CRITICAL: Only hit the database when results are not yet in session state.
@@ -3532,6 +3904,11 @@ with tab_wave:
             st.session_state.wt_results_by_tf[wt_cache_key] = wt_tf_results
             st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete!", icon="✅")
             
+    # Pick up background scan results if available
+    if not st.session_state.wt_results_by_tf.get(wt_cache_key) and ALL_TAB_SCAN_STATUS["wt_results"] is not None:
+        st.session_state.wt_results_by_tf["Daily_-40.0"] = ALL_TAB_SCAN_STATUS["wt_results"]
+        st.session_state.wt_results = ALL_TAB_SCAN_STATUS["wt_results"]
+
     wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, None)
     
     st.markdown(f"### 🌊 WaveTrend Oversold Buy Signals ({wt_timeframe} Timeframe)")
@@ -3583,6 +3960,25 @@ with tab_wave:
         help="Show only stocks currently trading above their 200 SMA long-term trend filter"
     )
     
+    # Background scan progress indicator
+    if wt_data is None and ALL_TAB_SCAN_STATUS["is_running"]:
+        _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
+        _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
+        _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+        st.markdown(f"""
+        <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
+            <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
+                <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
+            </h4>
+            <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. WaveTrend results will appear here when ready!</p>
+            <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
+        </div>
+        <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
+        """, unsafe_allow_html=True)
+        st.progress(_bg_progress)
+        if st.button("🔄 Refresh Scanner Status", key="refresh_bg_wt_status_btn"):
+            st.rerun()
+
     # 2. Main Scan Table
     if wt_data is None:
         st.info("💡 Run the scanner from the sidebar to identify WaveTrend oversold buy signals.")
@@ -4642,6 +5038,10 @@ with tab_vcs:
     # 1. Metrics row
     v_m1, v_m2, v_m3 = st.columns(3)
     
+    # Pick up background scan results if available
+    if not st.session_state.get('vcs_results') and ALL_TAB_SCAN_STATUS["vcs_results"] is not None:
+        st.session_state.vcs_results = ALL_TAB_SCAN_STATUS["vcs_results"]
+
     vcs_data = st.session_state.get('vcs_results', None)
     if vcs_data:
         vcs_count = len(vcs_data)
@@ -4747,6 +5147,25 @@ with tab_vcs:
     st.markdown("---")
     
     if st.session_state.vcs_results is None:
+        # Background scan progress indicator
+        if ALL_TAB_SCAN_STATUS["is_running"]:
+            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
+            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
+            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+            st.markdown(f"""
+            <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
+                <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
+                    <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
+                </h4>
+                <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. VCS results will appear here when ready!</p>
+                <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
+            </div>
+            <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
+            """, unsafe_allow_html=True)
+            st.progress(_bg_progress)
+            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vcs_status_btn"):
+                st.rerun()
+                
         st.info("💡 Adjust parameters above and click 'Run Custom VCS Scan' to find setups, or run the global scanner from the sidebar.")
     elif len(st.session_state.vcs_results) == 0:
         st.info(f"ℹ️ No VCS setups found with a score < {vcs_max_score} today.")
@@ -4814,6 +5233,10 @@ with tab_stage2:
     
     if 'stage2_results' not in st.session_state:
         st.session_state.stage2_results = None
+
+    # Pick up background scan results if available
+    if st.session_state.stage2_results is None and ALL_TAB_SCAN_STATUS["stage2_results"] is not None:
+        st.session_state.stage2_results = ALL_TAB_SCAN_STATUS["stage2_results"]
         # Try loading from DB
         today_str = get_market_date()
         try:
@@ -4910,6 +5333,25 @@ with tab_stage2:
     st.markdown("---")
     
     if st.session_state.stage2_results is None:
+        # Background scan progress indicator
+        if ALL_TAB_SCAN_STATUS["is_running"]:
+            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
+            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
+            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+            st.markdown(f"""
+            <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
+                <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
+                    <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
+                </h4>
+                <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. Stage-2 results will appear here when ready!</p>
+                <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
+            </div>
+            <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
+            """, unsafe_allow_html=True)
+            st.progress(_bg_progress)
+            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_s2_status_btn"):
+                st.rerun()
+                
         st.info("💡 Adjust parameters and click 'Run Stage 2 Scan' to find long-term breakouts.")
     elif len(st.session_state.stage2_results) == 0:
         st.info(f"ℹ️ No early Stage 2 setups found in {universe_selection} today.")
@@ -4942,6 +5384,10 @@ with tab_vpa:
     st.markdown("### 🚥 VPA Trend Indicator (Daily, Weekly, Monthly)")
     st.info("Scans ALL NSE listed stocks. Filters: Price > ₹100. Shows Major, Mid, and Minor trends across timeframes.")
     
+    # Pick up background scan results if available
+    if not st.session_state.get('vpa_results') and ALL_TAB_SCAN_STATUS["vpa_results"] is not None:
+        st.session_state.vpa_results = ALL_TAB_SCAN_STATUS["vpa_results"]
+
     col1, col2 = st.columns([3, 7])
     with col1:
         run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch")
@@ -5044,6 +5490,25 @@ with tab_vpa:
                 st.error(f"Scan failed: {e}")
                 
     if not st.session_state.get('vpa_results'):
+        # Background scan progress indicator
+        if ALL_TAB_SCAN_STATUS["is_running"]:
+            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
+            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
+            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+            st.markdown(f"""
+            <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
+                <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
+                    <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
+                </h4>
+                <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. VPA results will appear here when ready!</p>
+                <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
+            </div>
+            <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
+            """, unsafe_allow_html=True)
+            st.progress(_bg_progress)
+            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vpa_status_btn"):
+                st.rerun()
+                
         st.info("No VPA data available. Click 'Run Advanced VPA Scan' to process.")
     else:
         vpa_data = st.session_state.vpa_results
@@ -5269,6 +5734,10 @@ with tab_volprofile:
     st.info("Scans ALL NSE listed stocks for POC, VAH, VAL levels. Filters: Price > ₹100, Market Cap > 2000 Cr.")
     
     # Auto-load cached results from database on first visit
+    # Pick up background scan results if available
+    if not st.session_state.get('vp_results') and ALL_TAB_SCAN_STATUS["vp_results"] is not None:
+        st.session_state.vp_results = ALL_TAB_SCAN_STATUS["vp_results"]
+
     if 'vp_results' not in st.session_state or not st.session_state.vp_results:
         try:
             # Try loading today's cached results first, then search last 10 days
@@ -5394,6 +5863,25 @@ with tab_volprofile:
                 st.error(f"Scan failed: {e}")
                 
     if not st.session_state.get('vp_results'):
+        # Background scan progress indicator
+        if ALL_TAB_SCAN_STATUS["is_running"]:
+            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
+            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
+            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+            st.markdown(f"""
+            <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
+                <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
+                    <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
+                </h4>
+                <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. Volume Profile results will appear here when ready!</p>
+                <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
+            </div>
+            <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
+            """, unsafe_allow_html=True)
+            st.progress(_bg_progress)
+            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vp_status_btn"):
+                st.rerun()
+                
         st.info("No Volume Profile data available. Click 'Run Advanced Volume Profile Scan' to process.")
     else:
         vp_data = st.session_state.vp_results
