@@ -1705,15 +1705,15 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         SELECT DISTINCT scan_date FROM all_dates ORDER BY scan_date DESC LIMIT %s
     ),
     all_scans AS (
-        SELECT symbol, scan_date, 'VDU Breakout' as source FROM scanned_breakouts WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'VDU Breakout' as source, signal_strength as score FROM scanned_breakouts WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'Minervini Stage-2' as source FROM scanned_trend_setups WHERE setup_type = 'minervini' AND scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Minervini Stage-2' as source, score FROM scanned_trend_setups WHERE setup_type = 'minervini' AND scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'VCS' as source FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'VCS' as source, vcs_score as score FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'Monthly Momentum' as source FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Monthly Momentum' as source, momentum_score as score FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'Stage-2 Breakout' as source FROM scanned_stage2 WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Stage-2 Breakout' as source, score FROM scanned_stage2 WHERE scan_date IN (SELECT scan_date FROM recent_dates)
     ),
     aggregated AS (
         SELECT symbol, 
@@ -1721,7 +1721,8 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
                COUNT(DISTINCT scan_date) as days_appeared,
                MIN(scan_date) as first_seen_date, 
                MAX(scan_date) as last_seen_date,
-               STRING_AGG(DISTINCT source, ', ') as strategies
+               STRING_AGG(DISTINCT source, ', ') as strategies,
+               MAX(score) as max_score
         FROM all_scans
         GROUP BY symbol
         HAVING COUNT(*) > 1

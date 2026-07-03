@@ -38,6 +38,7 @@ def render():
     display_df['Symbol'] = df['symbol']
     display_df['Consistency %'] = (df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
     display_df['Days Appeared'] = df['days_appeared']
+    display_df['Score'] = df['max_score'].fillna(0).round(1)
     display_df['RSI'] = df['rsi'].fillna(0).round(2)
     display_df['CCI'] = df['cci'].fillna(0).round(2)
     display_df['First Alert'] = df['first_seen_date']
