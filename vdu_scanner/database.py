@@ -281,6 +281,34 @@ def init_db() -> bool:
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS scanned_support_rsi (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            rsi DOUBLE PRECISION,
+            cci DOUBLE PRECISION,
+            support_price DOUBLE PRECISION,
+            support_touches INT,
+            distance_to_support_pct DOUBLE PRECISION,
+            above_20sma BOOLEAN DEFAULT FALSE,
+            above_50sma BOOLEAN DEFAULT FALSE,
+            above_200sma BOOLEAN DEFAULT FALSE,
+            volume BIGINT,
+            score DOUBLE PRECISION,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
+            market_cap_cr DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
         """
     ]
     
@@ -1784,3 +1812,97 @@ def get_wt_vp_confluence(date_str: str) -> list[dict]:
             conn.close()
     return results
 
+def save_support_rsi_only(date_str: str, results: list[dict]) -> bool:
+    """
+    Saves the Support + RSI Oversold scan results for the given date.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_support_rsi WHERE scan_date = %s;", (date_str,))
+        
+        insert_query = """
+        INSERT INTO scanned_support_rsi (symbol, company_name, cmp, day_change_pct, rsi, cci,
+                                         support_price, support_touches, distance_to_support_pct,
+                                         above_20sma, above_50sma, above_200sma, volume, score,
+                                         buy_price, exit_price, target_price, confidence, recommendation,
+                                         market_cap_cr, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        for r in results:
+            cur.execute(insert_query, (
+                str(r['symbol']),
+                str(r.get('company_name', '')),
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                float(r['rsi']),
+                float(r.get('cci', 0.0)),
+                float(r['support_price']),
+                int(r['support_touches']),
+                float(r['distance_to_support_pct']),
+                bool(r.get('above_20sma', False)),
+                bool(r.get('above_50sma', False)),
+                bool(r.get('above_200sma', False)),
+                int(r.get('volume', 0)),
+                float(r.get('score', 0.0)),
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                str(r['confidence']) if r.get('confidence') else None,
+                str(r['recommendation']) if r.get('recommendation') else None,
+                float(r.get('market_cap_cr', 0.0)),
+                date_str
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving support RSI results: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_cached_support_rsi(date_str: str) -> list[dict]:
+    """
+    Retrieves the cached Support + RSI Oversold results for a specific date.
+    """
+    query = """
+    SELECT symbol, company_name, cmp, day_change_pct, rsi, cci,
+           support_price, support_touches, distance_to_support_pct,
+           above_20sma, above_50sma, above_200sma, volume, score,
+           buy_price, exit_price, target_price, confidence, recommendation,
+           market_cap_cr, scan_date
+    FROM scanned_support_rsi
+    WHERE scan_date = %s
+    ORDER BY score DESC;
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
+            r_dict['cci'] = float(r_dict.get('cci') or 0.0)
+            r_dict['support_price'] = float(r_dict.get('support_price') or 0.0)
+            r_dict['support_touches'] = int(r_dict.get('support_touches') or 0)
+            r_dict['distance_to_support_pct'] = float(r_dict.get('distance_to_support_pct') or 0.0)
+            r_dict['above_20sma'] = bool(r_dict.get('above_20sma', False))
+            r_dict['above_50sma'] = bool(r_dict.get('above_50sma', False))
+            r_dict['above_200sma'] = bool(r_dict.get('above_200sma', False))
+            r_dict['volume'] = int(r_dict.get('volume') or 0)
+            r_dict['score'] = float(r_dict.get('score') or 0.0)
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading cached support RSI from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results

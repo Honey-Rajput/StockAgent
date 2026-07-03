@@ -1765,3 +1765,177 @@ def scan_volume_profile(symbol: str, df: pd.DataFrame, market_cap: float) -> dic
     except Exception as e:
         return None
 
+def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0, 
+                     rsi_threshold: float = 35.0, support_proximity_pct: float = 3.0) -> dict | None:
+    """
+    Scans for stocks that are near a historical support level AND have oversold RSI.
+    
+    Support Detection:
+      1. Find swing lows (pivot points where price bounced) over the last 6-12 months
+      2. Cluster nearby lows into support zones (within 1.5% of each other)
+      3. Check if current price is within support_proximity_pct of a support zone
+      4. Count touches at each zone — more touches = stronger support
+    
+    RSI Filter:
+      - RSI(14) <= rsi_threshold (default 35 = oversold territory)
+    
+    Returns dict with support details or None if conditions not met.
+    """
+    if df is None or len(df) < 100:
+        return None
+    
+    try:
+        close = df['Close'].values
+        high = df['High'].values
+        low = df['Low'].values
+        cmp = float(close[-1])
+        
+        # Price and market cap filters
+        if cmp < 100:
+            return None
+        if market_cap > 0 and market_cap < 2000:
+            return None
+        
+        # --- RSI(14) Calculation ---
+        delta = pd.Series(close).diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        ema_gain = gain.ewm(com=13, adjust=False).mean()
+        ema_loss = loss.ewm(com=13, adjust=False).mean()
+        rs = ema_gain / (ema_loss + 1e-9)
+        rsi_series = 100 - (100 / (1 + rs))
+        current_rsi = float(rsi_series.iloc[-1])
+        
+        if pd.isna(current_rsi) or current_rsi > rsi_threshold:
+            return None
+        
+        # --- Swing Low (Support) Detection ---
+        # Use last 250 bars (~1 year of daily data)
+        lookback = min(len(df), 250)
+        lows_arr = low[-lookback:]
+        dates_arr = df['Date'].values[-lookback:] if 'Date' in df.columns else list(range(lookback))
+        
+        # Find swing lows with a window of 5 bars on each side
+        swing_window = 5
+        swing_lows = []
+        for i in range(swing_window, len(lows_arr) - swing_window):
+            is_swing_low = True
+            for j in range(1, swing_window + 1):
+                if lows_arr[i] > lows_arr[i - j] or lows_arr[i] > lows_arr[i + j]:
+                    is_swing_low = False
+                    break
+            if is_swing_low:
+                swing_lows.append({
+                    'price': float(lows_arr[i]),
+                    'index': i
+                })
+        
+        if len(swing_lows) < 2:
+            return None
+        
+        # --- Cluster swing lows into support zones ---
+        # Sort by price and merge nearby levels (within 1.5% of each other)
+        swing_lows.sort(key=lambda x: x['price'])
+        support_zones = []
+        current_zone = [swing_lows[0]]
+        
+        for i in range(1, len(swing_lows)):
+            zone_avg = sum(s['price'] for s in current_zone) / len(current_zone)
+            if abs(swing_lows[i]['price'] - zone_avg) / zone_avg <= 0.015:
+                current_zone.append(swing_lows[i])
+            else:
+                support_zones.append(current_zone)
+                current_zone = [swing_lows[i]]
+        support_zones.append(current_zone)
+        
+        # --- Find the nearest support zone to current price ---
+        best_zone = None
+        best_distance_pct = float('inf')
+        
+        for zone in support_zones:
+            zone_price = sum(s['price'] for s in zone) / len(zone)
+            touches = len(zone)
+            
+            # Only consider zones BELOW current price (support, not resistance)
+            if zone_price >= cmp * 1.01:
+                continue
+            
+            distance_pct = ((cmp - zone_price) / zone_price) * 100
+            
+            if distance_pct <= support_proximity_pct and distance_pct < best_distance_pct:
+                best_distance_pct = distance_pct
+                best_zone = {
+                    'support_price': round(zone_price, 2),
+                    'touches': touches,
+                    'distance_pct': round(distance_pct, 2)
+                }
+        
+        if best_zone is None:
+            return None
+        
+        # --- Calculate SMA positions ---
+        sma20 = float(pd.Series(close).rolling(20).mean().iloc[-1]) if len(close) >= 20 else None
+        sma50 = float(pd.Series(close).rolling(50).mean().iloc[-1]) if len(close) >= 50 else None
+        sma200 = float(pd.Series(close).rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
+        
+        above_20sma = cmp > sma20 if sma20 else False
+        above_50sma = cmp > sma50 if sma50 else False
+        above_200sma = cmp > sma200 if sma200 else False
+        
+        # --- CCI(14) ---
+        tp = (pd.Series(high) + pd.Series(low) + pd.Series(close)) / 3
+        sma_tp = tp.rolling(14).mean()
+        mad = tp.rolling(14).apply(lambda x: abs(x - x.mean()).mean(), raw=True)
+        cci_series = (tp - sma_tp) / (0.015 * mad + 1e-9)
+        current_cci = float(cci_series.iloc[-1]) if not pd.isna(cci_series.iloc[-1]) else 0.0
+        
+        # --- Day change ---
+        prev_close = float(close[-2]) if len(close) >= 2 else cmp
+        day_change_pct = ((cmp - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
+        
+        # --- Volume ---
+        current_volume = int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0
+        
+        # --- Score: higher = better setup ---
+        # More touches = stronger support, lower RSI = more oversold, closer to support = better entry
+        score = (best_zone['touches'] * 15) + ((rsi_threshold - current_rsi) * 2) + (support_proximity_pct - best_zone['distance_pct']) * 5
+        score = round(min(score, 100), 1)
+        
+        # --- Trade levels ---
+        buy_price = round(best_zone['support_price'] * 1.005, 2)  # Just above support
+        exit_price = round(best_zone['support_price'] * 0.97, 2)  # 3% below support
+        target_price = round(cmp * 1.12, 2)  # 12% upside target (mean reversion)
+        
+        # Confidence
+        if best_zone['touches'] >= 3 and current_rsi <= 30:
+            confidence = "High"
+        elif best_zone['touches'] >= 2 and current_rsi <= 35:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+        
+        return {
+            'symbol': symbol,
+            'company_name': '',
+            'cmp': round(cmp, 2),
+            'day_change_pct': round(day_change_pct, 2),
+            'rsi': round(current_rsi, 2),
+            'cci': round(current_cci, 2),
+            'support_price': best_zone['support_price'],
+            'support_touches': best_zone['touches'],
+            'distance_to_support_pct': best_zone['distance_pct'],
+            'above_20sma': above_20sma,
+            'above_50sma': above_50sma,
+            'above_200sma': above_200sma,
+            'volume': current_volume,
+            'score': score,
+            'buy_price': buy_price,
+            'exit_price': exit_price,
+            'target_price': target_price,
+            'confidence': confidence,
+            'recommendation': f"Near {best_zone['touches']}-touch support at ₹{best_zone['support_price']:,.2f} ({best_zone['distance_pct']:.1f}% away). RSI oversold at {current_rsi:.1f}. Wait for bounce confirmation before entry.",
+            'market_cap_cr': market_cap
+        }
+    except Exception as e:
+        return None
+
