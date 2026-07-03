@@ -1700,6 +1700,18 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         SELECT symbol, scan_date, 'Monthly Momentum' as source FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'Stage-2 Breakout' as source FROM scanned_stage2 WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Gap Up' as source FROM scanned_gapups WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'WT Cross' as source FROM scanned_wt_cross WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'VPA' as source FROM scanned_vpa WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Volume Profile' as source FROM scanned_volume_profile WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Support Bounce' as source FROM scanned_support_rsi WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Weekly Momentum' as source FROM scanned_weekly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
     ),
     aggregated AS (
         SELECT symbol, 
