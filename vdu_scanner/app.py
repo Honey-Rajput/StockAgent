@@ -1304,7 +1304,9 @@ def run_background_bb_squeeze_scan():
             ALL_TAB_SCAN_STATUS["bb_squeeze_running"] = False
             
     import threading
+    from streamlit.runtime.scriptrunner import add_script_run_ctx
     t = threading.Thread(target=thread_runner, name="Background_BB_Squeeze", daemon=True)
+    add_script_run_ctx(t)
     t.start()
 
 
@@ -6899,7 +6901,7 @@ with tab_rsi_wt:
 # ==============================================================================
 with tab_bb_squeeze:
     st.markdown("### 💥 Bollinger Band Squeeze (Upward Blast Setups)")
-    st.markdown("Stocks in a severe volatility squeeze (tight Bollinger Bands) trading above their 50-DMA, indicating they may blast upward soon.")
+    st.markdown("Stocks in a severe volatility squeeze (tight Bollinger Bands), indicating they may blast upward soon.")
     
     if st.session_state.get('bb_squeeze_results') is not None:
         bb_list = st.session_state.bb_squeeze_results
@@ -6938,6 +6940,12 @@ with tab_bb_squeeze:
             disp_cols = ['symbol', 'company_name', 'CMP', 'Change', 'Daily', 'Weekly', 'Monthly']
             st.dataframe(df_bb[disp_cols], use_container_width=True, hide_index=True)
         else:
-            st.info("No BB Squeeze setups found for the selected universe.")
+            if ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
+                st.info("⏳ Background scanner is analyzing BB Squeezes across Daily, Weekly, and Monthly timeframes... Please wait (~2 minutes).")
+            else:
+                st.info("No BB Squeeze setups found for the selected universe.")
     else:
-        st.info("Background scanner is analyzing BB Squeezes... Please wait.")
+        if ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
+            st.info("⏳ Background scanner is analyzing BB Squeezes across Daily, Weekly, and Monthly timeframes... Please wait (~2 minutes).")
+        else:
+            st.info("No BB Squeeze setups found for the selected universe.")

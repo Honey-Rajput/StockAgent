@@ -1975,8 +1975,6 @@ def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0,
 def scan_bb_squeeze(symbol: str, df_daily: pd.DataFrame, df_weekly: pd.DataFrame, df_monthly: pd.DataFrame, market_cap: float = 0.0) -> dict | None:
     """
     Scans a stock across Daily, Weekly, and Monthly timeframes to find active Bollinger Band Squeezes.
-    Requires at least one timeframe to be in a squeeze AND the daily price to be above the 50-DMA
-    (to ensure the momentum / likely breakout direction is UPWARD).
     """
     if df_daily is None or len(df_daily) < 50:
         return None
@@ -1993,7 +1991,6 @@ def scan_bb_squeeze(symbol: str, df_daily: pd.DataFrame, df_weekly: pd.DataFrame
         weekly_ind = precompute_indicators(df_weekly) if df_weekly is not None and not df_weekly.empty else None
         monthly_ind = precompute_indicators(df_monthly) if df_monthly is not None and not df_monthly.empty else None
         
-        # Extract squeeze boolean flags
         d_squeeze = daily_ind.get('bb_squeeze', False) if daily_ind else False
         w_squeeze = weekly_ind.get('bb_squeeze', False) if weekly_ind else False
         m_squeeze = monthly_ind.get('bb_squeeze', False) if monthly_ind else False
@@ -2002,8 +1999,8 @@ def scan_bb_squeeze(symbol: str, df_daily: pd.DataFrame, df_weekly: pd.DataFrame
         d_sma50 = daily_ind.get('sma50', 0.0) if daily_ind else 0.0
         above_50 = (cmp > d_sma50) if d_sma50 > 0 else False
         
-        # Must have at least one squeeze AND be above 50-DMA (for upward blast)
-        if not (d_squeeze or w_squeeze or m_squeeze) or not above_50:
+        # Must have at least one squeeze (REMOVED 50-DMA REQUIREMENT)
+        if not (d_squeeze or w_squeeze or m_squeeze):
             return None
             
         # Extract widths
