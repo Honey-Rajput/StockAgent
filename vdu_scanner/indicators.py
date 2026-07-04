@@ -69,9 +69,9 @@ def precompute_indicators(df: pd.DataFrame) -> dict:
     df_enriched['BB_lower'] = bb_mid - 2 * bb_std
     # Normalized band width (width / midline) — lower = tighter squeeze
     df_enriched['BB_width'] = (df_enriched['BB_upper'] - df_enriched['BB_lower']) / bb_mid.replace(0, np.nan)
-    # BB squeeze: current width <= 110% of the 52-week minimum width
-    bb_width_52w_min = df_enriched['BB_width'].rolling(min(252, n)).min()
-    df_enriched['BB_squeeze'] = df_enriched['BB_width'] <= bb_width_52w_min * 1.10
+    # BB squeeze: current width <= 115% of the 6-month (126 trading days) minimum width
+    bb_width_6m_min = df_enriched['BB_width'].rolling(min(126, n)).min()
+    df_enriched['BB_squeeze'] = df_enriched['BB_width'] <= bb_width_6m_min * 1.15
 
     # =========================================================================
     # 3. RSI (14) — Wilder's smoothing
