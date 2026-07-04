@@ -379,3 +379,164 @@ def fetch_ohlcv_timeframe(symbol: str, interval: str = "1d", period: str = None)
             backoff *= 2.0
 
     return None
+
+
+# =============================================================================
+# MARKET CONDITION & RELATIVE STRENGTH HELPERS
+# =============================================================================
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_market_condition() -> dict:
+    """
+    Returns Nifty 50 market health based on price vs 50-DMA and 200-DMA.
+    - 'Bullish'  : CMP > SMA50 > SMA200  (strong uptrend — best time to buy breakouts)
+    - 'Caution'  : CMP > SMA200 but below SMA50  (above long-term trend but weak near-term)
+    - 'Bearish'  : CMP < SMA200  (downtrend — avoid new buys, reduce exposure)
+
+    Cached for 15 minutes to avoid redundant API calls on each Streamlit re-render.
+    """
+    try:
+        df = yf.download("^NSEI", period="250d", interval="1d", progress=False)
+        if df is None or df.empty:
+            return {'status': 'Unknown', 'emoji': '⚪', 'cmp': 0.0, 'sma50': 0.0, 'sma200': 0.0, 'change_pct': 0.0}
+
+        # Flatten MultiIndex if needed (yfinance 1.x)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if 'Price' in df.columns and 'Close' not in df.columns:
+            df.rename(columns={'Price': 'Close'}, inplace=True)
+
+        close = df['Close'].dropna()
+        if len(close) < 50:
+            return {'status': 'Unknown', 'emoji': '⚪', 'cmp': 0.0, 'sma50': 0.0, 'sma200': 0.0, 'change_pct': 0.0}
+
+        cmp     = float(close.iloc[-1])
+        sma50   = float(close.rolling(50).mean().iloc[-1])
+        sma200  = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else sma50
+        prev_close = float(close.iloc[-2]) if len(close) >= 2 else cmp
+        change_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close > 0 else 0.0
+
+        if cmp > sma50 and sma50 > sma200:
+            status, emoji = 'Bullish', '🟢'
+        elif cmp > sma200:
+            status, emoji = 'Caution', '🟡'
+        else:
+            status, emoji = 'Bearish', '🔴'
+
+        return {
+            'status':     status,
+            'emoji':      emoji,
+            'cmp':        round(cmp, 2),
+            'sma50':      round(sma50, 2),
+            'sma200':     round(sma200, 2),
+            'change_pct': change_pct,
+        }
+    except Exception as e:
+        print(f"get_market_condition error: {e}")
+        return {'status': 'Unknown', 'emoji': '⚪', 'cmp': 0.0, 'sma50': 0.0, 'sma200': 0.0, 'change_pct': 0.0}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_nifty50_returns() -> dict:
+    """
+    Fetches Nifty 50 index trailing returns over 1M, 3M, 6M, 12M
+    for use in per-stock Relative Strength (RS Rating) calculation.
+    Cached for 1 hour — benchmark returns don't need sub-minute freshness.
+    """
+    try:
+        df = yf.download("^NSEI", period="400d", interval="1d", progress=False)
+        if df is None or df.empty:
+            return {}
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if 'Price' in df.columns and 'Close' not in df.columns:
+            df.rename(columns={'Price': 'Close'}, inplace=True)
+
+        close = df['Close'].dropna()
+        n = len(close)
+        cmp = float(close.iloc[-1])
+
+        def _ret(periods: int) -> float:
+            if n >= periods + 1:
+                base = float(close.iloc[-(periods + 1)])
+                return (cmp - base) / base * 100.0 if base > 0 else 0.0
+            return 0.0
+
+        return {
+            '1m':  round(_ret(21),  2),
+            '3m':  round(_ret(63),  2),
+            '6m':  round(_ret(126), 2),
+            '12m': round(_ret(252), 2),
+        }
+    except Exception as e:
+        print(f"fetch_nifty50_returns error: {e}")
+        return {}
+
+
+def calculate_rs_rating(df: pd.DataFrame, nifty_returns: dict) -> float:
+    """
+    Calculates Relative Strength Rating of a stock vs Nifty 50.
+    Uses O'Neil-style weighted trailing returns: 1M(40%), 3M(20%), 6M(20%), 12M(20%).
+
+    Returns a score on 1-99 scale:
+      - RS Rating > 80  : Strong outperformer (top 20% vs index)
+      - RS Rating 50-80 : Moderate outperformer
+      - RS Rating < 50  : Underperformer (avoid buying)
+
+    Args:
+        df: Stock OHLCV DataFrame with a 'Close' column.
+        nifty_returns: Dict from fetch_nifty50_returns() with keys '1m','3m','6m','12m'.
+    Returns:
+        RS Rating float (1-99). Returns 50.0 as neutral default if data is insufficient.
+    """
+    if df is None or len(df) < 21 or not nifty_returns:
+        return 50.0
+    try:
+        close = df['Close']
+        n = len(close)
+        cmp = float(close.iloc[-1])
+
+        def _ret(periods: int) -> float:
+            if n >= periods + 1:
+                base = float(close.iloc[-(periods + 1)])
+                return (cmp - base) / base * 100.0 if base > 0 else 0.0
+            return 0.0
+
+        stock_returns = {
+            '1m':  _ret(21),
+            '3m':  _ret(63),
+            '6m':  _ret(126),
+            '12m': _ret(252),
+        }
+        weights = {'1m': 0.40, '3m': 0.20, '6m': 0.20, '12m': 0.20}
+
+        # Weighted excess return vs Nifty benchmark
+        rs_delta = sum(
+            (stock_returns.get(k, 0.0) - nifty_returns.get(k, 0.0)) * w
+            for k, w in weights.items()
+        )
+        # Normalize to 1-99 scale centered at 50 (neutral = same as index)
+        rs_rating = max(1.0, min(99.0, 50.0 + rs_delta))
+        return round(rs_rating, 1)
+    except Exception as e:
+        print(f"calculate_rs_rating error: {e}")
+        return 50.0
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_market_cap_cr(symbol: str) -> float:
+    """
+    Returns market capitalisation in Indian Crores (₹ Cr) for a given NSE symbol.
+    Cached for 24 hours — market cap doesn't change meaningfully intraday.
+    Returns 0.0 if the lookup fails (symbol delisted, API error, etc.).
+    """
+    try:
+        sym = symbol.strip().upper()
+        if not sym.endswith('.NS'):
+            sym = f"{sym}.NS"
+        info = yf.Ticker(sym).info
+        mc = info.get('marketCap', 0) or 0
+        return round(mc / 1e7, 1)  # Convert Rupees → Crores (1 Crore = 10,000,000)
+    except Exception:
+        return 0.0

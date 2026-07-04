@@ -48,8 +48,30 @@ def precompute_indicators(df: pd.DataFrame) -> dict:
     df_enriched['EMA20'] = close.ewm(span=20, adjust=False).mean()
     # Monthly EMAs (used by monthly momentum — not needed here for daily,
     # but pre-compute EMA8/12 for consistency)
-    df_enriched['EMA8'] = close.ewm(span=8, adjust=False).mean()
+    df_enriched['EMA8']  = close.ewm(span=8,  adjust=False).mean()
     df_enriched['EMA12'] = close.ewm(span=12, adjust=False).mean()
+
+    # =========================================================================
+    # 2b. MACD (12, 26, 9)
+    # =========================================================================
+    ema12_macd = close.ewm(span=12, adjust=False).mean()
+    ema26_macd = close.ewm(span=26, adjust=False).mean()
+    df_enriched['MACD_line']   = ema12_macd - ema26_macd
+    df_enriched['MACD_signal'] = df_enriched['MACD_line'].ewm(span=9, adjust=False).mean()
+    df_enriched['MACD_hist']   = df_enriched['MACD_line'] - df_enriched['MACD_signal']
+
+    # =========================================================================
+    # 2c. BOLLINGER BANDS (20, 2σ)
+    # =========================================================================
+    bb_mid = close.rolling(20).mean()
+    bb_std = close.rolling(20).std()
+    df_enriched['BB_upper'] = bb_mid + 2 * bb_std
+    df_enriched['BB_lower'] = bb_mid - 2 * bb_std
+    # Normalized band width (width / midline) — lower = tighter squeeze
+    df_enriched['BB_width'] = (df_enriched['BB_upper'] - df_enriched['BB_lower']) / bb_mid.replace(0, np.nan)
+    # BB squeeze: current width <= 110% of the 52-week minimum width
+    bb_width_52w_min = df_enriched['BB_width'].rolling(min(252, n)).min()
+    df_enriched['BB_squeeze'] = df_enriched['BB_width'] <= bb_width_52w_min * 1.10
 
     # =========================================================================
     # 3. RSI (14) — Wilder's smoothing
@@ -122,7 +144,7 @@ def precompute_indicators(df: pd.DataFrame) -> dict:
 
     # EMAs
     result['ema20'] = float(latest['EMA20'])
-    result['ema8'] = float(latest['EMA8'])
+    result['ema8']  = float(latest['EMA8'])
     result['ema12'] = float(latest['EMA12'])
 
     # RSI & CCI
@@ -132,6 +154,23 @@ def precompute_indicators(df: pd.DataFrame) -> dict:
     # WaveTrend
     result['wt1'] = float(latest['WT1']) if not pd.isna(latest['WT1']) else None
     result['wt2'] = float(latest['WT2']) if not pd.isna(latest['WT2']) else None
+
+    # MACD
+    result['macd_line']   = float(latest['MACD_line'])   if not pd.isna(latest['MACD_line'])   else None
+    result['macd_signal'] = float(latest['MACD_signal']) if not pd.isna(latest['MACD_signal']) else None
+    result['macd_hist']   = float(latest['MACD_hist'])   if not pd.isna(latest['MACD_hist'])   else None
+    # Bullish MACD cross-up: histogram just turned from negative to positive (today)
+    if n >= 2 and not pd.isna(df_enriched['MACD_hist'].iloc[-1]) and not pd.isna(df_enriched['MACD_hist'].iloc[-2]):
+        result['macd_cross_up'] = (
+            df_enriched['MACD_hist'].iloc[-1] > 0 and
+            df_enriched['MACD_hist'].iloc[-2] <= 0
+        )
+    else:
+        result['macd_cross_up'] = False
+
+    # Bollinger Bands
+    result['bb_width']   = float(latest['BB_width'])  if not pd.isna(latest['BB_width'])  else None
+    result['bb_squeeze'] = bool(latest['BB_squeeze'])  if not pd.isna(latest['BB_squeeze']) else False
 
     # CMP and price info
     result['cmp'] = float(latest['Close'])

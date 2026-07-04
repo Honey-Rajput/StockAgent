@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
 from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
-from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector
+from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector, get_market_condition, fetch_nifty50_returns, calculate_rs_rating
 from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
 from indicators import precompute_indicators
 
@@ -1741,10 +1741,54 @@ universe_selection = st.sidebar.selectbox(
     help="Select the universe of stocks to scan. NIFTY 100/50 are extremely fast and completely bypass Yahoo Finance rate limits."
 )
 
+# =============================================================================
+# MARKET CONDITION WIDGET — Nifty 50 Breadth Filter
+# Shows live market health so you know whether it's safe to buy breakouts.
+# =============================================================================
+st.sidebar.markdown('---')
+st.sidebar.markdown('### 🌐 Market Condition')
+try:
+    _mc = get_market_condition()
+    _mc_status  = _mc.get('status', 'Unknown')
+    _mc_emoji   = _mc.get('emoji', '⚪')
+    _mc_cmp     = _mc.get('cmp', 0.0)
+    _mc_chg     = _mc.get('change_pct', 0.0)
+    _mc_sma50   = _mc.get('sma50', 0.0)
+    _mc_sma200  = _mc.get('sma200', 0.0)
+    _chg_color  = '#00e676' if _mc_chg >= 0 else '#ef4444'
+    _card_color = 'rgba(0,230,118,0.06)'  if _mc_status == 'Bullish' else \
+                  'rgba(255,160,0,0.06)'   if _mc_status == 'Caution' else \
+                  'rgba(239,68,68,0.06)'
+    _border_color = 'rgba(0,230,118,0.35)'  if _mc_status == 'Bullish' else \
+                    'rgba(255,160,0,0.35)'   if _mc_status == 'Caution' else \
+                    'rgba(239,68,68,0.35)'
+    st.sidebar.markdown(
+        f"""
+        <div style='padding:10px 14px; background:{_card_color}; border:1px solid {_border_color};
+                    border-radius:10px; margin-bottom:12px;'>
+          <div style='font-size:1rem; font-weight:700; color:#e2e8f0;'>
+            {_mc_emoji} Nifty 50 — <span style='color:{_border_color.replace('0.35','1')};'>{_mc_status}</span>
+          </div>
+          <div style='font-size:0.85rem; color:#94a3b8; margin-top:4px;'>
+            CMP: <b style='color:#e2e8f0;'>₹{_mc_cmp:,.2f}</b>
+            &nbsp;<span style='color:{_chg_color};'>({'▲' if _mc_chg>=0 else '▼'} {abs(_mc_chg):.2f}%)</span>
+          </div>
+          <div style='font-size:0.78rem; color:#64748b; margin-top:2px;'>
+            50-SMA: ₹{_mc_sma50:,.0f} &nbsp;|&nbsp; 200-SMA: ₹{_mc_sma200:,.0f}
+          </div>
+          {'<div style="font-size:0.75rem; color:#ffa000; margin-top:5px;">⚠️ Market in caution zone — be selective with new buys</div>' if _mc_status == 'Caution' else ''}
+          {'<div style="font-size:0.75rem; color:#ef4444; margin-top:5px;">🚨 Bear market — avoid new breakout trades, prioritize capital preservation</div>' if _mc_status == 'Bearish' else ''}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+except Exception as _mc_err:
+    st.sidebar.caption(f"⚪ Market condition unavailable ({_mc_err})")
+
 st.sidebar.markdown(
     "<div style='padding:8px 12px; background:rgba(41,182,246,0.06); border:1px solid rgba(41,182,246,0.15); border-radius:10px; margin-bottom: 15px;'>"
     "<span style='color:#ffa000; font-size:0.8rem; font-weight:600;'>⚡ Filters: Price > ₹200 | Market Cap > ₹3000 Cr</span>"
-    "</div>", 
+    "</div>",
     unsafe_allow_html=True
 )
 
@@ -1814,6 +1858,16 @@ above_200dma_only = st.sidebar.checkbox(
     "Above 200 DMA Only",
     value=False,
     help="If checked, only lists breakout stocks trading above their 200-day Simple Moving Average"
+)
+
+min_rr_ratio = st.sidebar.slider(
+    "Min Risk:Reward Ratio",
+    min_value=1.0,
+    max_value=5.0,
+    value=1.5,
+    step=0.25,
+    key="vdu_min_rr_ratio_v1",
+    help="Minimum R:R ratio required to show a signal. 1.5 = target must be at least 1.5x the stop loss distance. Signals below this are auto-filtered."
 )
 
 st.sidebar.markdown('---')

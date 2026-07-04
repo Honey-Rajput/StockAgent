@@ -188,25 +188,47 @@ def scan_stock(
     score += min(volume_ratio / 10.0 * 40.0, 40.0)
     # 2. Price move: Up to 30 points
     score += min(max(pct_change_intraday, pct_change_close) / 5.0 * 30.0, 30.0)
-    # 3. Dry duration: Up to 20 points
-    score += min(dry_days_count / 60.0 * 20.0, 20.0)
+    # 3. Dry zone TIGHTNESS quality score (replaces flat duration score):
+    #    Reward how "dry" the consolidation was relative to baseline.
+    #    The drier the zone, the higher the quality of accumulation.
+    dryness_ratio = dry_avg_vol / baseline_avg_vol  # e.g. 0.30 means 30% of baseline
+    dryness_score = max(0.0, (0.60 - dryness_ratio) / 0.60 * 20.0)  # up to 20 pts
+    score += dryness_score
     # 4. Moving Average filter: 10 points
     if above_50dma:
         score += 10.0
-        
-    score = round(min(score, 100.0), 1)
-    
+    # 5. MACD cross-up bonus: +5 pts when histogram just turned positive (momentum shift)
+    if indicators and indicators.get('macd_cross_up', False):
+        score += 5.0
+
     # Calculate day-over-day price change (standard Close-to-Close change)
     day_change_pct = pct_change_close
-    
-    # Calculate available 120-day high and low
-    high_120d = float(df['High'].max())
-    low_120d = float(df['Low'].min())
-    
-    # Advanced Trading Setup Calculations based on Support & Resistance:
+
+    # Correct 52-week high/low using last 252 trading bars (not full history)
+    history_252 = df.iloc[-252:] if len(df) >= 252 else df
+    high_52w = float(history_252['High'].max())
+    low_52w  = float(history_252['Low'].min())
+
+    # 6. 52-week high proximity bonus: stocks approaching 52W highs attract institutions
     cmp = float(today['Close'])
+    dist_from_52w_high_pct = (high_52w - cmp) / high_52w * 100 if high_52w > 0 else 100.0
+    if dist_from_52w_high_pct <= 5.0:
+        score += 10.0   # Very near 52W high — near breakout zone
+    elif dist_from_52w_high_pct <= 10.0:
+        score += 5.0    # Approaching breakout zone
+
+    score = round(min(score, 100.0), 1)
+
+    # Advanced Trading Setup Calculations based on Support & Resistance:
     buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(history_df, cmp, indicators)
-    
+
+    # Risk:Reward filter — skip signals where reward < 1.5x the risk
+    risk   = buy_price - exit_price
+    reward = target_price - buy_price
+    rr_ratio = round(reward / risk, 2) if risk > 0 else 0.0
+    if rr_ratio < 1.5:
+        return None  # Bad R:R — not worth the trade
+
     # Confidence text based on algorithmic signal strength
     if score >= 75:
         confidence = f"High Conviction ({score}%)"
@@ -214,42 +236,45 @@ def scan_stock(
         confidence = f"Medium-High ({score}%)"
     else:
         confidence = f"Medium ({score}%)"
-        
+
     base_rec = (
         f"Strong institutional VDU breakout! Volume ratio is {volume_ratio:.1f}x with signal score {score}%. "
+        f"R:R Ratio: {rr_ratio:.1f}:1. "
         f"Buy Range: [₹{buy_price:.2f} to ₹{cmp:.2f}] (Nearest Support is ₹{support:.2f}). "
         f"Set stop loss securely below support at ₹{exit_price:.2f} "
         f"with a target near overhead resistance at ₹{target_price:.2f}."
     )
     recommendation = compute_rich_analysis(df_indicators, symbol, "VDU Breakout", base_rec, indicators=indicators)
-    
+
     from config import get_company_name
     company_name = get_company_name(symbol)
-    
+
     return {
-        "symbol": symbol.strip().upper(),
-        "company_name": company_name,
-        "cmp": cmp,
-        "day_change_pct": round(day_change_pct, 2),
-        "today_volume": int(today['Volume']),
-        "dry_avg_vol": round(dry_avg_vol, 1),
-        "volume_ratio": round(volume_ratio, 2),
-        "dry_days_count": int(dry_days_count),
-        "dry_spikes": dry_spikes,
-        "dry_start_date": pd.to_datetime(history_df['Date'].iloc[start_idx]),
-        "dry_end_date": pd.to_datetime(history_df['Date'].iloc[end_idx]),
-        "signal_strength": score,
+        "symbol":           symbol.strip().upper(),
+        "company_name":     company_name,
+        "cmp":              cmp,
+        "day_change_pct":   round(day_change_pct, 2),
+        "today_volume":     int(today['Volume']),
+        "dry_avg_vol":      round(dry_avg_vol, 1),
+        "volume_ratio":     round(volume_ratio, 2),
+        "dry_days_count":   int(dry_days_count),
+        "dry_spikes":       dry_spikes,
+        "dry_start_date":   pd.to_datetime(history_df['Date'].iloc[start_idx]),
+        "dry_end_date":     pd.to_datetime(history_df['Date'].iloc[end_idx]),
+        "signal_strength":  score,
         "pct_change_today": round(day_change_pct, 2),
-        "above_50dma": above_50dma,
-        "above_200dma": above_200dma,
-        "df": df_indicators,
-        "high_52w": high_120d,      
-        "low_52w": low_120d,
-        "buy_price": buy_price,
-        "exit_price": exit_price,
-        "target_price": target_price,
-        "confidence": confidence,
-        "recommendation": recommendation
+        "above_50dma":      above_50dma,
+        "above_200dma":     above_200dma,
+        "df":               df_indicators,
+        "high_52w":         high_52w,
+        "low_52w":          low_52w,
+        "dist_52w_high_pct": round(dist_from_52w_high_pct, 1),
+        "buy_price":        buy_price,
+        "exit_price":       exit_price,
+        "target_price":     target_price,
+        "rr_ratio":         rr_ratio,
+        "confidence":       confidence,
+        "recommendation":   recommendation,
     }
 
 def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = -40.0, indicators: dict = None) -> dict | None:
@@ -899,30 +924,33 @@ def run_monthly_momentum_update(base_date_str: str, today_str: str) -> list[dict
     symbols = [r['symbol'] for r in base_results]
     tickers = [f"{s}.NS" for s in symbols]
     
-    # 2. Batch download today's daily quotes to get current CMP and daily price changes
+    # 2. Batch download last 2 days of quotes to get current CMP and true previous close
     cmp_map = {}
     prev_close_map = {}
     try:
-        quotes_df = yf.download(tickers=tickers, period="1d", progress=False, threads=False)
+        quotes_df = yf.download(tickers=tickers, period="2d", progress=False, threads=False)
         if not quotes_df.empty:
             if isinstance(quotes_df.columns, pd.MultiIndex):
-                # multi-ticker Close and Open
+                # multi-ticker: use Close.iloc[-1] as CMP and Close.iloc[-2] as previous day close
                 for tk in tickers:
                     sym_clean = tk.replace(".NS", "").upper()
                     try:
                         close_series = quotes_df['Close'][tk] if 'Close' in quotes_df else None
-                        open_series = quotes_df['Open'][tk] if 'Open' in quotes_df else None
-                        if close_series is not None and not close_series.empty:
-                            cmp_map[sym_clean] = float(close_series.iloc[-1])
-                        if open_series is not None and not open_series.empty:
-                            prev_close_map[sym_clean] = float(open_series.iloc[-1])
+                        if close_series is not None and not close_series.dropna().empty:
+                            cs = close_series.dropna()
+                            cmp_map[sym_clean] = float(cs.iloc[-1])
+                            # Use actual previous day close (not open) for correct daily change
+                            if len(cs) >= 2:
+                                prev_close_map[sym_clean] = float(cs.iloc[-2])
                     except Exception:
                         pass
             else:
                 # single ticker
                 sym_clean = symbols[0]
-                cmp_map[sym_clean] = float(quotes_df['Close'].iloc[-1])
-                prev_close_map[sym_clean] = float(quotes_df['Open'].iloc[-1]) if 'Open' in quotes_df else float(quotes_df['Close'].iloc[-1])
+                cs = quotes_df['Close'].dropna()
+                cmp_map[sym_clean] = float(cs.iloc[-1])
+                if len(cs) >= 2:
+                    prev_close_map[sym_clean] = float(cs.iloc[-2])
     except Exception as e:
         print(f"Error fetching real-time updates for monthly momentum stocks: {e}")
         
@@ -1523,8 +1551,12 @@ def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivo
             
         depths = [(pivot_price - lows[idx])/pivot_price for idx in valid_minima]
         
-        if depths[-1] > 0.12:
+        # Last contraction must be under 8% (tighter = better VCP per Minervini rules)
+        if depths[-1] > 0.08:
             return None
+        # Contractions must be getting progressively shallower (each pullback tighter than last)
+        if len(depths) >= 2 and depths[-1] >= depths[-2]:
+            return None  # Last pullback is not shallower — not a true VCP compression
             
         # 4. Volume Accumulation
         df_recent['PriceChange'] = df_recent['Close'].diff()
@@ -1914,9 +1946,10 @@ def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0,
         else:
             confidence = "Low"
         
+        from config import get_company_name
         return {
             'symbol': symbol,
-            'company_name': '',
+            'company_name': get_company_name(symbol),
             'cmp': round(cmp, 2),
             'day_change_pct': round(day_change_pct, 2),
             'rsi': round(current_rsi, 2),
