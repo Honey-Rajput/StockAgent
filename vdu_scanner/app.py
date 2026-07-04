@@ -6332,14 +6332,27 @@ with tab_support:
                     print(f"Failed to save support RSI results: {db_ex}")
 
                 st.session_state.support_rsi_results = support_results
+                st.session_state.support_rsi_scan_date = today_str
 
         # Load from DB cache if not in session
         if 'support_rsi_results' not in st.session_state or not st.session_state.support_rsi_results:
             cached = database.get_cached_support_rsi(today_str)
             if cached:
                 st.session_state.support_rsi_results = cached
+                st.session_state.support_rsi_scan_date = today_str
+            else:
+                # Fallback: load the most recent scan from any date
+                latest_results, latest_date = database.get_latest_support_rsi()
+                if latest_results:
+                    st.session_state.support_rsi_results = latest_results
+                    st.session_state.support_rsi_scan_date = latest_date
 
         sup_data = st.session_state.get('support_rsi_results', [])
+        sup_scan_date = st.session_state.get('support_rsi_scan_date', today_str)
+
+        # Show info if displaying older results
+        if sup_data and sup_scan_date != today_str:
+            st.info(f"📅 Showing last scan results from **{sup_scan_date}**. Click '🔍 Run Support Bounce Scan' to refresh with today's data.")
 
         # Metrics
         sup_m1, sup_m2, sup_m3, sup_m4 = st.columns(4)
@@ -6354,7 +6367,8 @@ with tab_support:
         sup_m4.markdown(f'<div class="glass-card metric-glow-purple"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">🔁 Max Support Touches</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ce93d8;">{sup_max_touches}</h3></div>', unsafe_allow_html=True)
 
         if not sup_data:
-            st.info(f"No support bounce results for {today_str}. Click '🔍 Run Support Bounce Scan' above to scan.")
+            st.info(f"No support bounce results found. Click '🔍 Run Support Bounce Scan' above to scan.")
+
         else:
             # Build table
             rows_html = []
@@ -6411,7 +6425,7 @@ with tab_support:
             st.markdown(
                 f'<div class="glass-card" style="padding:18px; margin-bottom:22px; border:1px solid rgba(0,230,118,0.2); background:rgba(9,13,22,0.55); border-radius:12px;">'
                 f'<h3 style="margin-top:0; color:#00e676; font-size:1.15rem; display:flex; align-items:center; gap:8px; font-family:Outfit,sans-serif;">'
-                f'🛡️ Support Bounce + RSI Oversold — {today_str}'
+                f'🛡️ Support Bounce + RSI Oversold — {sup_scan_date}'
                 f'</h3>'
                 f'<p style="font-size:0.82rem; color:#94a3b8; margin-top:-8px; margin-bottom:15px; font-family:Outfit,sans-serif;">'
                 f'Stocks near multi-touch historical support zones with oversold RSI. <b>More touches = stronger support floor.</b> '

@@ -1921,3 +1921,50 @@ def get_cached_support_rsi(date_str: str) -> list[dict]:
         if conn:
             conn.close()
     return results
+
+
+def get_latest_support_rsi() -> tuple[list[dict], str | None]:
+    """
+    Retrieves the most recent Support + RSI Oversold scan results,
+    regardless of date. Returns (results_list, scan_date_str) or ([], None).
+    """
+    query = """
+    SELECT symbol, company_name, cmp, day_change_pct, rsi, cci,
+           support_price, support_touches, distance_to_support_pct,
+           above_20sma, above_50sma, above_200sma, volume, score,
+           buy_price, exit_price, target_price, confidence, recommendation,
+           market_cap_cr, scan_date
+    FROM scanned_support_rsi
+    WHERE scan_date = (SELECT MAX(scan_date) FROM scanned_support_rsi)
+    ORDER BY score DESC;
+    """
+    conn = None
+    results = []
+    scan_date = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            scan_date = r_dict['scan_date'].strftime("%Y-%m-%d") if scan_date is None else scan_date
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
+            r_dict['cci'] = float(r_dict.get('cci') or 0.0)
+            r_dict['support_price'] = float(r_dict.get('support_price') or 0.0)
+            r_dict['support_touches'] = int(r_dict.get('support_touches') or 0)
+            r_dict['distance_to_support_pct'] = float(r_dict.get('distance_to_support_pct') or 0.0)
+            r_dict['above_20sma'] = bool(r_dict.get('above_20sma', False))
+            r_dict['above_50sma'] = bool(r_dict.get('above_50sma', False))
+            r_dict['above_200sma'] = bool(r_dict.get('above_200sma', False))
+            r_dict['volume'] = int(r_dict.get('volume') or 0)
+            r_dict['score'] = float(r_dict.get('score') or 0.0)
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error loading latest support RSI from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results, scan_date
