@@ -1232,7 +1232,7 @@ def run_background_momentum_scans():
     t.start()
 
 
-def run_background_bb_squeeze_scan():
+def run_background_bb_squeeze_scan(force=False):
     if ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
         return
         
@@ -1249,12 +1249,13 @@ def run_background_bb_squeeze_scan():
         
         try:
             today_str = get_market_date()
-            cached_bb = database.get_cached_bb_squeeze(today_str)
-            if cached_bb and len(cached_bb) > 0:
-                ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = cached_bb
-                st.session_state.bb_squeeze_results = cached_bb
-                ALL_TAB_SCAN_STATUS["bb_squeeze_running"] = False
-                return
+            if not force:
+                cached_bb = database.get_cached_bb_squeeze(today_str)
+                if cached_bb and len(cached_bb) > 0:
+                    ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = cached_bb
+                    st.session_state.bb_squeeze_results = cached_bb
+                    ALL_TAB_SCAN_STATUS["bb_squeeze_running"] = False
+                    return
                 
             from scanner import scan_bb_squeeze
             raw_symbols = get_index_stocks("ALL NSE")
@@ -6910,7 +6911,7 @@ with tab_bb_squeeze:
     col_note.info("ℹ️ Re-run the scan to see **Score** and **Confidence** columns (new feature).")
 
     if run_bb_btn:
-        run_background_bb_squeeze_scan()
+        run_background_bb_squeeze_scan(force=True)
         st.rerun()
 
     if st.session_state.get('bb_squeeze_results') is not None:
