@@ -6911,8 +6911,14 @@ with tab_bb_squeeze:
     col_note.info("ℹ️ Re-run the scan to see **Score** and **Confidence** columns (new feature).")
 
     if run_bb_btn:
+        st.session_state.bb_squeeze_results = None
+        ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = None
         run_background_bb_squeeze_scan(force=True)
         st.rerun()
+
+    # Pick up background scan results if available
+    if st.session_state.get('bb_squeeze_results') is None and ALL_TAB_SCAN_STATUS.get("bb_squeeze_results") is not None:
+        st.session_state.bb_squeeze_results = ALL_TAB_SCAN_STATUS["bb_squeeze_results"]
 
     if st.session_state.get('bb_squeeze_results') is not None:
         bb_list = st.session_state.bb_squeeze_results
