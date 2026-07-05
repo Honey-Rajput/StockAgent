@@ -1972,59 +1972,221 @@ def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0,
     except Exception as e:
         return None
 
+def _compute_bb_squeeze_for_tf(df: pd.DataFrame, lookback_bars: int, max_width_pct: float) -> tuple:
+    """
+    Compute BB squeeze for a specific timeframe with the correct lookback window.
+
+    Args:
+        df            : OHLCV DataFrame for the timeframe
+        lookback_bars : Number of bars to define "6 months" for this timeframe
+                        Daily=126, Weekly=26, Monthly=6
+        max_width_pct : Absolute upper limit on BB width to be considered a squeeze.
+                        Prevents flagging visually wide bands as squeezes.
+                        E.g. 0.20 means width > 20% of price => never a squeeze.
+
+    Returns:
+        (is_squeeze: bool, bb_width: float, min_width: float)
+    """
+    if df is None or len(df) < 20:
+        return False, 0.0, 0.0
+    try:
+        close = df['Close'].astype(float)
+        bb_mid = close.rolling(20).mean()
+        bb_std = close.rolling(20).std()
+        bb_upper = bb_mid + 2 * bb_std
+        bb_lower = bb_mid - 2 * bb_std
+        bb_width = (bb_upper - bb_lower) / bb_mid.replace(0, float('nan'))
+
+        current_width = float(bb_width.iloc[-1]) if not pd.isna(bb_width.iloc[-1]) else None
+        if current_width is None:
+            return False, 0.0, 0.0
+
+        # Absolute max-width guard: if bands are obviously wide, skip the squeeze check
+        if current_width > max_width_pct:
+            return False, round(current_width, 4), 0.0
+
+        # 6-month rolling minimum using timeframe-correct lookback
+        actual_lookback = min(lookback_bars, len(df))
+        rolling_min = bb_width.rolling(actual_lookback).min()
+        min_width = float(rolling_min.iloc[-1]) if not pd.isna(rolling_min.iloc[-1]) else None
+        if min_width is None or min_width <= 0:
+            return False, round(current_width, 4), 0.0
+
+        # Squeeze = current width is within 115% of the historical minimum
+        is_squeeze = current_width <= min_width * 1.15
+        return bool(is_squeeze), round(current_width, 4), round(min_width, 4)
+    except Exception:
+        return False, 0.0, 0.0
+
+
+def _compute_bb_squeeze_score(
+    d_squeeze: bool, w_squeeze: bool, m_squeeze: bool,
+    d_width: float, d_min_width: float,
+    above_50: bool,
+    df_daily: pd.DataFrame
+) -> tuple:
+    """
+    Compute a 0-100 confidence score for a BB Squeeze setup.
+
+    Scoring breakdown:
+      - Timeframe signals   : up to 40 pts  (Daily=15, Weekly=15, Monthly=10)
+      - Band tightness      : up to 25 pts  (daily: how close to hist. min)
+      - Above 50 DMA        : 10 pts
+      - RSI neutral (40-60) : up to 15 pts
+      - Volume contracting  : up to 10 pts
+
+    Returns:
+        (score: int, confidence: str, breakdown: list[str])
+    """
+    score = 0
+    breakdown = []
+
+    # 1. Timeframe signals (0–40 pts)
+    if d_squeeze:
+        score += 15
+        breakdown.append("Daily Squeeze (+15)")
+    if w_squeeze:
+        score += 15
+        breakdown.append("Weekly Squeeze (+15)")
+    if m_squeeze:
+        score += 10
+        breakdown.append("Monthly Squeeze (+10)")
+
+    # 2. Daily band tightness (0–25 pts)
+    # How close is current width to the historical minimum?
+    # At exactly min: full 25 pts. At 115% of min (threshold): 0 pts.
+    if d_squeeze and d_width > 0 and d_min_width > 0:
+        try:
+            threshold = d_min_width * 1.15
+            span = threshold - d_min_width
+            if span > 0:
+                tightness = 1.0 - (d_width - d_min_width) / span
+                tightness = max(0.0, min(1.0, tightness))
+            else:
+                tightness = 1.0
+            tight_pts = round(tightness * 25)
+            score += tight_pts
+            breakdown.append(f"Band Tightness (+{tight_pts})")
+        except Exception:
+            pass
+
+    # 3. Above 50 DMA (0–10 pts)
+    if above_50:
+        score += 10
+        breakdown.append("Above 50 DMA (+10)")
+
+    # 4. RSI position (0–15 pts) — computed from daily data
+    try:
+        close = df_daily['Close'].astype(float)
+        delta = close.diff()
+        avg_gain = delta.clip(lower=0).ewm(com=13, adjust=False).mean()
+        avg_loss = (-delta.clip(upper=0)).ewm(com=13, adjust=False).mean()
+        rs = avg_gain / (avg_loss + 1e-9)
+        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
+        if 40 <= rsi <= 60:
+            score += 15
+            breakdown.append(f"RSI Neutral {rsi:.0f} (+15)")
+        elif 35 <= rsi < 40 or 60 < rsi <= 65:
+            score += 8
+            breakdown.append(f"RSI Near-Neutral {rsi:.0f} (+8)")
+        else:
+            breakdown.append(f"RSI Extreme {rsi:.0f} (+0)")
+    except Exception:
+        pass
+
+    # 5. Volume contraction (0–10 pts)
+    try:
+        vol = df_daily['Volume'].astype(float)
+        avg_vol_50 = float(vol.rolling(50).mean().iloc[-1])
+        recent_vol  = float(vol.rolling(5).mean().iloc[-1])
+        if avg_vol_50 > 0:
+            if recent_vol < avg_vol_50 * 0.65:
+                score += 10
+                breakdown.append("Volume Dry-Up (+10)")
+            elif recent_vol < avg_vol_50 * 0.85:
+                score += 5
+                breakdown.append("Volume Contracting (+5)")
+    except Exception:
+        pass
+
+    score = min(100, max(0, score))
+
+    if score >= 80:
+        confidence = "🔥 Very High"
+    elif score >= 60:
+        confidence = "🟢 High"
+    elif score >= 40:
+        confidence = "🟡 Medium"
+    elif score >= 20:
+        confidence = "🟠 Low"
+    else:
+        confidence = "⚪ Very Low"
+
+    return score, confidence, breakdown
+
+
 def scan_bb_squeeze(symbol: str, df_daily: pd.DataFrame, df_weekly: pd.DataFrame, df_monthly: pd.DataFrame, market_cap: float = 0.0) -> dict | None:
     """
     Scans a stock across Daily, Weekly, and Monthly timeframes to find active Bollinger Band Squeezes.
+
+    v2 Fixes:
+      - Timeframe-appropriate lookback (Daily=126, Weekly=26, Monthly=6 bars)
+      - Absolute max-width guards to eliminate false positives on expanded bands
+      - Confidence score (0-100) + label (Very High / High / Medium / Low / Very Low)
     """
     if df_daily is None or len(df_daily) < 50:
         return None
-        
+
     try:
-        from indicators import precompute_indicators
         from config import get_company_name
-        
+
         cmp = float(df_daily['Close'].iloc[-1])
         if cmp < 100 or (market_cap > 0 and market_cap < 2000):
             return None
-            
-        daily_ind = precompute_indicators(df_daily)
-        weekly_ind = precompute_indicators(df_weekly) if df_weekly is not None and not df_weekly.empty else None
-        monthly_ind = precompute_indicators(df_monthly) if df_monthly is not None and not df_monthly.empty else None
-        
-        d_squeeze = daily_ind.get('bb_squeeze', False) if daily_ind else False
-        w_squeeze = weekly_ind.get('bb_squeeze', False) if weekly_ind else False
-        m_squeeze = monthly_ind.get('bb_squeeze', False) if monthly_ind else False
-        
-        # Check bullish filter: Price > 50 DMA
-        d_sma50 = daily_ind.get('sma50', 0.0) if daily_ind else 0.0
-        above_50 = (cmp > d_sma50) if d_sma50 > 0 else False
-        
-        # Must have at least one squeeze (REMOVED 50-DMA REQUIREMENT)
+
+        # --- Per-timeframe squeeze with correct lookback & width guard ---
+        d_squeeze, d_width, d_min_w = _compute_bb_squeeze_for_tf(df_daily,   lookback_bars=126, max_width_pct=0.20)
+        w_squeeze, w_width, _       = _compute_bb_squeeze_for_tf(df_weekly,   lookback_bars=26,  max_width_pct=0.30)
+        m_squeeze, m_width, _       = _compute_bb_squeeze_for_tf(df_monthly,  lookback_bars=6,   max_width_pct=0.40)
+
+        # Must have at least one valid squeeze signal
         if not (d_squeeze or w_squeeze or m_squeeze):
             return None
-            
-        # Extract widths
-        d_width = daily_ind.get('bb_width', 0.0) if daily_ind else 0.0
-        w_width = weekly_ind.get('bb_width', 0.0) if weekly_ind else 0.0
-        m_width = monthly_ind.get('bb_width', 0.0) if monthly_ind else 0.0
-        
-        # Calculate day change pct
-        prev_close = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else cmp
+
+        # Bullish filter: Price > 50 DMA
+        close_d = df_daily['Close'].astype(float)
+        sma50   = float(close_d.rolling(50).mean().iloc[-1]) if len(df_daily) >= 50 else 0.0
+        above_50 = (cmp > sma50) if sma50 > 0 else False
+
+        # Day change %
+        prev_close    = float(df_daily['Close'].iloc[-2]) if len(df_daily) >= 2 else cmp
         day_change_pct = ((cmp - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
 
+        # --- Confidence Score ---
+        squeeze_score, confidence, score_breakdown = _compute_bb_squeeze_score(
+            d_squeeze=d_squeeze, w_squeeze=w_squeeze, m_squeeze=m_squeeze,
+            d_width=d_width, d_min_width=d_min_w,
+            above_50=above_50,
+            df_daily=df_daily
+        )
+
         return {
-            'symbol': symbol.strip().upper(),
-            'company_name': get_company_name(symbol),
-            'cmp': round(cmp, 2),
-            'day_change_pct': round(day_change_pct, 2),
-            'daily_squeeze': d_squeeze,
-            'weekly_squeeze': w_squeeze,
-            'monthly_squeeze': m_squeeze,
-            'daily_bb_width': round(d_width, 4) if d_width else 0.0,
-            'weekly_bb_width': round(w_width, 4) if w_width else 0.0,
-            'monthly_bb_width': round(m_width, 4) if m_width else 0.0,
-            'above_50dma': above_50,
-            'market_cap_cr': market_cap
+            'symbol':           symbol.strip().upper(),
+            'company_name':     get_company_name(symbol),
+            'cmp':              round(cmp, 2),
+            'day_change_pct':   round(day_change_pct, 2),
+            'daily_squeeze':    d_squeeze,
+            'weekly_squeeze':   w_squeeze,
+            'monthly_squeeze':  m_squeeze,
+            'daily_bb_width':   d_width,
+            'weekly_bb_width':  w_width,
+            'monthly_bb_width': m_width,
+            'above_50dma':      above_50,
+            'squeeze_score':    squeeze_score,
+            'confidence':       confidence,
+            'score_breakdown':  ' | '.join(score_breakdown),
+            'market_cap_cr':    market_cap
         }
-    except Exception as e:
+    except Exception:
         return None
+

@@ -6931,10 +6931,8 @@ with tab_bb_squeeze:
                 bb_list = [r for r in bb_list if r['symbol'] in valid_set]
             
         if len(bb_list) > 0:
-            # Sort by squeeze count: monthly > weekly > daily
-            def sort_key(r):
-                return (r.get('monthly_squeeze', False), r.get('weekly_squeeze', False), r.get('daily_squeeze', False))
-            bb_list.sort(key=sort_key, reverse=True)
+            # Sort by squeeze_score descending (highest confidence first)
+            bb_list.sort(key=lambda r: r.get('squeeze_score', 0), reverse=True)
             
             df_bb = pd.DataFrame(bb_list)
             
@@ -6944,20 +6942,29 @@ with tab_bb_squeeze:
             w_sq   = int(df_bb['weekly_squeeze'].sum())
             m_sq   = int(df_bb['monthly_squeeze'].sum())
             triple = int(((df_bb['daily_squeeze']) & (df_bb['weekly_squeeze']) & (df_bb['monthly_squeeze'])).sum())
-            mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+            avg_score = int(df_bb['squeeze_score'].mean()) if 'squeeze_score' in df_bb.columns else 0
+            mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
             mc1.metric("Total Setups", total)
             mc2.metric("Daily Squeeze", d_sq)
             mc3.metric("Weekly Squeeze", w_sq)
             mc4.metric("Monthly Squeeze", m_sq)
             mc5.metric("Triple Squeeze 🔥", triple)
+            mc6.metric("Avg Score", f"{avg_score}/100")
             
             # Format UI columns
             df_bb['Daily']   = df_bb['daily_squeeze'].map({True: '🟢 Squeeze', False: '⚪'})
             df_bb['Weekly']  = df_bb['weekly_squeeze'].map({True: '🟢 Squeeze', False: '⚪'})
             df_bb['Monthly'] = df_bb['monthly_squeeze'].map({True: '🟢 Squeeze', False: '⚪'})
-            df_bb['CMP']    = df_bb['cmp'].apply(lambda x: f"₹{x:,.2f}")
-            df_bb['Change'] = df_bb['day_change_pct'].apply(lambda x: f"{x:+.2f}%")
+            df_bb['CMP']     = df_bb['cmp'].apply(lambda x: f"₹{x:,.2f}")
+            df_bb['Change']  = df_bb['day_change_pct'].apply(lambda x: f"{x:+.2f}%")
             df_bb['Above 50D'] = df_bb['above_50dma'].map({True: '✅', False: '❌'}) if 'above_50dma' in df_bb.columns else '—'
+            # Score & Confidence
+            if 'squeeze_score' in df_bb.columns:
+                df_bb['Score'] = df_bb['squeeze_score'].apply(lambda x: f"{x}/100")
+            if 'confidence' in df_bb.columns:
+                df_bb['Confidence'] = df_bb['confidence']
+            if 'score_breakdown' in df_bb.columns:
+                df_bb['Why'] = df_bb['score_breakdown']
             # BB width columns (lower value = tighter squeeze)
             if 'daily_bb_width' in df_bb.columns:
                 df_bb['D Width'] = df_bb['daily_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—')
@@ -6966,11 +6973,12 @@ with tab_bb_squeeze:
             if 'monthly_bb_width' in df_bb.columns:
                 df_bb['M Width'] = df_bb['monthly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—')
             
-            disp_cols = ['symbol', 'company_name', 'CMP', 'Change', 'Above 50D',
-                         'Daily', 'D Width', 'Weekly', 'W Width', 'Monthly', 'M Width']
+            disp_cols = ['symbol', 'company_name', 'CMP', 'Change', 'Score', 'Confidence',
+                         'Above 50D', 'Daily', 'D Width', 'Weekly', 'W Width', 'Monthly', 'M Width', 'Why']
             # Only include columns that actually exist in df_bb
             disp_cols = [c for c in disp_cols if c in df_bb.columns]
             st.dataframe(df_bb[disp_cols], use_container_width=True, hide_index=True)
+
         else:
             if ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
                 st.info("⏳ Background scanner is analyzing BB Squeezes across Daily, Weekly, and Monthly timeframes... Please wait (~2 minutes).")
