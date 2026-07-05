@@ -6905,79 +6905,181 @@ with tab_rsi_wt:
 with tab_bb_squeeze:
     st.markdown("### 💥 Bollinger Band Squeeze (Upward Blast Setups)")
     st.markdown("Stocks in a severe volatility squeeze (tight Bollinger Bands), indicating they may blast upward soon.")
-    col_btn, _ = st.columns([1, 2])
+    col_btn, col_note = st.columns([1, 2])
     run_bb_btn = col_btn.button("🔍 Run BB Squeeze Scan", type="primary", use_container_width=True)
-    
+    col_note.info("ℹ️ Re-run the scan to see **Score** and **Confidence** columns (new feature).")
+
     if run_bb_btn:
         run_background_bb_squeeze_scan()
         st.rerun()
 
     if st.session_state.get('bb_squeeze_results') is not None:
         bb_list = st.session_state.bb_squeeze_results
-        
-        # Apply Universe Filter if needed
+
+        # Apply Universe Filter
         if "ALL NSE" not in universe_selection.upper() and len(bb_list) > 0:
             from data_fetcher import get_index_stocks
-            
             resolved_univ = "ALL NSE"
             if "NIFTY 500" in universe_selection: resolved_univ = "NIFTY 500"
             elif "NIFTY 100" in universe_selection: resolved_univ = "NIFTY 100"
             elif "NIFTY 50" in universe_selection: resolved_univ = "NIFTY 50"
             elif "WATCHLIST" in universe_selection.upper(): resolved_univ = "WATCHLIST"
-            
             if resolved_univ != "ALL NSE":
                 raw_symbols = get_index_stocks(resolved_univ)
                 valid_set = set([str(s).replace('.NS', '').strip().upper() for s in raw_symbols if str(s).strip()])
                 bb_list = [r for r in bb_list if r['symbol'] in valid_set]
-            
+
         if len(bb_list) > 0:
-            # Sort by squeeze_score descending (highest confidence first)
-            bb_list.sort(key=lambda r: r.get('squeeze_score', 0), reverse=True)
-            
+            # Sort by squeeze_score (desc), fallback to timeframe count
+            bb_list.sort(key=lambda r: (r.get('squeeze_score', 0),
+                                         r.get('monthly_squeeze', False),
+                                         r.get('weekly_squeeze', False),
+                                         r.get('daily_squeeze', False)), reverse=True)
+
             df_bb = pd.DataFrame(bb_list)
-            
-            # Summary metrics
+            has_score = 'squeeze_score' in df_bb.columns
+
+            # ── Helper: build clean export df for a timeframe ──────────────────
+            def _build_tf_df(df_src, tf_squeeze_col, tf_width_col, tf_label):
+                """Filter to rows where tf_squeeze_col=True and format for display/export."""
+                df_tf = df_src[df_src[tf_squeeze_col] == True].copy()
+                if df_tf.empty:
+                    return df_tf
+
+                df_tf = df_tf.sort_values('squeeze_score' if has_score else tf_squeeze_col,
+                                          ascending=False)
+
+                out = pd.DataFrame()
+                out['Symbol']       = df_tf['symbol']
+                out['Company']      = df_tf.get('company_name', '')
+                out['CMP (₹)']      = df_tf['cmp'].round(2)
+                out['Change (%)']   = df_tf['day_change_pct'].round(2)
+                if has_score:
+                    out['Score']        = df_tf['squeeze_score'].apply(lambda x: f"{x}/100")
+                    out['Confidence']   = df_tf.get('confidence', '—')
+                out['BB Width']     = df_tf[tf_width_col].round(4) if tf_width_col in df_tf.columns else '—'
+                out['Above 50 DMA'] = df_tf['above_50dma'].map({True: 'Yes', False: 'No'}) if 'above_50dma' in df_tf.columns else '—'
+                if has_score and 'score_breakdown' in df_tf.columns:
+                    out['Score Breakdown'] = df_tf['score_breakdown']
+                return out
+
+            df_daily_tf   = _build_tf_df(df_bb, 'daily_squeeze',   'daily_bb_width',   'Daily')
+            df_weekly_tf  = _build_tf_df(df_bb, 'weekly_squeeze',  'weekly_bb_width',  'Weekly')
+            df_monthly_tf = _build_tf_df(df_bb, 'monthly_squeeze', 'monthly_bb_width', 'Monthly')
+
+            # ── Summary metrics row ─────────────────────────────────────────────
             total  = len(df_bb)
-            d_sq   = int(df_bb['daily_squeeze'].sum())
-            w_sq   = int(df_bb['weekly_squeeze'].sum())
-            m_sq   = int(df_bb['monthly_squeeze'].sum())
+            d_sq   = len(df_daily_tf)
+            w_sq   = len(df_weekly_tf)
+            m_sq   = len(df_monthly_tf)
             triple = int(((df_bb['daily_squeeze']) & (df_bb['weekly_squeeze']) & (df_bb['monthly_squeeze'])).sum())
-            avg_score = int(df_bb['squeeze_score'].mean()) if 'squeeze_score' in df_bb.columns else 0
+            avg_sc = int(df_bb['squeeze_score'].mean()) if has_score else 0
+
             mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
             mc1.metric("Total Setups", total)
-            mc2.metric("Daily Squeeze", d_sq)
-            mc3.metric("Weekly Squeeze", w_sq)
-            mc4.metric("Monthly Squeeze", m_sq)
-            mc5.metric("Triple Squeeze 🔥", triple)
-            mc6.metric("Avg Score", f"{avg_score}/100")
-            
-            # Format UI columns
-            df_bb['Daily']   = df_bb['daily_squeeze'].map({True: '🟢 Squeeze', False: '⚪'})
-            df_bb['Weekly']  = df_bb['weekly_squeeze'].map({True: '🟢 Squeeze', False: '⚪'})
-            df_bb['Monthly'] = df_bb['monthly_squeeze'].map({True: '🟢 Squeeze', False: '⚪'})
-            df_bb['CMP']     = df_bb['cmp'].apply(lambda x: f"₹{x:,.2f}")
-            df_bb['Change']  = df_bb['day_change_pct'].apply(lambda x: f"{x:+.2f}%")
-            df_bb['Above 50D'] = df_bb['above_50dma'].map({True: '✅', False: '❌'}) if 'above_50dma' in df_bb.columns else '—'
-            # Score & Confidence
-            if 'squeeze_score' in df_bb.columns:
-                df_bb['Score'] = df_bb['squeeze_score'].apply(lambda x: f"{x}/100")
-            if 'confidence' in df_bb.columns:
-                df_bb['Confidence'] = df_bb['confidence']
-            if 'score_breakdown' in df_bb.columns:
-                df_bb['Why'] = df_bb['score_breakdown']
-            # BB width columns (lower value = tighter squeeze)
-            if 'daily_bb_width' in df_bb.columns:
-                df_bb['D Width'] = df_bb['daily_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—')
-            if 'weekly_bb_width' in df_bb.columns:
-                df_bb['W Width'] = df_bb['weekly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—')
-            if 'monthly_bb_width' in df_bb.columns:
-                df_bb['M Width'] = df_bb['monthly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—')
-            
-            disp_cols = ['symbol', 'company_name', 'CMP', 'Change', 'Score', 'Confidence',
-                         'Above 50D', 'Daily', 'D Width', 'Weekly', 'W Width', 'Monthly', 'M Width', 'Why']
-            # Only include columns that actually exist in df_bb
-            disp_cols = [c for c in disp_cols if c in df_bb.columns]
-            st.dataframe(df_bb[disp_cols], use_container_width=True, hide_index=True)
+            mc2.metric("📅 Daily Only", d_sq)
+            mc3.metric("📈 Weekly Only", w_sq)
+            mc4.metric("📅 Monthly Only", m_sq)
+            mc5.metric("🔥 Triple Squeeze", triple)
+            mc6.metric("Avg Score", f"{avg_sc}/100" if has_score else "Re-run scan")
+
+            st.markdown("---")
+
+            # ── Multi-sheet Excel download ──────────────────────────────────────
+            import io
+            excel_buf = io.BytesIO()
+            with pd.ExcelWriter(excel_buf, engine='openpyxl') as writer:
+                if not df_daily_tf.empty:
+                    df_daily_tf.to_excel(writer, sheet_name='Daily Squeeze', index=False)
+                if not df_weekly_tf.empty:
+                    df_weekly_tf.to_excel(writer, sheet_name='Weekly Squeeze', index=False)
+                if not df_monthly_tf.empty:
+                    df_monthly_tf.to_excel(writer, sheet_name='Monthly Squeeze', index=False)
+                # All combined on last sheet
+                df_all_export = _build_tf_df(df_bb, 'daily_squeeze', 'daily_bb_width', 'All')
+                # rebuild all as combined
+                all_rows = []
+                for r in bb_list:
+                    row = {
+                        'Symbol':       r.get('symbol',''),
+                        'Company':      r.get('company_name',''),
+                        'CMP (₹)':      r.get('cmp', 0),
+                        'Change (%)':   r.get('day_change_pct', 0),
+                        'Daily Squeeze': 'YES' if r.get('daily_squeeze') else '',
+                        'D Width':      r.get('daily_bb_width', ''),
+                        'Weekly Squeeze': 'YES' if r.get('weekly_squeeze') else '',
+                        'W Width':      r.get('weekly_bb_width', ''),
+                        'Monthly Squeeze': 'YES' if r.get('monthly_squeeze') else '',
+                        'M Width':      r.get('monthly_bb_width', ''),
+                        'Above 50 DMA': 'Yes' if r.get('above_50dma') else 'No',
+                    }
+                    if has_score:
+                        row['Score']           = r.get('squeeze_score', '')
+                        row['Confidence']      = r.get('confidence', '')
+                        row['Score Breakdown'] = r.get('score_breakdown', '')
+                    all_rows.append(row)
+                pd.DataFrame(all_rows).to_excel(writer, sheet_name='All Squeezes', index=False)
+            excel_buf.seek(0)
+
+            from datetime import date
+            fname = f"BB_Squeeze_{date.today().strftime('%Y%m%d')}.xlsx"
+            st.download_button(
+                label="📥 Download Excel (4 sheets: Daily | Weekly | Monthly | All)",
+                data=excel_buf.getvalue(),
+                file_name=fname,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+            st.markdown("---")
+
+            # ── Separate Sub-tabs per timeframe ────────────────────────────────
+            stab_d, stab_w, stab_m, stab_all = st.tabs([
+                f"📅 Daily Squeeze ({d_sq})",
+                f"📈 Weekly Squeeze ({w_sq})",
+                f"📅 Monthly Squeeze ({m_sq})",
+                f"📊 All Combined ({total})"
+            ])
+
+            def _render_tf_table(df_tf, label):
+                if df_tf.empty:
+                    st.info(f"No {label} squeeze setups found.")
+                    return
+                st.dataframe(df_tf, use_container_width=True, hide_index=True)
+
+            with stab_d:
+                st.markdown(f"**{d_sq} stocks** currently in a **Daily Bollinger Band Squeeze**")
+                _render_tf_table(df_daily_tf, "Daily")
+
+            with stab_w:
+                st.markdown(f"**{w_sq} stocks** currently in a **Weekly Bollinger Band Squeeze**")
+                _render_tf_table(df_weekly_tf, "Weekly")
+
+            with stab_m:
+                st.markdown(f"**{m_sq} stocks** currently in a **Monthly Bollinger Band Squeeze**")
+                _render_tf_table(df_monthly_tf, "Monthly")
+
+            with stab_all:
+                st.markdown(f"**{total} stocks** with at least one active squeeze (sorted by score)")
+                # Build display df for combined view
+                disp = pd.DataFrame()
+                disp['Symbol']    = df_bb['symbol']
+                disp['Company']   = df_bb.get('company_name', '')
+                disp['CMP']       = df_bb['cmp'].apply(lambda x: f"₹{x:,.2f}")
+                disp['Change']    = df_bb['day_change_pct'].apply(lambda x: f"{x:+.2f}%")
+                if has_score:
+                    disp['Score']      = df_bb['squeeze_score'].apply(lambda x: f"{x}/100")
+                    disp['Confidence'] = df_bb.get('confidence', '—')
+                disp['Above 50D']  = df_bb['above_50dma'].map({True: '✅', False: '❌'}) if 'above_50dma' in df_bb.columns else '—'
+                disp['Daily']      = df_bb['daily_squeeze'].map({True: '🟢', False: '⚪'})
+                disp['D Width']    = df_bb['daily_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—') if 'daily_bb_width' in df_bb.columns else '—'
+                disp['Weekly']     = df_bb['weekly_squeeze'].map({True: '🟢', False: '⚪'})
+                disp['W Width']    = df_bb['weekly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—') if 'weekly_bb_width' in df_bb.columns else '—'
+                disp['Monthly']    = df_bb['monthly_squeeze'].map({True: '🟢', False: '⚪'})
+                disp['M Width']    = df_bb['monthly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—') if 'monthly_bb_width' in df_bb.columns else '—'
+                if has_score and 'score_breakdown' in df_bb.columns:
+                    disp['Why'] = df_bb['score_breakdown']
+                st.dataframe(disp, use_container_width=True, hide_index=True)
 
         else:
             if ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
@@ -6993,3 +7095,4 @@ with tab_bb_squeeze:
                 st.rerun()
         else:
             st.warning("⚠️ Scan has not been run yet. Click **'Run BB Squeeze Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")
+
