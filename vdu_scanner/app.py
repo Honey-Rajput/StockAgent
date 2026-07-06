@@ -5667,29 +5667,30 @@ with tab_vpa:
         def get_action_signal_text(short, mid, max_t, max_val):
             if max_val > 4.0:
                 return "Hyper-Extended / Parabolic (Avoid Fresh Entry)"
-            elif 2.0 < max_val <= 4.0:
+            elif max_val > 2.0:
                 return "Slightly Overextended (Avoid Fresh Entry)"
-            elif 0.5 < max_val <= 2.0 and mid == 1 and short == 1 and max_t == 1:
+            
+            if short == 1 and mid == 1 and max_t == 1:
                 return "Perfect Buy / Strong Hold"
-            elif 0 < max_val <= 0.5 and mid == 1 and short == 1:
+            elif short == 1 and mid == 1 and max_t == 0:
                 return "Early Breakout Entry"
-            elif max_val > 0.5 and mid == 1 and short <= 0:
+            elif short == 1 and mid == 1 and max_t == -1:
+                return "Counter Trend Buy (Major Down)"
+            elif mid == 1 and short <= 0:
                 return "Pullback (Wait for Short=Up)"
-            elif max_val > 0.5 and mid <= 0:
+            elif mid <= 0 and max_t == 1:
                 return "Warning (Mid Broken) - Trim"
-            elif max_val <= 0 and mid <= 0:
+            elif mid <= 0 and max_t <= 0:
                 return "Avoid / Full Exit"
-            elif mid == 1 and short == 1 and max_t <= 0:
-                return "Mid-Term Buy (Major Neutral/Down)"
-            else:
-                return "Neutral / Choppy"
+            
+            return "Neutral / Choppy"
         
         def get_signal(short, mid, max_t, max_val):
-            if max_val > 4.0:
+            if short == 1 and mid == 1:
                 return "Buy"
-            elif max_val > 2.0:
-                return "Buy"
-            return "Buy" if (max_val > 0.5 and mid == 1 and max_t == 1) or (max_val > 0 and mid == 1 and short == 1) else "Hold" if (max_val > 0.5 or (mid == 1 and short == 1)) else "Sell"
+            elif mid == 1 or max_t == 1:
+                return "Hold"
+            return "Sell"
 
         only_buy_signals = st.checkbox("🟢 Show Only 'Buy' Signals", value=False)
         
@@ -5803,7 +5804,7 @@ with tab_vpa:
             text = get_action_signal_text(short, mid, max_t, max_val)
             if "Perfect Buy" in text:
                 return f"<span style='color: #00e676; font-weight: bold;'>🟢 {text}</span>"
-            elif "Mid-Term Buy" in text:
+            elif "Counter Trend Buy" in text:
                 return f"<span style='color: #4ade80; font-weight: bold;'>🟢 {text}</span>"
             elif "Early Breakout" in text:
                 return f"<span style='color: #3b82f6; font-weight: bold;'>🔵 {text}</span>"
