@@ -5725,7 +5725,9 @@ with tab_vpa:
                 'RSI': d.get('rsi', 0.0),
                 'CCI': d.get('cci', 0.0),
                 'Action': get_action_signal_text(d['minor'], d['mid'], d['major'], d.get('major_val', 0)),
-                'Signal': d_sig
+                'Signal': d_sig,
+                'Score': r.get('score', 0),
+                'Confidence': r.get('confidence', 'N/A')
             })
             rank += 1
             
@@ -5743,7 +5745,9 @@ with tab_vpa:
                 'RSI': w.get('rsi', 0.0),
                 'CCI': w.get('cci', 0.0),
                 'Action': get_action_signal_text(w['minor'], w['mid'], w['major'], w.get('major_val', 0)),
-                'Signal': get_signal(w['minor'], w['mid'], w['major'], w.get('major_val', 0))
+                'Signal': get_signal(w['minor'], w['mid'], w['major'], w.get('major_val', 0)),
+                'Score': r.get('score', 0),
+                'Confidence': r.get('confidence', 'N/A')
             })
             
         for rank, r in filtered_vpa_data:
@@ -5760,7 +5764,9 @@ with tab_vpa:
                 'RSI': m.get('rsi', 0.0),
                 'CCI': m.get('cci', 0.0),
                 'Action': get_action_signal_text(m['minor'], m['mid'], m['major'], m.get('major_val', 0)),
-                'Signal': get_signal(m['minor'], m['mid'], m['major'], m.get('major_val', 0))
+                'Signal': get_signal(m['minor'], m['mid'], m['major'], m.get('major_val', 0)),
+                'Score': r.get('score', 0),
+                'Confidence': r.get('confidence', 'N/A')
             })
         
         col1, col2, col3 = st.columns(3)
@@ -5845,6 +5851,8 @@ with tab_vpa:
 <td style="padding: 10px;">{t_mid}</td>
 <td style="padding: 10px;">{t_max}</td>
 <td style="padding: 10px; border-left: 1px solid rgba(255,255,255,0.1);">{action}</td>
+<td style="padding: 10px; font-weight: bold; color: #a3e635;">{r.get('score', 0)}</td>
+<td style="padding: 10px;">{r.get('confidence', 'N/A')}</td>
 </tr>"""
             html_rows.append(row)
             
@@ -5863,6 +5871,8 @@ with tab_vpa:
 <th style="padding: 10px;">Mid Term</th>
 <th style="padding: 10px;">Max Term</th>
 <th style="padding: 10px; border-left: 1px solid rgba(255,255,255,0.1);">Action / Signal</th>
+<th style="padding: 10px;">Score</th>
+<th style="padding: 10px;">Confidence</th>
 </tr>
 </thead>
 <tbody>

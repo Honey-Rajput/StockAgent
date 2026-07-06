@@ -1494,6 +1494,13 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
             score += t['mid'] * 2
             score += t['minor'] * 1
             
+        if score >= 12:
+            confidence = "High"
+        elif score >= 0:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+            
         cmp = float(df['Close'].iloc[-1])
         prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
         day_change_pct = ((cmp - prev_close) / prev_close) * 100
@@ -1513,6 +1520,7 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
             "weekly": weekly_trends,
             "monthly": monthly_trends,
             "score": score,
+            "confidence": confidence,
             "buy_price": buy_price,
             "exit_price": exit_price,
             "target_price": target_price
