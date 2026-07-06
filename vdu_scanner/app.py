@@ -5671,7 +5671,7 @@ with tab_vpa:
                 return "Slightly Overextended (Avoid Fresh Entry)"
             elif 0.5 < max_val <= 2.0 and mid == 1 and short == 1 and max_t == 1:
                 return "Perfect Buy / Strong Hold"
-            elif 0 < max_val <= 0.5 and mid == 1 and short == 1 and max_t == 1:
+            elif 0 < max_val <= 0.5 and mid == 1 and short == 1:
                 return "Early Breakout Entry"
             elif max_val > 0.5 and mid == 1 and short <= 0:
                 return "Pullback (Wait for Short=Up)"
@@ -5689,7 +5689,7 @@ with tab_vpa:
                 return "Buy"
             elif max_val > 2.0:
                 return "Buy"
-            return "Buy" if (max_val > 0.5 and mid == 1 and max_t == 1) or (max_val > 0 and mid == 1 and short == 1 and max_t == 1) else "Hold" if (max_val > 0.5 or (mid == 1 and short == 1)) else "Sell"
+            return "Buy" if (max_val > 0.5 and mid == 1 and max_t == 1) or (max_val > 0 and mid == 1 and short == 1) else "Hold" if (max_val > 0.5 or (mid == 1 and short == 1)) else "Sell"
 
         only_buy_signals = st.checkbox("🟢 Show Only 'Buy' Signals", value=False)
         
