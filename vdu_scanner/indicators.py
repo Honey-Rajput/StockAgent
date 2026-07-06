@@ -174,6 +174,38 @@ def precompute_indicators(df: pd.DataFrame) -> dict:
     result['bb_width']   = float(latest['BB_width'])  if not pd.isna(latest['BB_width'])  else None
     result['bb_squeeze'] = bool(latest['BB_squeeze'])  if not pd.isna(latest['BB_squeeze']) else False
 
+
+    # OI Interpretation
+    oi_status = None
+    oi_interp = None
+    if 'Open Interest' in df_enriched.columns and n >= 2:
+        try:
+            prev_close = df_enriched['Close'].iloc[-2]
+            curr_close = df_enriched['Close'].iloc[-1]
+            prev_oi = df_enriched['Open Interest'].iloc[-2]
+            curr_oi = df_enriched['Open Interest'].iloc[-1]
+            
+            if pd.notna(prev_oi) and pd.notna(curr_oi):
+                price_up = curr_close > prev_close
+                oi_up = curr_oi > prev_oi
+                if price_up and oi_up:
+                    oi_status = "Long Build-up"
+                    oi_interp = "Bullish – New long positions are being created. Strong buying interest."
+                elif not price_up and oi_up:
+                    oi_status = "Short Build-up"
+                    oi_interp = "Bearish – New short positions are being created. Strong selling interest."
+                elif price_up and not oi_up:
+                    oi_status = "Short Covering"
+                    oi_interp = "Bullish – Existing short sellers are closing positions, causing price to rise."
+                else:
+                    oi_status = "Long Unwinding"
+                    oi_interp = "Bearish – Existing long holders are exiting positions."
+        except Exception:
+            pass
+            
+    result['oi_status'] = oi_status
+    result['oi_interp'] = oi_interp
+
     # CMP and price info
     result['cmp'] = float(latest['Close'])
     result['today_volume'] = int(latest['Volume'])
@@ -198,6 +230,9 @@ def build_rich_analysis_from_indicators(indicators: dict, symbol: str, strategy_
         ema20 = indicators.get('ema20')
         sma50 = indicators.get('sma50')
         sma200 = indicators.get('sma200')
+        oi_status = indicators.get('oi_status')
+        oi_interp = indicators.get('oi_interp')
+
         cmp = indicators.get('cmp', 0.0)
 
         if rsi_val is None or cci_val is None or ema20 is None:
@@ -291,6 +326,12 @@ def build_rich_analysis_from_indicators(indicators: dict, symbol: str, strategy_
         else:
             cci_reasoning = f"CCI at {cci_val:.1f} ({cci_status}) shows extreme selling exhaustion, signaling an upward pivot."
 
+
+        # ---- OI Reasoning ----
+        oi_reasoning = ""
+        if oi_status and oi_interp:
+            oi_reasoning = f"OI Analysis: {oi_status} ({oi_interp})."
+
         # ---- Extract SL/Target from base text (identical logic) ----
         sl_target_part = ""
         if "Set stop loss" in base_rec_text:
@@ -317,6 +358,8 @@ def build_rich_analysis_from_indicators(indicators: dict, symbol: str, strategy_
             "cci": round(cci_val, 1),
             "cci_status": cci_status,
             "cci_interp": cci_interp,
+            "oi_status": oi_status,
+            "oi_interp": oi_interp,
             "ema20": round(ema20, 2),
             "sma50": round(sma50, 2),
             "sma200": round(sma200, 2),

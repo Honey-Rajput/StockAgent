@@ -552,7 +552,7 @@ def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=N
         else:
             sl_target_part = base_rec_text
 
-        final_text = f"{rsi_reasoning} {cci_reasoning} {ma_reasoning} {sl_target_part}"
+        final_text = f"{rsi_reasoning} {cci_reasoning} {ma_reasoning} {oi_reasoning} {sl_target_part}"
 
         analysis_payload = {
             "is_rich": True,
@@ -563,6 +563,8 @@ def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=N
             "cci": round(cci_val, 1),
             "cci_status": cci_status,
             "cci_interp": cci_interp,
+            "oi_status": oi_status,
+            "oi_interp": oi_interp,
             "ema20": round(ema20, 2),
             "sma50": round(sma50, 2),
             "sma200": round(sma200, 2),
