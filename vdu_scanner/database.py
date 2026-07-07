@@ -895,7 +895,6 @@ def get_cached_vpa(date_str: str) -> list[dict]:
             r_dict = dict(r)
             r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
             r_dict['volume'] = int(r_dict.get('volume') or 0)
-            r_dict['score'] = int(r_dict.get('vpa_score') or 0)
             
             r_dict['daily'] = {
                 "major": int(r_dict.get('daily_major') or 0),
@@ -927,6 +926,25 @@ def get_cached_vpa(date_str: str) -> list[dict]:
                 "mid_val": float(r_dict.get('monthly_mid_val') or 0.0),
                 "minor_val": float(r_dict.get('monthly_minor_val') or 0.0)
             }
+            
+            # Recompute normalized score (0-100) from trend values
+            # Same formula as scan_vpa_trend: raw_score = sum(major*3 + mid*2 + minor*1) per timeframe
+            raw_score = 0
+            for tf_data in [r_dict['daily'], r_dict['weekly'], r_dict['monthly']]:
+                raw_score += tf_data['major'] * 3
+                raw_score += tf_data['mid'] * 2
+                raw_score += tf_data['minor'] * 1
+            normalized_score = round((raw_score + 18) / 36 * 100)
+            r_dict['score'] = normalized_score
+            
+            # Derive confidence from normalized score
+            if normalized_score >= 80:
+                r_dict['confidence'] = "High"
+            elif normalized_score >= 50:
+                r_dict['confidence'] = "Medium"
+            else:
+                r_dict['confidence'] = "Low"
+            
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached VPA from database: {e}")

@@ -1488,15 +1488,18 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
         monthly_trends = calc_vpa_trends(df_monthly)
         
         # Determine overall score (simple heuristic: up trend +1, down trend -1)
-        score = 0
+        raw_score = 0
         for t in [daily_trends, weekly_trends, monthly_trends]:
-            score += t['major'] * 3
-            score += t['mid'] * 2
-            score += t['minor'] * 1
+            raw_score += t['major'] * 3
+            raw_score += t['mid'] * 2
+            raw_score += t['minor'] * 1
             
-        if score >= 12:
+        # Normalize score to a 0-100 scale
+        score = round((raw_score + 18) / 36 * 100)
+            
+        if score >= 80:
             confidence = "High"
-        elif score >= 0:
+        elif score >= 50:
             confidence = "Medium"
         else:
             confidence = "Low"
