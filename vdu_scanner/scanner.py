@@ -367,19 +367,14 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     if buy_signal:
         confidence = "High (WT Buy Signal)"
         base_rec = (
-            f"Bullish mean-reversion buy signal (LazyBear Green Dot) triggered in oversold zone! "
-            f"WaveTrend (WT1) is heavily oversold at {today_wt1:.1f} and a bullish crossover has been triggered. "
-            f"Buy Range: [₹{buy_price:.2f} to ₹{cmp:.2f}] (Nearest Support is ₹{support:.2f}). "
-            f"Set stop loss securely below support at ₹{exit_price:.2f} "
-            f"with a target near overhead resistance at ₹{target_price:.2f}."
+            f"WT Bullish Crossover | WT1: {today_wt1:.1f} | "
+            f"Buy: ₹{buy_price:.2f}-₹{cmp:.2f} | SL: ₹{exit_price:.2f} | Target: ₹{target_price:.2f}"
         )
     else:
         confidence = "Medium (WT Oversold)"
         base_rec = (
-            f"WaveTrend (WT1) is in deep oversold territory at {today_wt1:.1f}, indicating exhaustion of selling pressure. "
-            f"Buy Range: [₹{buy_price:.2f} to ₹{cmp:.2f}] (Nearest Support is ₹{support:.2f}). "
-            f"Set stop loss securely below support at ₹{exit_price:.2f} "
-            f"with a target near overhead resistance at ₹{target_price:.2f}."
+            f"WT Oversold | WT1: {today_wt1:.1f} | "
+            f"Buy: ₹{buy_price:.2f}-₹{cmp:.2f} | SL: ₹{exit_price:.2f} | Target: ₹{target_price:.2f}"
         )
     recommendation = compute_rich_analysis(df_copy, symbol, "WaveTrend Cross", base_rec, indicators=indicators)
 
