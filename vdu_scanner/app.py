@@ -661,7 +661,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             if strategy_type == "above_ma":
                 d20 = r.get('dist_20sma_pct', 0.0)
                 d50 = r.get('dist_50sma_pct', 0.0)
-                cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem;"><span style="color:#00e676;">20: +{d20:.1f}%</span><br><span style="color:#29b6f6;">50: +{d50:.1f}%</span></td>')
+                d200 = r.get('dist_200sma_pct', 0.0)
+                cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem;"><span style="color:#00e676;">20: +{d20:.1f}%</span><br><span style="color:#29b6f6;">50: +{d50:.1f}%</span><br><span style="color:#ffa000;">200: +{d200:.1f}%</span></td>')
             elif strategy_type == "support_ma":
                 d65 = r.get('dist_65sma_pct', 0.0)
                 color = "#00e676" if d65 >= 0 else "#ef4444"
@@ -2322,10 +2323,11 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 sma65 = float(today_row['SMA65']); sma150 = float(today_row['SMA150'])
                 sma200 = float(today_row['SMA200'])
                 
-                # Gap filter: skip stocks where price is too far from 20/50 SMA (overextended)
+                # Gap filter: skip stocks where price is too far from 20/50/200 SMA (overextended)
                 dist_20 = (c_val - sma20) / sma20 * 100
                 dist_50 = (c_val - sma50) / sma50 * 100
-                if c_val > sma20 and c_val > sma50 and c_val > sma200 and dist_20 <= 10 and dist_50 <= 15:
+                dist_200 = (c_val - sma200) / sma200 * 100
+                if c_val > sma20 and c_val > sma50 and c_val > sma200 and dist_20 <= 8 and dist_50 <= 8 and dist_200 <= 10:
                     above_buy_price = round(sma20, 2)  # Support = 20 SMA (nearest MA support)
                     above_exit_price = round(sma50 * 0.97, 2) 
                     above_target_price = round(today_close_val * 1.12, 2) 
@@ -2337,6 +2339,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
                         "dist_20sma_pct": round(dist_20, 2),
                         "dist_50sma_pct": round(dist_50, 2),
+                        "dist_200sma_pct": round(dist_200, 2),
                         "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
                         "target_price": above_target_price, "confidence": above_confidence,
                         "recommendation": compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec, indicators=ind)
@@ -3814,6 +3817,7 @@ with tab_sma:
                 "Setup Type": r['setup_type'],
                 "Dist to 20 SMA (%)": r.get('dist_20sma_pct', 0.0),
                 "Dist to 50 SMA (%)": r.get('dist_50sma_pct', 0.0),
+                "Dist to 200 SMA (%)": r.get('dist_200sma_pct', 0.0),
                 "Suggested Buy (₹)": r['buy_price'],
                 "Suggested Exit/SL (₹)": r['exit_price'],
                 "Suggested Target (₹)": r['target_price'],
