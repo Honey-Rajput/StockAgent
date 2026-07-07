@@ -364,19 +364,33 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     above_20sma = bool(buy_price > today_sma20) if not pd.isna(today_sma20) else False
     above_50sma = bool(buy_price > today_sma50) if not pd.isna(today_sma50) else False
 
+    # Compute RSI (14) for recommendation
+    close_series = df_copy['Close']
+    delta = close_series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    ema_gain = gain.ewm(com=13, adjust=False).mean()
+    ema_loss = loss.ewm(com=13, adjust=False).mean()
+    rs = ema_gain / (ema_loss + 1e-9)
+    rsi_series = 100 - (100 / (1 + rs))
+    rsi_val = round(float(rsi_series.iloc[-1]), 1)
+
+    # Compute CCI (14) for recommendation
+    tp = (df_copy['High'] + df_copy['Low'] + close_series) / 3
+    sma_tp = tp.rolling(window=14).mean()
+    mad_val = tp.rolling(window=14).apply(lambda x: abs(x - x.mean()).mean(), raw=True)
+    cci_series = (tp - sma_tp) / (0.015 * mad_val + 1e-9)
+    cci_val = round(float(cci_series.iloc[-1]), 1) if not pd.isna(cci_series.iloc[-1]) else 0.0
+
     if buy_signal:
         confidence = "High (WT Buy Signal)"
-        base_rec = (
-            f"WT Bullish Crossover | WT1: {today_wt1:.1f} | "
-            f"Buy: ₹{buy_price:.2f}-₹{cmp:.2f} | SL: ₹{exit_price:.2f} | Target: ₹{target_price:.2f}"
-        )
     else:
         confidence = "Medium (WT Oversold)"
-        base_rec = (
-            f"WT Oversold | WT1: {today_wt1:.1f} | "
-            f"Buy: ₹{buy_price:.2f}-₹{cmp:.2f} | SL: ₹{exit_price:.2f} | Target: ₹{target_price:.2f}"
-        )
-    recommendation = compute_rich_analysis(df_copy, symbol, "WaveTrend Cross", base_rec, indicators=indicators)
+
+    recommendation = (
+        f"Buy: ₹{buy_price:.2f}-₹{cmp:.2f} | SL: ₹{exit_price:.2f} | "
+        f"Target: ₹{target_price:.2f} | RSI: {rsi_val} | CCI: {cci_val}"
+    )
 
     from config import get_company_name
     company_name = get_company_name(symbol)
