@@ -2322,7 +2322,10 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 sma65 = float(today_row['SMA65']); sma150 = float(today_row['SMA150'])
                 sma200 = float(today_row['SMA200'])
                 
-                if c_val > sma20 and c_val > sma50:
+                # Gap filter: skip stocks where price is too far from 20/50 SMA (overextended)
+                dist_20 = (c_val - sma20) / sma20 * 100
+                dist_50 = (c_val - sma50) / sma50 * 100
+                if c_val > sma20 and c_val > sma50 and dist_20 <= 10 and dist_50 <= 15:
                     above_buy_price = round(sma20, 2)  # Support = 20 SMA (nearest MA support)
                     above_exit_price = round(sma50 * 0.97, 2) 
                     above_target_price = round(today_close_val * 1.12, 2) 
@@ -2332,8 +2335,8 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     res["above_ma"] = {
                         "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                        "dist_20sma_pct": round((today_close_val - sma20) / sma20 * 100, 2),
-                        "dist_50sma_pct": round((today_close_val - sma50) / sma50 * 100, 2),
+                        "dist_20sma_pct": round(dist_20, 2),
+                        "dist_50sma_pct": round(dist_50, 2),
                         "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
                         "target_price": above_target_price, "confidence": above_confidence,
                         "recommendation": compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec, indicators=ind)
@@ -2344,7 +2347,9 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 o_val = float(today_row['Open']); yesterday_c = float(yesterday_row['Close'])
                 is_green_candle = c_val > o_val; is_up_move = c_val > yesterday_c; holds_above = c_val > sma65
                 
-                if (tested_today or tested_yesterday) and holds_above and is_green_candle and is_up_move:
+                # Gap filter: skip stocks where price is too far from 65 SMA (overextended)
+                dist_65 = (c_val - sma65) / sma65 * 100
+                if (tested_today or tested_yesterday) and holds_above and is_green_candle and is_up_move and dist_65 <= 8:
                     support_buy_price = round(sma65, 2)  # Support = 65 SMA (the actual support level)
                     support_exit_price = round(sma65 * 0.97, 2) 
                     support_target_price = round(today_close_val * 1.15, 2) 
@@ -2354,7 +2359,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     res["support_ma"] = {
                         "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                        "dist_65sma_pct": round((today_close_val - sma65) / sma65 * 100, 2), "setup_type": "support_ma",
+                        "dist_65sma_pct": round(dist_65, 2), "setup_type": "support_ma",
                         "buy_price": support_buy_price, "exit_price": support_exit_price, "target_price": support_target_price,
                         "confidence": support_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec, indicators=ind)
                     }
@@ -2365,7 +2370,10 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 price_crossed_150 = (yesterday_row['Close'] <= yesterday_row['SMA150']) and (today_row['Close'] > today_row['SMA150'])
                 price_crossed_200 = (yesterday_row['Close'] <= yesterday_row['SMA200']) and (today_row['Close'] > today_row['SMA200'])
                 
-                if crossed_golden or crossed_150 or price_crossed_50 or price_crossed_150 or price_crossed_200:
+                # Gap filter: skip stocks where price is too far from crossover MAs (overextended)
+                cross_dist_50 = (c_val - sma50) / sma50 * 100
+                cross_dist_200 = (c_val - sma200) / sma200 * 100
+                if (crossed_golden or crossed_150 or price_crossed_50 or price_crossed_150 or price_crossed_200) and cross_dist_50 <= 15 and cross_dist_200 <= 20:
                     cross_support = max(s for s in [sma50, sma150, sma200] if s < c_val) if any(s < c_val for s in [sma50, sma150, sma200]) else c_val * 0.94
                     cross_buy_price = round(cross_support * 1.01, 2)  # Support = nearest MA below price
                     cross_exit_price = round(cross_support * 0.96, 2) 
@@ -2376,8 +2384,8 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     res["crossover_ma"] = {
                         "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                        "dist_50sma_pct": round((today_close_val - sma50) / sma50 * 100, 2),
-                        "dist_200sma_pct": round((today_close_val - sma200) / sma200 * 100, 2), "setup_type": "crossover_ma",
+                        "dist_50sma_pct": round(cross_dist_50, 2),
+                        "dist_200sma_pct": round(cross_dist_200, 2), "setup_type": "crossover_ma",
                         "buy_price": cross_buy_price, "exit_price": cross_exit_price, "target_price": cross_target_price,
                         "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec, indicators=ind)
                     }
