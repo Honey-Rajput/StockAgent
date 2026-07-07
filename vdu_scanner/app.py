@@ -2325,12 +2325,12 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 # Gap filter: skip stocks where price is too far from 20/50 SMA (overextended)
                 dist_20 = (c_val - sma20) / sma20 * 100
                 dist_50 = (c_val - sma50) / sma50 * 100
-                if c_val > sma20 and c_val > sma50 and dist_20 <= 10 and dist_50 <= 15:
+                if c_val > sma20 and c_val > sma50 and c_val > sma200 and dist_20 <= 10 and dist_50 <= 15:
                     above_buy_price = round(sma20, 2)  # Support = 20 SMA (nearest MA support)
                     above_exit_price = round(sma50 * 0.97, 2) 
                     above_target_price = round(today_close_val * 1.12, 2) 
                     above_confidence = "High (Uptrend)" if sma20 > sma50 and sma50 > sma200 else "Medium-High (Uptrend)"
-                    base_above_rec = (f"Strong medium-term uptrend. Close above 20 SMA & 50 SMA. Buy near support ₹{above_buy_price:.2f} (20 SMA) "
+                    base_above_rec = (f"Strong medium-term uptrend. Close above 20, 50, and 200 SMA. Buy near support ₹{above_buy_price:.2f} (20 SMA) "
                                       f"with stop below 50 SMA support at ₹{above_exit_price:.2f} targeting momentum target ₹{above_target_price:.2f}.")
                     res["above_ma"] = {
                         "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
