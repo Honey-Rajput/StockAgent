@@ -2163,7 +2163,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
                     try:
                         # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
-                        df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False)
+                        df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
                         if df_bulk is None or df_bulk.empty:
                             return chunk_data
                         for sym in chunk:
@@ -2201,7 +2201,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
