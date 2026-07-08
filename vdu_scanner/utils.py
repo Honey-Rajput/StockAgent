@@ -24,6 +24,45 @@ def inject_premium_css():
             border-right: 1px solid rgba(255, 255, 255, 0.05);
         }
         
+        /* ======= FORCE TAB WRAPPING — Streamlit 1.56 ======= */
+        /* Target every possible wrapper that clips/scrolls the tab bar */
+        [data-testid="stTabs"],
+        [data-testid="stTabs"] > div,
+        [data-testid="stTabs"] > div > div,
+        [data-testid="stTabs"] > div > div > div {
+            overflow: visible !important;
+            overflow-x: visible !important;
+        }
+        /* The actual tab-list flexbox row */
+        [data-testid="stTabs"] [data-baseweb="tab-list"],
+        [role="tablist"] {
+            flex-wrap: wrap !important;
+            gap: 4px 2px !important;
+            overflow: visible !important;
+            overflow-x: visible !important;
+            max-width: 100% !important;
+        }
+        /* Individual tabs – keep them compact */
+        [data-testid="stTabs"] [data-baseweb="tab-list"] button[role="tab"],
+        [role="tablist"] button[role="tab"] {
+            white-space: nowrap !important;
+            flex-shrink: 0 !important;
+        }
+        /* Hide the left/right scroll arrow buttons */
+        [data-testid="stTabs"] [data-baseweb="tab-list"] ~ button,
+        [data-testid="stTabs"] button[aria-label*="croll"],
+        [data-testid="stTabs"] button[data-baseweb="button"],
+        [data-testid="stTabs"] > div > div > button,
+        [data-testid="stTabs"] svg[data-testid="stIconMaterial"],
+        [data-testid="stTabs"] > div > div > div > button:not([role="tab"]) {
+            display: none !important;
+        }
+        /* Hide the bottom tab border/highlight bar if it overflows */
+        [data-testid="stTabs"] [data-baseweb="tab-border"],
+        [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+            display: none !important;
+        }
+        
         /* Premium Card Component */
         .glass-card {
             background: rgba(17, 24, 39, 0.6);
