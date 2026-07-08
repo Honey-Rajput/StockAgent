@@ -2418,28 +2418,39 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 passes_monthly = check_weekly_monthly_sma(df_monthly)
 
                 if passes_daily and passes_weekly and passes_monthly:
-                    above_buy_price = round(sma20, 2)  # Support = 20 SMA
-                    above_exit_price = round(sma50 * 0.97, 2) 
-                    above_target_price = round(today_close_val * 1.12, 2) 
-                    above_confidence = "High (Multi-TF Uptrend Convergence)"
+                    # Additional check: short (minor) and mid-term VPA trend must be green (1)
+                    # Long term (major) doesn't have to be.
+                    vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
+                    passes_vpa = False
+                    if vpa_res is not None:
+                        daily_vpa = vpa_res.get("daily", {})
+                        if daily_vpa.get("minor", 0) >= 1 and daily_vpa.get("mid", 0) >= 1:
+                            passes_vpa = True
                     
-                    ema9 = float(df_resample['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
-                    ema21 = float(df_resample['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
-                    
-                    base_above_rec = (f"Passes strict 20 & 50 SMA constraints on Daily, Weekly, and Monthly timeframes. "
-                                      f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
-                                      f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
-                    
-                    res["above_ma"] = {
-                        "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
-                        "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                        "dist_20sma_pct": round(dist_20, 2),
-                        "dist_50sma_pct": round(dist_50, 2),
-                        "dist_200sma_pct": round(dist_200, 2),
-                        "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
-                        "target_price": above_target_price, "confidence": above_confidence,
-                        "recommendation": compute_rich_analysis(df_ma, sym, "20&50 SMA Multi-TF", base_above_rec, indicators=ind)
-                    }
+                    if passes_vpa:
+                        above_buy_price = round(sma20, 2)  # Support = 20 SMA
+                        above_exit_price = round(sma50 * 0.97, 2) 
+                        above_target_price = round(today_close_val * 1.12, 2) 
+                        above_confidence = "High (Multi-TF Uptrend Convergence)"
+                        
+                        ema9 = float(df_resample['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
+                        ema21 = float(df_resample['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
+                        
+                        base_above_rec = (f"Passes strict 20 & 50 SMA constraints on Daily, Weekly, and Monthly timeframes. "
+                                          f"Short and Mid-term VPA trends are Green (Uptrend). "
+                                          f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
+                                          f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
+                        
+                        res["above_ma"] = {
+                            "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
+                            "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
+                            "dist_20sma_pct": round(dist_20, 2),
+                            "dist_50sma_pct": round(dist_50, 2),
+                            "dist_200sma_pct": round(dist_200, 2),
+                            "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
+                            "target_price": above_target_price, "confidence": above_confidence,
+                            "recommendation": compute_rich_analysis(df_ma, sym, "20&50 SMA Multi-TF", base_above_rec, indicators=ind)
+                        }
                     
                 yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
                 tested_today = l_val <= sma65 * 1.01; tested_yesterday = yesterday_l <= yesterday_sma65 * 1.01
