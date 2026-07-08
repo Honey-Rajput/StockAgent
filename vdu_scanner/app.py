@@ -2382,33 +2382,41 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 passes_daily = check_sma_conditions(df_resample)
                 
                 def check_weekly_monthly_sma(d_frame):
-                    if len(d_frame) < 50: return False
+                    if len(d_frame) < 20: return False  # Need at least 20 rows for SMA20
                     try:
                         w_close = float(d_frame['Close'].iloc[-1])
                         w_sma20_series = d_frame['Close'].rolling(window=20).mean()
-                        w_sma50_series = d_frame['Close'].rolling(window=50).mean()
                         w_sma20 = float(w_sma20_series.iloc[-1])
-                        w_sma50 = float(w_sma50_series.iloc[-1])
+                        w_sma20_prev = float(w_sma20_series.iloc[-4]) if len(w_sma20_series) >= 24 else float('nan')
+                        
+                        if len(d_frame) >= 50:
+                            w_sma50_series = d_frame['Close'].rolling(window=50).mean()
+                            w_sma50 = float(w_sma50_series.iloc[-1])
+                            w_sma50_prev = float(w_sma50_series.iloc[-4]) if len(w_sma50_series) >= 54 else float('nan')
+                            
+                            slope_up = (pd.notna(w_sma20_prev) and pd.notna(w_sma50_prev) and
+                                        w_sma20 > w_sma20_prev and w_sma50 > w_sma50_prev)
+                            
+                            condition = (
+                                slope_up and pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and
+                                (w_close > w_sma20) and (w_close > w_sma50) and (w_sma20 > w_sma50) and
+                                (w_sma20 <= w_sma50 * sma20_upper_bound) and
+                                (w_sma20 >= w_sma50 * sma20_lower_bound)
+                            )
+                        else:
+                            slope_up = (pd.notna(w_sma20_prev) and w_sma20 > w_sma20_prev)
+                            condition = (slope_up and pd.notna(w_sma20) and pd.notna(w_close) and (w_close > w_sma20))
+                            w_sma50 = float('nan')
+                            
+                        # Also check 200 SMA if available
                         w_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
-                        
-                        # Upward slope check: SMA20 and SMA50 must be rising
-                        w_sma20_prev = float(w_sma20_series.iloc[-4]) if len(w_sma20_series) >= 4 else float('nan')
-                        w_sma50_prev = float(w_sma50_series.iloc[-4]) if len(w_sma50_series) >= 4 else float('nan')
-                        slope_up = (
-                            pd.notna(w_sma20_prev) and pd.notna(w_sma50_prev) and
-                            w_sma20 > w_sma20_prev and
-                            w_sma50 > w_sma50_prev
-                        )
-                        
-                        condition = (
-                            slope_up and
-                            pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma200) and
-                            (w_sma20 <= w_sma50 * sma20_upper_bound) and
-                            (w_sma20 >= w_sma50 * sma20_lower_bound) and
-                            (w_sma50 <= w_sma200 * sma50_upper_bound) and
-                            (w_sma50 >= w_sma200 * sma50_lower_bound) and
-                            (w_close >= w_sma200 * 0.98)
-                        )
+                        if pd.notna(w_sma200):
+                            condition = condition and (w_close >= w_sma200 * 0.98)
+                            if pd.notna(w_sma50):
+                                condition = condition and (
+                                    (w_sma50 <= w_sma200 * sma50_upper_bound) and
+                                    (w_sma50 >= w_sma200 * sma50_lower_bound)
+                                )
                         return condition
                     except Exception: return False
                     
@@ -2417,56 +2425,41 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 df_monthly = df_resample.resample('ME' if hasattr(pd.tseries.offsets, 'MonthEnd') else 'M').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
                 passes_monthly = check_weekly_monthly_sma(df_monthly)
 
-                if sma_timeframe == "Daily":
-                    tf_passes = passes_daily
-                elif sma_timeframe == "Weekly":
-                    tf_passes = passes_weekly
-                elif sma_timeframe == "Monthly":
-                    tf_passes = passes_monthly
-                else:
-                    tf_passes = passes_daily and passes_weekly and passes_monthly
+                # Require VPA trend regardless of timeframe
+                vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
+                passes_vpa = False
+                if vpa_res is not None:
+                    daily_vpa = vpa_res.get("daily", {})
+                    if daily_vpa.get("minor", 0) >= 1 and daily_vpa.get("mid", 0) >= 1:
+                        passes_vpa = True
 
-                if tf_passes:
-                    # Additional check: short (minor) and mid-term VPA trend must be green (1)
-                    # Long term (major) doesn't have to be.
-                    vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
-                    passes_vpa = False
-                    if vpa_res is not None:
-                        daily_vpa = vpa_res.get("daily", {})
-                        if daily_vpa.get("minor", 0) >= 1 and daily_vpa.get("mid", 0) >= 1:
-                            passes_vpa = True
+                if (passes_daily or passes_weekly or passes_monthly) and passes_vpa:
+                    above_buy_price = round(sma20, 2)  # Support = 20 SMA
+                    above_exit_price = round(sma50 * 0.97, 2) 
+                    above_target_price = round(today_close_val * 1.12, 2) 
                     
-                    if passes_vpa:
-                        above_buy_price = round(sma20, 2)  # Support = 20 SMA
-                        above_exit_price = round(sma50 * 0.97, 2) 
-                        above_target_price = round(today_close_val * 1.12, 2) 
-                        
-                        if sma_timeframe == "All (Multi-Timeframe Convergence)":
-                            above_confidence = "High (Multi-TF Uptrend Convergence)"
-                            tf_string = "Daily, Weekly, and Monthly timeframes"
-                        else:
-                            above_confidence = f"Medium ({sma_timeframe} Uptrend)"
-                            tf_string = f"the {sma_timeframe} timeframe"
-                        
-                        ema9 = float(df_resample['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
-                        ema21 = float(df_resample['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
-                        
-                        base_above_rec = (f"Passes strict 20 & 50 SMA constraints on {tf_string}. "
-                                          f"Short and Mid-term VPA trends are Green (Uptrend). "
-                                          f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
-                                          f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
-                        
-                        res["above_ma"] = {
-                            "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
-                            "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                            "dist_20sma_pct": round(dist_20, 2),
-                            "dist_50sma_pct": round(dist_50, 2),
-                            "dist_200sma_pct": round(dist_200, 2),
-                            "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
-                            "target_price": above_target_price, "confidence": above_confidence,
-                            "recommendation": compute_rich_analysis(df_ma, sym, "20&50 SMA Multi-TF", base_above_rec, indicators=ind)
-                        }
+                    ema9 = float(df_resample['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
+                    ema21 = float(df_resample['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
                     
+                    base_above_rec = (f"Passes strict 20 & 50 SMA constraints. "
+                                      f"Short and Mid-term VPA trends are Green (Uptrend). "
+                                      f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
+                                      f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
+                    
+                    res["above_ma"] = {
+                        "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
+                        "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
+                        "dist_20sma_pct": round(dist_20, 2),
+                        "dist_50sma_pct": round(dist_50, 2),
+                        "dist_200sma_pct": round(dist_200, 2),
+                        "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
+                        "target_price": above_target_price, "confidence": "High (Multi-TF Uptrend Convergence)" if (passes_daily and passes_weekly and passes_monthly) else "Medium (Uptrend)",
+                        "recommendation": compute_rich_analysis(df_ma, sym, "20&50 SMA Multi-TF", base_above_rec, indicators=ind),
+                        "passes_daily": passes_daily,
+                        "passes_weekly": passes_weekly,
+                        "passes_monthly": passes_monthly
+                    }
+
                 yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
                 tested_today = l_val <= sma65 * 1.01; tested_yesterday = yesterday_l <= yesterday_sma65 * 1.01
                 o_val = float(today_row['Open']); yesterday_c = float(yesterday_row['Close'])
@@ -3921,51 +3914,62 @@ with tab_sma:
     
     col1, col2 = st.columns([1, 2])
     with col1:
-        sma_timeframe_tab = st.selectbox("SMA Strategy Timeframe", ["Daily", "Weekly", "Monthly", "All (Multi-Timeframe Convergence)"], index=3, key="sma_timeframe_tab")
+        sma_timeframe_tab = st.selectbox("SMA Strategy Timeframe", ["Daily", "Weekly", "All (Daily + Weekly Convergence)"], index=0, key="sma_timeframe_tab")
     
     above_ma_data = st.session_state.above_ma_results
     
     if above_ma_data is None:
         st.info("💡 Run the scanner from the sidebar to identify stocks trading above their 20 SMA and 50 SMA.")
-    elif len(above_ma_data) == 0:
-        st.info("ℹ️ No stocks found today matching the 20 & 50 SMA uptrend criteria.")
     else:
-        # Sort by day change descending
-        sorted_above = sorted(above_ma_data, key=lambda x: x.get('day_change_pct', 0.0), reverse=True)
-        
-        # Download results option
-        export_above = []
-        for r in sorted_above:
-            export_above.append({
-                "Symbol": r['symbol'],
-                "Sector": get_stock_sector(r['symbol']),
-                                "CMP (₹)": r['cmp'],
-                "Day Change %": r['day_change_pct'],
-                "Setup Type": r['setup_type'],
-                "Dist to 20 SMA (%)": float(r.get('dist_20sma_pct') or 0.0),
-                "Dist to 50 SMA (%)": float(r.get('dist_50sma_pct') or 0.0),
-                "Dist to 200 SMA (%)": float(r.get('dist_200sma_pct') or 0.0),
-                "Suggested Buy (₹)": r['buy_price'],
-                "Suggested Exit/SL (₹)": r['exit_price'],
-                "Suggested Target (₹)": r['target_price'],
-                "Confidence": r['confidence'],
-                "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
-            })
-        export_a_df = pd.DataFrame(export_above)
-        csv_a_data = export_a_df.to_csv(index=False).encode('utf-8-sig')
-        
-        st.download_button(
-            label="📥 Download Above 20/50 SMA Results (CSV)",
-            data=csv_a_data,
-            file_name=f"above_20_50_sma_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv",
-            key="dl_above_ma_btn"
-        )
-        
-        st.markdown("---")
-        # Render the unified Trade Execution Matrix
-        st.markdown("### 📈 Active Uptrend Trade Execution Sheet")
-        render_unified_strategy_table(sorted_above, "above_ma", "above_ma_tab")
+        # Dynamically filter based on the UI dropdown
+        filtered_above = []
+        for r in above_ma_data:
+            if sma_timeframe_tab == "Daily" and r.get("passes_daily"):
+                filtered_above.append(r)
+            elif sma_timeframe_tab == "Weekly" and r.get("passes_weekly"):
+                filtered_above.append(r)
+            elif sma_timeframe_tab == "All (Daily + Weekly Convergence)" and r.get("passes_daily") and r.get("passes_weekly"):
+                filtered_above.append(r)
+                
+        if len(filtered_above) == 0:
+            st.info(f"ℹ️ No stocks found today matching the '{sma_timeframe_tab}' 20 & 50 SMA uptrend criteria.")
+        else:
+            # Sort by day change descending
+            sorted_above = sorted(filtered_above, key=lambda x: x.get('day_change_pct', 0.0), reverse=True)
+            
+            # Download results option
+            export_above = []
+            for r in sorted_above:
+                export_above.append({
+                    "Symbol": r['symbol'],
+                    "Sector": get_stock_sector(r['symbol']),
+                    "CMP (₹)": r['cmp'],
+                    "Day Change %": r['day_change_pct'],
+                    "Setup Type": r['setup_type'],
+                    "Dist to 20 SMA (%)": float(r.get('dist_20sma_pct') or 0.0),
+                    "Dist to 50 SMA (%)": float(r.get('dist_50sma_pct') or 0.0),
+                    "Dist to 200 SMA (%)": float(r.get('dist_200sma_pct') or 0.0),
+                    "Suggested Buy (₹)": r['buy_price'],
+                    "Suggested Exit/SL (₹)": r['exit_price'],
+                    "Suggested Target (₹)": r['target_price'],
+                    "Confidence": r['confidence'],
+                    "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
+                })
+            export_a_df = pd.DataFrame(export_above)
+            csv_a_data = export_a_df.to_csv(index=False).encode('utf-8-sig')
+            
+            st.download_button(
+                label="📥 Download Above 20/50 SMA Results (CSV)",
+                data=csv_a_data,
+                file_name=f"above_20_50_sma_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="dl_above_ma_btn"
+            )
+            
+            st.markdown("---")
+            # Render the unified Trade Execution Matrix
+            st.markdown("### 📈 Active Uptrend Trade Execution Sheet")
+            render_unified_strategy_table(sorted_above, "above_ma", "above_ma_tab")
 
 # ==============================================================================
 # TAB 8: 65 SMA SUPPORT
