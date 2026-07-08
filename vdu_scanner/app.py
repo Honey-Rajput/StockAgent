@@ -2343,25 +2343,12 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         return False
                     try:
                         d_close = float(d_frame['Close'].iloc[-1])
-                        sma20_series = d_frame['Close'].rolling(window=20).mean()
-                        sma50_series = d_frame['Close'].rolling(window=50).mean()
-                        d_sma20 = float(sma20_series.iloc[-1])
-                        d_sma50 = float(sma50_series.iloc[-1])
+                        d_sma20 = float(d_frame['Close'].rolling(window=20).mean().iloc[-1])
+                        d_sma50 = float(d_frame['Close'].rolling(window=50).mean().iloc[-1])
                         d_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
                         d_vol_sma20 = float(d_frame['Volume'].rolling(window=20).mean().iloc[-1])
                         
-                        # Upward slope check: SMA20 and SMA50 must be rising
-                        # Compare current SMA value to 5 periods ago
-                        d_sma20_prev = float(sma20_series.iloc[-6]) if len(sma20_series) >= 6 else float('nan')
-                        d_sma50_prev = float(sma50_series.iloc[-6]) if len(sma50_series) >= 6 else float('nan')
-                        slope_up = (
-                            pd.notna(d_sma20_prev) and pd.notna(d_sma50_prev) and
-                            d_sma20 > d_sma20_prev and
-                            d_sma50 > d_sma50_prev
-                        )
-                        
                         condition_daily = (
-                            slope_up and
                             pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and pd.notna(d_sma200) and
                             (d_sma20 <= d_sma50 * sma20_upper_bound) and
                             (d_sma20 >= d_sma50 * sma20_lower_bound) and
@@ -2382,42 +2369,21 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 passes_daily = check_sma_conditions(df_resample)
                 
                 def check_weekly_monthly_sma(d_frame):
-                    if len(d_frame) < 20: return False  # Need at least 20 rows for SMA20
+                    if len(d_frame) < 50: return False
                     try:
                         w_close = float(d_frame['Close'].iloc[-1])
-                        w_sma20_series = d_frame['Close'].rolling(window=20).mean()
-                        w_sma20 = float(w_sma20_series.iloc[-1])
-                        w_sma20_prev = float(w_sma20_series.iloc[-4]) if len(w_sma20_series) >= 24 else float('nan')
-                        
-                        if len(d_frame) >= 50:
-                            w_sma50_series = d_frame['Close'].rolling(window=50).mean()
-                            w_sma50 = float(w_sma50_series.iloc[-1])
-                            w_sma50_prev = float(w_sma50_series.iloc[-4]) if len(w_sma50_series) >= 54 else float('nan')
-                            
-                            slope_up = (pd.notna(w_sma20_prev) and pd.notna(w_sma50_prev) and
-                                        w_sma20 > w_sma20_prev and w_sma50 > w_sma50_prev)
-                            
-                            condition = (
-                                slope_up and pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and
-                                (w_close > w_sma20) and (w_close > w_sma50) and (w_sma20 > w_sma50) and
-                                (w_sma20 <= w_sma50 * sma20_upper_bound) and
-                                (w_sma20 >= w_sma50 * sma20_lower_bound)
-                            )
-                        else:
-                            slope_up = (pd.notna(w_sma20_prev) and w_sma20 > w_sma20_prev)
-                            condition = (slope_up and pd.notna(w_sma20) and pd.notna(w_close) and (w_close > w_sma20))
-                            w_sma50 = float('nan')
-                            
-                        # Also check 200 SMA if available
+                        w_sma20 = float(d_frame['Close'].rolling(window=20).mean().iloc[-1])
+                        w_sma50 = float(d_frame['Close'].rolling(window=50).mean().iloc[-1])
                         w_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
-                        if pd.notna(w_sma200):
-                            condition = condition and (w_close >= w_sma200 * 0.98)
-                            if pd.notna(w_sma50):
-                                condition = condition and (
-                                    (w_sma50 <= w_sma200 * sma50_upper_bound) and
-                                    (w_sma50 >= w_sma200 * sma50_lower_bound)
-                                )
-                        return condition
+                        condition_weekly = (
+                            pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma200) and
+                            (w_sma20 <= w_sma50 * sma20_upper_bound) and
+                            (w_sma20 >= w_sma50 * sma20_lower_bound) and
+                            (w_sma50 <= w_sma200 * sma50_upper_bound) and
+                            (w_sma50 >= w_sma200 * sma50_lower_bound) and
+                            (w_close >= w_sma200 * 0.98)
+                        )
+                        return condition_weekly
                     except Exception: return False
                     
                 df_weekly = df_resample.resample('W').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
