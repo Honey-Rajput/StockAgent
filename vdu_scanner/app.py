@@ -911,6 +911,8 @@ if 'vcs_results' not in st.session_state:
     st.session_state.vcs_results = None
 if 'structural_vcp_results' not in st.session_state:
     st.session_state.structural_vcp_results = None
+if 'cupid_results' not in st.session_state:
+    st.session_state.cupid_results = None
 # Initialize global status dictionary if not present (shared across all threads/sessions)
 if "MOMENTUM_SCAN_STATUS" not in globals():
     # Removed redundant global statement
@@ -934,6 +936,7 @@ if "ALL_TAB_SCAN_STATUS" not in globals():
         "stage2_results": None,
         "vpa_results": None,
         "vp_results": None,
+        "cupid_results": None,
     }
 
 def run_background_momentum_scans():
@@ -1653,6 +1656,66 @@ def run_background_all_tab_scans():
                     print(f"[BG All-Tab] Volume Profile scan complete: {len(vp_list)} results")
             except Exception as vp_err:
                 print(f"[BG All-Tab] Volume Profile scan error: {vp_err}")
+
+            # ----------------------------------------------------------------
+            # 6/6: Cupid Scan (Weekly history)
+            # ----------------------------------------------------------------
+            ALL_TAB_SCAN_STATUS["current_scanner"] = "Cupid"
+            ALL_TAB_SCAN_STATUS["status_text"] = "Step 6/6 - Running Cupid scan..."
+            ALL_TAB_SCAN_STATUS["progress"] = 0.9
+            print("[BG All-Tab] Step 6/6: Cupid scan")
+
+            try:
+                cached_cupid = database.get_cached_cupid(today_str)
+                if cached_cupid and len(cached_cupid) > 0:
+                    ALL_TAB_SCAN_STATUS["cupid_results"] = cached_cupid
+                    print(f"[BG All-Tab] Cupid: Loaded {len(cached_cupid)} results from DB cache. Skipping scan.")
+                else:
+                    from scanner import scan_cupid
+                    from data_fetcher import get_index_stocks
+                    raw_symbols = get_index_stocks("ALL NSE")
+                    all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+
+                    cupid_list = []
+                    chunk_size = 50
+                    chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
+
+                    for c_idx, chunk in enumerate(chunks):
+                        ALL_TAB_SCAN_STATUS["progress"] = 0.9 + (c_idx / len(chunks)) * 0.1
+                        try:
+                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1wk", progress=False, threads=False)
+                            if not bulk_df.empty:
+                                for sym_ns in chunk:
+                                    try:
+                                        sym = sym_ns.replace('.NS', '')
+                                        if isinstance(bulk_df.columns, pd.MultiIndex):
+                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                            if not matched_t:
+                                                continue
+                                            df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                        else:
+                                            df = bulk_df.dropna(subset=['Close'])
+                                        if not df.empty and len(df) >= 26:
+                                            df = df.reset_index()
+                                            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+                                            res = scan_cupid(sym, df, 0)
+                                            if res:
+                                                cupid_list.append(res)
+                                    except Exception:
+                                        pass
+                        except Exception as chunk_ex:
+                            print(f"[BG All-Tab] Cupid chunk {c_idx} error: {chunk_ex}")
+
+                    ALL_TAB_SCAN_STATUS["cupid_results"] = cupid_list
+                    try:
+                        database.save_cupid_results(today_str, cupid_list)
+                    except Exception:
+                        pass
+                    print(f"[BG All-Tab] Cupid scan complete: {len(cupid_list)} results")
+            except Exception as cupid_err:
+                print(f"[BG All-Tab] Cupid scan error: {cupid_err}")
+
 
             # All scans complete
             ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans complete!"
@@ -2608,12 +2671,12 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_ai, tab_gapup, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_confluence, tab_support, tab_rsi_wt, tab_bb_squeeze) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_confluence, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_cupid) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "🚀 Gap-Up", "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 VCS", "🎯 VCP", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "💥 BB Squeeze"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "💥 BB Squeeze", "🏹 Cupid"
 ])
 
 # ==============================================================================
@@ -7137,3 +7200,33 @@ with tab_bb_squeeze:
         else:
             st.warning("⚠️ Scan has not been run yet. Click **'Run BB Squeeze Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")
 
+
+# ==============================================================================
+# TAB 24: CUPID
+# ==============================================================================
+with tab_cupid:
+    st.markdown("### 🏹 Cupid - The King of the Charts")
+    st.markdown("Identifies setups based on weekly low volatility (Base Phase), Turn Phase, and Volume Acceleration.")
+    st.markdown("---")
+
+    # Pick up background scan results if available
+    if not st.session_state.get('cupid_results') and ALL_TAB_SCAN_STATUS.get("cupid_results") is not None:
+        st.session_state.cupid_results = ALL_TAB_SCAN_STATUS["cupid_results"]
+
+    cupid_data = st.session_state.get('cupid_results', None)
+    
+    if cupid_data:
+        c_m1, c_m2, c_m3 = st.columns(3)
+        c_count = len(cupid_data)
+        
+        c_m1.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Cupid Setups Found</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{c_count}</h3></div>', unsafe_allow_html=True)
+        st.markdown("---")
+        
+        render_unified_strategy_table(cupid_data, "Cupid Setup", "cupid_tab")
+    else:
+        if ALL_TAB_SCAN_STATUS.get("is_running", False):
+            st.info(f"⏳ Background scanner is analyzing ({ALL_TAB_SCAN_STATUS.get('progress', 0.0)*100:.0f}%)... Please wait.")
+            if st.button("🔄 Refresh Cupid Status", key="refresh_cupid_btn"):
+                st.rerun()
+        else:
+            st.info("💡 Run the background scanner (enable **Auto-Background Scans** in sidebar) to analyze stocks for Cupid setups.")
