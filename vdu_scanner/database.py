@@ -1891,7 +1891,7 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
     all_scans AS (
         SELECT symbol, scan_date, 'VDU Breakout' as source, signal_strength as score FROM scanned_breakouts WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'Minervini Stage-2' as source, score FROM scanned_trend_setups WHERE setup_type = 'minervini' AND scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Minervini Stage-2' as source, 0 AS score FROM scanned_trend_setups WHERE setup_type = 'minervini' AND scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'VCS' as source, vcs_score as score FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL

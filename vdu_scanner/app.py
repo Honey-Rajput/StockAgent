@@ -1903,6 +1903,15 @@ universe_selection = st.sidebar.selectbox(
 # Shows live market health so you know whether it's safe to buy breakouts.
 # =============================================================================
 st.sidebar.markdown('---')
+
+with st.sidebar.expander("📈 20/50 SMA Multi-Timeframe Strategy Settings", expanded=False):
+    sma20_lower_bound = st.slider("SMA 20 Lower Bound", min_value=0.85, max_value=1.00, value=0.94, step=0.01, key="sma20_lower_bound")
+    sma20_upper_bound = st.slider("SMA 20 Upper Bound", min_value=1.00, max_value=1.15, value=1.06, step=0.01, key="sma20_upper_bound")
+    sma50_lower_bound = st.slider("SMA 50 Lower Bound", min_value=0.85, max_value=1.00, value=0.92, step=0.01, key="sma50_lower_bound")
+    sma50_upper_bound = st.slider("SMA 50 Upper Bound", min_value=1.00, max_value=1.15, value=1.08, step=0.01, key="sma50_upper_bound")
+    sma20_min_volume = st.number_input("Min Volume SMA 20", min_value=10000, max_value=10000000, value=100000, step=10000, key="sma20_min_volume")
+
+st.sidebar.markdown('---')
 st.sidebar.markdown('### 🌐 Market Condition')
 try:
     _mc = get_market_condition()
@@ -2283,7 +2292,8 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
 
         def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
                                   min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
-                                  min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness):
+                                  min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness,
+                                  sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume):
             from datetime import datetime
             import pandas as pd
             import pytz
@@ -2386,17 +2396,77 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 sma65 = float(today_row['SMA65']); sma150 = float(today_row['SMA150'])
                 sma200 = float(today_row['SMA200'])
                 
-                # Gap filter: skip stocks where price is too far from 20/50/200 SMA (overextended)
-                dist_20 = (c_val - sma20) / sma20 * 100
-                dist_50 = (c_val - sma50) / sma50 * 100
-                dist_200 = (c_val - sma200) / sma200 * 100
-                if c_val > sma20 and c_val > sma50 and c_val > sma200 and dist_20 <= 8 and dist_50 <= 8 and dist_200 <= 10:
-                    above_buy_price = round(sma20, 2)  # Support = 20 SMA (nearest MA support)
+                # Multi-Timeframe 20 & 50 SMA Strategy
+                dist_20 = (c_val - sma20) / sma20 * 100 if sma20 else 0
+                dist_50 = (c_val - sma50) / sma50 * 100 if sma50 else 0
+                dist_200 = (c_val - sma200) / sma200 * 100 if sma200 else 0
+
+                def check_sma_conditions(d_frame):
+                    if len(d_frame) < 50:
+                        return False
+                    try:
+                        d_close = float(d_frame['Close'].iloc[-1])
+                        d_sma20 = float(d_frame['Close'].rolling(window=20).mean().iloc[-1])
+                        d_sma50 = float(d_frame['Close'].rolling(window=50).mean().iloc[-1])
+                        d_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
+                        d_vol_sma20 = float(d_frame['Volume'].rolling(window=20).mean().iloc[-1])
+                        
+                        condition_daily = (
+                            pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and pd.notna(d_sma200) and
+                            (d_sma20 <= d_sma50 * sma20_upper_bound) and
+                            (d_sma20 >= d_sma50 * sma20_lower_bound) and
+                            (d_sma50 <= d_sma200 * sma50_upper_bound) and
+                            (d_sma50 >= d_sma200 * sma50_lower_bound) and
+                            (d_vol_sma20 >= sma20_min_volume) and
+                            (d_close >= d_sma200 * 0.98)
+                        )
+                        return condition_daily
+                    except Exception:
+                        return False
+
+                df_resample = df_ma.copy()
+                if not isinstance(df_resample.index, pd.DatetimeIndex) and 'Date' in df_resample.columns:
+                    df_resample['Date'] = pd.to_datetime(df_resample['Date'])
+                    df_resample.set_index('Date', inplace=True)
+                
+                passes_daily = check_sma_conditions(df_resample)
+                
+                def check_weekly_monthly_sma(d_frame):
+                    if len(d_frame) < 50: return False
+                    try:
+                        w_close = float(d_frame['Close'].iloc[-1])
+                        w_sma20 = float(d_frame['Close'].rolling(window=20).mean().iloc[-1])
+                        w_sma50 = float(d_frame['Close'].rolling(window=50).mean().iloc[-1])
+                        w_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
+                        condition_weekly = (
+                            pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma200) and
+                            (w_sma20 <= w_sma50 * sma20_upper_bound) and
+                            (w_sma20 >= w_sma50 * sma20_lower_bound) and
+                            (w_sma50 <= w_sma200 * sma50_upper_bound) and
+                            (w_sma50 >= w_sma200 * sma50_lower_bound) and
+                            (w_close >= w_sma200 * 0.98)
+                        )
+                        return condition_weekly
+                    except Exception: return False
+                    
+                df_weekly = df_resample.resample('W').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
+                passes_weekly = check_weekly_monthly_sma(df_weekly)
+                df_monthly = df_resample.resample('ME' if hasattr(pd.tseries.offsets, 'MonthEnd') else 'M').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
+                passes_monthly = check_weekly_monthly_sma(df_monthly)
+
+                if passes_daily and passes_weekly and passes_monthly:
+                    above_buy_price = round(sma20, 2)  # Support = 20 SMA
                     above_exit_price = round(sma50 * 0.97, 2) 
                     above_target_price = round(today_close_val * 1.12, 2) 
-                    above_confidence = "High (Uptrend)" if sma20 > sma50 and sma50 > sma200 else "Medium-High (Uptrend)"
-                    base_above_rec = (f"Strong medium-term uptrend. Close above 20, 50, and 200 SMA. Buy near support ₹{above_buy_price:.2f} (20 SMA) "
-                                      f"with stop below 50 SMA support at ₹{above_exit_price:.2f} targeting momentum target ₹{above_target_price:.2f}.")
+                    above_confidence = "High (Multi-TF Uptrend Convergence)"
+                    
+                    ema9 = float(df_resample['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
+                    ema21 = float(df_resample['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
+                    
+                    base_above_rec = (f"Passes strict 20 & 50 SMA constraints on Daily, Weekly, and Monthly timeframes. "
+                                      f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
+                                      f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
+                    
                     res["above_ma"] = {
                         "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
@@ -2405,7 +2475,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         "dist_200sma_pct": round(dist_200, 2),
                         "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
                         "target_price": above_target_price, "confidence": above_confidence,
-                        "recommendation": compute_rich_analysis(df_ma, sym, "Above 20/50 SMA", base_above_rec, indicators=ind)
+                        "recommendation": compute_rich_analysis(df_ma, sym, "20&50 SMA Multi-TF", base_above_rec, indicators=ind)
                     }
                     
                 yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
@@ -2529,7 +2599,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
         n_workers = min(32, os.cpu_count() * 2 if os.cpu_count() else 8)
         generator = joblib.Parallel(n_jobs=n_workers, backend="threading", return_as="generator_unordered")(
             joblib.delayed(process_and_fetch_if_needed)(
-                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness
+                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume
             ) for sym in scan_symbols
         )
         
