@@ -1983,6 +1983,15 @@ scan_timeframe = st.sidebar.selectbox(
 
 st.sidebar.markdown('---')
 
+with st.sidebar.expander("📈 20/50 SMA Strategy Settings", expanded=False):
+    sma20_lower_bound = st.slider("SMA 20 Lower Bound", min_value=0.85, max_value=1.00, value=0.94, step=0.01, key="sma20_lower_bound")
+    sma20_upper_bound = st.slider("SMA 20 Upper Bound", min_value=1.00, max_value=1.15, value=1.06, step=0.01, key="sma20_upper_bound")
+    sma50_lower_bound = st.slider("SMA 50 Lower Bound", min_value=0.85, max_value=1.00, value=0.92, step=0.01, key="sma50_lower_bound")
+    sma50_upper_bound = st.slider("SMA 50 Upper Bound", min_value=1.00, max_value=1.15, value=1.08, step=0.01, key="sma50_upper_bound")
+    sma20_min_volume = st.number_input("Min Volume SMA 20", min_value=10000, max_value=10000000, value=100000, step=10000, key="sma20_min_volume")
+
+st.sidebar.markdown('---')
+
 
 # --- RUN SCAN ACTION ---
 if st.sidebar.button("🔍 Run Scanner", width="stretch"):

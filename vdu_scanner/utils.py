@@ -37,16 +37,21 @@ def inject_premium_css():
         [data-testid="stTabs"] [data-baseweb="tab-list"],
         [role="tablist"] {
             flex-wrap: wrap !important;
-            gap: 4px 2px !important;
+            gap: 8px 6px !important;
             overflow: visible !important;
             overflow-x: visible !important;
             max-width: 100% !important;
+            padding-bottom: 6px !important;
         }
-        /* Individual tabs – keep them compact */
+        /* Individual tabs – spaced out with padding */
         [data-testid="stTabs"] [data-baseweb="tab-list"] button[role="tab"],
         [role="tablist"] button[role="tab"] {
             white-space: nowrap !important;
             flex-shrink: 0 !important;
+            padding: 6px 14px !important;
+            margin: 2px 3px !important;
+            border-radius: 6px !important;
+            font-size: 0.82rem !important;
         }
         /* Hide the left/right scroll arrow buttons */
         [data-testid="stTabs"] [data-baseweb="tab-list"] ~ button,
