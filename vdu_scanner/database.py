@@ -242,30 +242,6 @@ def init_db() -> bool:
         );
         """,
         """
-        CREATE TABLE IF NOT EXISTS scanned_cupid (
-            id SERIAL PRIMARY KEY,
-            symbol VARCHAR(20) NOT NULL,
-            company_name VARCHAR(200),
-            cmp DOUBLE PRECISION,
-            day_change_pct DOUBLE PRECISION,
-            vol_ratio DOUBLE PRECISION,
-            base_volatility DOUBLE PRECISION,
-            ema10 DOUBLE PRECISION,
-            sma40 DOUBLE PRECISION,
-            volume BIGINT,
-            market_cap_cr DOUBLE PRECISION,
-            cupid_score DOUBLE PRECISION,
-            buy_price DOUBLE PRECISION,
-            exit_price DOUBLE PRECISION,
-            target_price DOUBLE PRECISION,
-            confidence VARCHAR(50),
-            recommendation TEXT,
-            scan_date DATE NOT NULL,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(symbol, scan_date)
-        );
-        """,
-        """
         CREATE TABLE IF NOT EXISTS scanned_stage2 (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
@@ -1724,89 +1700,6 @@ def get_cached_weekly_momentum(date_str: str) -> list[dict]:
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached Weekly Momentum from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
-
-def save_cupid_results(date_str: str, results: list[dict]) -> bool:
-    """
-    Saves the Cupid scan results to PostgreSQL, supporting daily overwrites.
-    """
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        
-        cur.execute("DELETE FROM scanned_cupid WHERE scan_date = %s;", (date_str,))
-        
-        insert_query = """
-        INSERT INTO scanned_cupid (
-            symbol, company_name, cmp, day_change_pct, vol_ratio, base_volatility,
-            ema10, sma40, volume, market_cap_cr, cupid_score, buy_price, exit_price,
-            target_price, confidence, recommendation, scan_date
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """
-        for r in results:
-            cur.execute(insert_query, (
-                str(r['symbol']),
-                str(r['company_name']) if r.get('company_name') else "",
-                float(r['cmp']),
-                float(r['day_change_pct']),
-                float(r['vol_ratio']),
-                float(r['base_volatility']),
-                float(r['ema10']),
-                float(r['sma40']),
-                int(r['volume']),
-                float(r['market_cap_cr']),
-                float(r['cupid_score']),
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
-                date_str
-            ))
-            
-        conn.commit()
-        cur.close()
-        print(f"Cached {len(results)} Cupid scan results in PostgreSQL for {date_str}.")
-        return True
-    except Exception as e:
-        if conn:
-            conn.rollback()
-        print(f"Error saving Cupid results to PostgreSQL: {e}")
-        return False
-    finally:
-        if conn:
-            conn.close()
-
-def get_cached_cupid(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached Cupid results for a specific date from PostgreSQL.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, vol_ratio, base_volatility,
-           ema10, sma40, volume, market_cap_cr, cupid_score, buy_price, exit_price,
-           target_price, confidence, recommendation, scan_date
-    FROM scanned_cupid
-    WHERE scan_date = %s;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached Cupid from database: {e}")
     finally:
         if conn:
             conn.close()
