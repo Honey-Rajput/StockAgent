@@ -2230,7 +2230,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
         def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
                                   min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
                                   min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness,
-                                  sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume):
+                                  sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe):
             from datetime import datetime
             import pandas as pd
             import pytz
@@ -2417,7 +2417,16 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 df_monthly = df_resample.resample('ME' if hasattr(pd.tseries.offsets, 'MonthEnd') else 'M').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
                 passes_monthly = check_weekly_monthly_sma(df_monthly)
 
-                if passes_daily and passes_weekly and passes_monthly:
+                if sma_timeframe == "Daily":
+                    tf_passes = passes_daily
+                elif sma_timeframe == "Weekly":
+                    tf_passes = passes_weekly
+                elif sma_timeframe == "Monthly":
+                    tf_passes = passes_monthly
+                else:
+                    tf_passes = passes_daily and passes_weekly and passes_monthly
+
+                if tf_passes:
                     # Additional check: short (minor) and mid-term VPA trend must be green (1)
                     # Long term (major) doesn't have to be.
                     vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
@@ -2431,12 +2440,18 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         above_buy_price = round(sma20, 2)  # Support = 20 SMA
                         above_exit_price = round(sma50 * 0.97, 2) 
                         above_target_price = round(today_close_val * 1.12, 2) 
-                        above_confidence = "High (Multi-TF Uptrend Convergence)"
+                        
+                        if sma_timeframe == "All (Multi-Timeframe Convergence)":
+                            above_confidence = "High (Multi-TF Uptrend Convergence)"
+                            tf_string = "Daily, Weekly, and Monthly timeframes"
+                        else:
+                            above_confidence = f"Medium ({sma_timeframe} Uptrend)"
+                            tf_string = f"the {sma_timeframe} timeframe"
                         
                         ema9 = float(df_resample['Close'].ewm(span=9, adjust=False).mean().iloc[-1])
                         ema21 = float(df_resample['Close'].ewm(span=21, adjust=False).mean().iloc[-1])
                         
-                        base_above_rec = (f"Passes strict 20 & 50 SMA constraints on Daily, Weekly, and Monthly timeframes. "
+                        base_above_rec = (f"Passes strict 20 & 50 SMA constraints on {tf_string}. "
                                           f"Short and Mid-term VPA trends are Green (Uptrend). "
                                           f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
                                           f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
@@ -2571,9 +2586,10 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 return {"failed": True, "error": str(e)}
 
         n_workers = min(32, os.cpu_count() * 2 if os.cpu_count() else 8)
+        sma_timeframe_val = st.session_state.get("sma_timeframe_tab", "All (Multi-Timeframe Convergence)")
         generator = joblib.Parallel(n_jobs=n_workers, backend="threading", return_as="generator_unordered")(
             joblib.delayed(process_and_fetch_if_needed)(
-                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume
+                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe_val
             ) for sym in scan_symbols
         )
         
@@ -3902,6 +3918,10 @@ with tab_sma:
     st.markdown("### 📈 Stocks Trading Above 20 SMA & 50 SMA")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Identify stocks in a strong medium-term uptrend where price is trading comfortably above both their 20-day and 50-day Simple Moving Averages.</p>", unsafe_allow_html=True)
     st.markdown("---")
+    
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        sma_timeframe_tab = st.selectbox("SMA Strategy Timeframe", ["Daily", "Weekly", "Monthly", "All (Multi-Timeframe Convergence)"], index=3, key="sma_timeframe_tab")
     
     above_ma_data = st.session_state.above_ma_results
     
