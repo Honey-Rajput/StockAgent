@@ -5913,7 +5913,7 @@ with tab_vpa:
                 'RSI': d.get('rsi', 0.0),
                 'CCI': d.get('cci', 0.0),
                 'Action': get_action_signal_text(d['minor'], d['mid'], d['major'], d.get('major_val', 0), rsi=d.get('rsi', 0), cci=d.get('cci', 0)),
-                'Signal': d_sig,
+                'Signal': get_signal(d['minor'], d['mid'], d['major'], d.get('major_val', 0)),
                 'Score': r.get('score', 0),
                 'Confidence': r.get('confidence', 'N/A')
             })
