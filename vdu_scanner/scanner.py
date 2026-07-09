@@ -331,15 +331,20 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     if today_wt1 > wt_oversold_threshold:
         return None
     
+    # Issue #5: Trend filter — skip falling knives (price 10%+ below 200 SMA)
+    if len(df) >= 200:
+        sma200_val = float(df['Close'].rolling(200).mean().iloc[-1])
+        if not pd.isna(sma200_val) and last_close < sma200_val * 0.90:
+            return None  # Skip falling knives
+    
     today = df_copy.iloc[-1]
     yesterday = df_copy.iloc[-2] if len(df_copy) >= 2 else today
     day_change_pct = ((today['Close'] - yesterday['Close']) / yesterday['Close'] * 100) if len(df_copy) >= 2 else 0.0
     
-    # Detect buy signal (green dot): wt1 crosses above wt2
-    # We check if a bullish crossover (green dot) occurred recently (today or within the last 3 days/bars)
-    # to highlight stocks that are in active buying stages.
+    # Issue #6: Detect buy signal (green dot) — reduced to 2-bar lookback for fresher signals
     buy_signal = False
-    for offset in range(1, 4):
+    buy_signal_age = None
+    for offset in range(1, 3):
         if len(wt1) > offset and len(wt2) > offset:
             t_wt1 = wt1.iloc[-offset]
             t_wt2 = wt2.iloc[-offset]
@@ -348,7 +353,18 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
             if not pd.isna(t_wt1) and not pd.isna(t_wt2) and not pd.isna(p_wt1) and not pd.isna(p_wt2):
                 if (p_wt1 <= p_wt2) and (t_wt1 > t_wt2):
                     buy_signal = True
+                    buy_signal_age = offset - 1  # 0 = today, 1 = yesterday
                     break
+    
+    # Issue #7: Bullish divergence detection
+    bullish_divergence = False
+    if len(df) >= 20 and len(wt1) >= 20:
+        price_low_recent = df['Low'].iloc[-5:].min()
+        price_low_prev = df['Low'].iloc[-15:-5].min()
+        wt_low_recent = wt1.iloc[-5:].min()
+        wt_low_prev = wt1.iloc[-15:-5].min()
+        if not pd.isna(wt_low_recent) and not pd.isna(wt_low_prev):
+            bullish_divergence = (price_low_recent < price_low_prev) and (wt_low_recent > wt_low_prev)
     
     # Advanced Trading Setup Calculations for WaveTrend
     cmp = float(today['Close'])
@@ -382,15 +398,26 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     cci_series = (tp - sma_tp) / (0.015 * mad_val + 1e-9)
     cci_val = round(float(cci_series.iloc[-1]), 1) if not pd.isna(cci_series.iloc[-1]) else 0.0
 
-    if buy_signal:
+    if buy_signal and bullish_divergence:
+        confidence = "🔥 High (Buy Signal + Divergence)"
+    elif buy_signal:
         confidence = "High (WT Buy Signal)"
+    elif bullish_divergence:
+        confidence = "High (Bullish Divergence)"
     else:
         confidence = "Medium (WT Oversold)"
 
-    recommendation = (
-        f"Buy: ₹{buy_price:.2f}-₹{cmp:.2f} | SL: ₹{exit_price:.2f} | "
-        f"Target: ₹{target_price:.2f} | RSI: {rsi_val} | CCI: {cci_val}"
-    )
+    # Issue #8: Use rich analysis for recommendation instead of basic string
+    signal_parts = []
+    signal_parts.append(f"WaveTrend oversold at {today_wt1:.1f} (WT2: {today_wt2:.1f}).")
+    if buy_signal:
+        freshness = "today" if buy_signal_age == 0 else "yesterday"
+        signal_parts.append(f"🟢 Buy signal detected {freshness} (WT1 crossed above WT2).")
+    if bullish_divergence:
+        signal_parts.append("📈 Bullish divergence: price made lower low but WT made higher low.")
+    signal_parts.append(f"RSI: {rsi_val} | CCI: {cci_val}")
+    base_rec = " ".join(signal_parts)
+    recommendation = compute_rich_analysis(df, symbol, "WaveTrend Oversold", base_rec, indicators=indicators)
 
     from config import get_company_name
     company_name = get_company_name(symbol)
@@ -403,6 +430,8 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
         "wt_value": round(today_wt1, 2),
         "wt2_value": round(today_wt2, 2),
         "buy_signal": buy_signal,
+        "buy_signal_age": buy_signal_age,
+        "bullish_divergence": bullish_divergence,
         "wt_diff": round(today_wt1 - today_wt2, 2),
         "volume": int(today['Volume']),
         "buy_price": buy_price,
@@ -1496,18 +1525,30 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
         }).dropna().reset_index()
         monthly_trends = calc_vpa_trends(df_monthly)
         
-        # Determine overall score (simple heuristic: up trend +1, down trend -1)
+        # Determine overall score — weighted by trend STRENGTH (RWI magnitude), not just direction
         raw_score = 0
+        max_strength = 0
         for t in [daily_trends, weekly_trends, monthly_trends]:
-            raw_score += t['major'] * 3
-            raw_score += t['mid'] * 2
-            raw_score += t['minor'] * 1
+            major_strength = min(abs(t.get('major_val', 0)), 3.0)
+            mid_strength = min(abs(t.get('mid_val', 0)), 3.0)
+            minor_strength = min(abs(t.get('minor_val', 0)), 3.0)
+            raw_score += t['major'] * 3 * max(major_strength, 1.0)
+            raw_score += t['mid'] * 2 * max(mid_strength, 1.0)
+            raw_score += t['minor'] * 1 * max(minor_strength, 1.0)
+            max_strength = max(max_strength, major_strength, mid_strength, minor_strength)
             
-        # Normalize score to a 0-100 scale
-        score = round((raw_score + 18) / 36 * 100)
+        # Normalize score to a 0-100 scale (max possible ~54 with all 3.0 strengths)
+        score = round(max(0, min(100, (raw_score + 54) / 108 * 100)))
             
-        if score >= 80:
+        # Volume confirmation: check if volume supports the trend
+        vol_20 = df['Volume'].tail(20).mean() if len(df) >= 20 else df['Volume'].mean()
+        vol_5 = df['Volume'].tail(5).mean()
+        vol_rising = vol_5 > vol_20 if vol_20 > 0 else True
+        
+        if score >= 80 and vol_rising:
             confidence = "High"
+        elif score >= 80 and not vol_rising:
+            confidence = "Medium (Low Volume Warning)"
         elif score >= 50:
             confidence = "Medium"
         else:
@@ -1533,6 +1574,7 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
             "monthly": monthly_trends,
             "score": score,
             "confidence": confidence,
+            "vol_rising": vol_rising,
             "buy_price": buy_price,
             "exit_price": exit_price,
             "target_price": target_price

@@ -5841,7 +5841,10 @@ with tab_vpa:
         # Download Button
         import pandas as pd
         
-        def get_action_signal_text(short, mid, max_t, max_val):
+        def get_action_signal_text(short, mid, max_t, max_val, rsi=0, cci=0):
+            # Issue #3: RSI/CCI overbought guard
+            if rsi > 80 or cci > 200:
+                return "Overbought (Wait for Pullback)"
             if max_val > 4.0:
                 return "Hyper-Extended / Parabolic (Avoid Fresh Entry)"
             elif max_val > 2.0:
@@ -5871,6 +5874,10 @@ with tab_vpa:
 
         only_buy_signals = st.checkbox("🟢 Show Only 'Buy' Signals", value=False)
         
+        # Issue #2: Move timeframe selection BEFORE filter so we can filter by the correct timeframe
+        st.markdown("### Select Timeframe")
+        selected_tf = st.selectbox("Timeframe to display", ["Daily", "Weekly", "Monthly"], key="vpa_tf_select")
+        
         daily_export = []
         weekly_export = []
         monthly_export = []
@@ -5880,12 +5887,16 @@ with tab_vpa:
         for r in vpa_data:
             d = r['daily']; w = r['weekly']; m = r['monthly']
             
-            # Use daily signal as the primary filter if we want to filter globally, or filter per timeframe.
-            # Actually, since the timeframe can be selected in UI, let's filter the data based on the selected timeframe later.
-            # For the exports, we'll export all but add Rank.
+            # Issue #2: Filter by the SELECTED timeframe signal, not always daily
+            if selected_tf == "Weekly":
+                tf_data = w
+            elif selected_tf == "Monthly":
+                tf_data = m
+            else:
+                tf_data = d
             
-            d_sig = get_signal(d['minor'], d['mid'], d['major'], d.get('major_val', 0))
-            if only_buy_signals and d_sig != "Buy":
+            tf_sig = get_signal(tf_data['minor'], tf_data['mid'], tf_data['major'], tf_data.get('major_val', 0))
+            if only_buy_signals and tf_sig != "Buy":
                 continue
                 
             filtered_vpa_data.append((rank, r))
@@ -5901,7 +5912,7 @@ with tab_vpa:
                 'Minor Trend': "Up" if d['minor'] == 1 else ("Down" if d['minor'] == -1 else "Neutral"),
                 'RSI': d.get('rsi', 0.0),
                 'CCI': d.get('cci', 0.0),
-                'Action': get_action_signal_text(d['minor'], d['mid'], d['major'], d.get('major_val', 0)),
+                'Action': get_action_signal_text(d['minor'], d['mid'], d['major'], d.get('major_val', 0), rsi=d.get('rsi', 0), cci=d.get('cci', 0)),
                 'Signal': d_sig,
                 'Score': r.get('score', 0),
                 'Confidence': r.get('confidence', 'N/A')
@@ -5921,7 +5932,7 @@ with tab_vpa:
                 'Minor Trend': "Up" if w['minor'] == 1 else ("Down" if w['minor'] == -1 else "Neutral"),
                 'RSI': w.get('rsi', 0.0),
                 'CCI': w.get('cci', 0.0),
-                'Action': get_action_signal_text(w['minor'], w['mid'], w['major'], w.get('major_val', 0)),
+                'Action': get_action_signal_text(w['minor'], w['mid'], w['major'], w.get('major_val', 0), rsi=w.get('rsi', 0), cci=w.get('cci', 0)),
                 'Signal': get_signal(w['minor'], w['mid'], w['major'], w.get('major_val', 0)),
                 'Score': r.get('score', 0),
                 'Confidence': r.get('confidence', 'N/A')
@@ -5940,7 +5951,7 @@ with tab_vpa:
                 'Minor Trend': "Up" if m['minor'] == 1 else ("Down" if m['minor'] == -1 else "Neutral"),
                 'RSI': m.get('rsi', 0.0),
                 'CCI': m.get('cci', 0.0),
-                'Action': get_action_signal_text(m['minor'], m['mid'], m['major'], m.get('major_val', 0)),
+                'Action': get_action_signal_text(m['minor'], m['mid'], m['major'], m.get('major_val', 0), rsi=m.get('rsi', 0), cci=m.get('cci', 0)),
                 'Signal': get_signal(m['minor'], m['mid'], m['major'], m.get('major_val', 0)),
                 'Score': r.get('score', 0),
                 'Confidence': r.get('confidence', 'N/A')
@@ -5972,9 +5983,8 @@ with tab_vpa:
                 width="stretch"
             )
         
-        # Interactive Timeframe Selection
-        st.markdown("### Select Timeframe")
-        selected_tf = st.selectbox("Timeframe to display", ["Daily", "Weekly", "Monthly"])
+        # Timeframe selection was moved above the filter loop
+        # selected_tf is already defined above
         
         def trend_to_badge(t_val):
             if t_val == 1:
@@ -5983,8 +5993,8 @@ with tab_vpa:
                 return "<span style='color: #ef4444; font-weight: bold;'>Dn (-1)</span>"
             return "<span style='color: #fbbf24; font-weight: bold;'>Neu (0)</span>"
             
-        def get_action_signal(short, mid, max_t, max_val):
-            text = get_action_signal_text(short, mid, max_t, max_val)
+        def get_action_signal(short, mid, max_t, max_val, rsi=0, cci=0):
+            text = get_action_signal_text(short, mid, max_t, max_val, rsi=rsi, cci=cci)
             if "Perfect Buy" in text:
                 return f"<span style='color: #00e676; font-weight: bold;'>🟢 {text}</span>"
             elif "Counter Trend Buy" in text:
@@ -6015,7 +6025,7 @@ with tab_vpa:
             t_mid = trend_to_badge(tf_data['mid'])
             t_max = trend_to_badge(tf_data['major'])
             
-            action = get_action_signal(tf_data['minor'], tf_data['mid'], tf_data['major'], tf_data.get('major_val', 0))
+            action = get_action_signal(tf_data['minor'], tf_data['mid'], tf_data['major'], tf_data.get('major_val', 0), rsi=tf_data.get('rsi', 0), cci=tf_data.get('cci', 0))
             
             # Zero indentation to prevent Streamlit markdown codeblock rendering
             row = f"""<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
