@@ -2349,26 +2349,33 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         
                         d_sma20 = float(sma20_series.iloc[-1])
                         d_sma50 = float(sma50_series.iloc[-1])
-                        d_sma20_prev = float(sma20_series.iloc[-2]) if len(sma20_series) >= 2 else d_sma20
-                        d_sma50_prev = float(sma50_series.iloc[-2]) if len(sma50_series) >= 2 else d_sma50
                         
                         d_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
                         d_vol_sma20 = float(d_frame['Volume'].rolling(window=20).mean().iloc[-1])
                         
+                        # 1. MA stacking: Close >= SMA20 >= SMA50 >= SMA200
+                        stacking_ok = (d_close >= d_sma20) and (d_sma20 >= d_sma50)
+                        if pd.notna(d_sma200):
+                            stacking_ok = stacking_ok and (d_sma50 >= d_sma200)
+                        
+                        # Price-to-SMA gap constraints (max 10%)
                         cond_20_gap = abs(d_close - d_sma20) / d_sma20 <= 0.10 if pd.notna(d_sma20) else False
                         cond_50_gap = abs(d_close - d_sma50) / d_sma50 <= 0.10 if pd.notna(d_sma50) else False
                         cond_200_gap = abs(d_close - d_sma200) / d_sma200 <= 0.10 if pd.notna(d_sma200) else False
                         
-                        # Tightness over last 5 bars
+                        # 3. Tightness over last 5 bars (5% for daily)
                         high_5 = d_frame['High'].iloc[-5:].max()
                         low_5 = d_frame['Low'].iloc[-5:].min()
-                        tightness_ok = ((high_5 - low_5) / low_5) <= 0.08 if low_5 > 0 else False
+                        tightness_ok = ((high_5 - low_5) / low_5) <= 0.05 if low_5 > 0 else False
                         
-                        # Upward slope check
-                        slope_ok = (d_sma20 > d_sma20_prev) and (d_sma50 > d_sma50_prev)
+                        # 2. Upward slope over 5 bars (not just 1)
+                        d_sma20_5ago = float(sma20_series.iloc[-5]) if len(sma20_series) >= 5 else d_sma20
+                        d_sma50_5ago = float(sma50_series.iloc[-5]) if len(sma50_series) >= 5 else d_sma50
+                        slope_ok = (d_sma20 > d_sma20_5ago) and (d_sma50 > d_sma50_5ago)
                         
                         condition_daily = (
                             pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and pd.notna(d_sma200) and
+                            stacking_ok and
                             cond_20_gap and cond_50_gap and cond_200_gap and
                             tightness_ok and slope_ok and
                             (d_sma20 <= d_sma50 * sma20_upper_bound) and
@@ -2399,32 +2406,44 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         
                         w_sma20 = float(sma20_series.iloc[-1])
                         w_sma50 = float(sma50_series.iloc[-1])
-                        w_sma20_prev = float(sma20_series.iloc[-2]) if len(sma20_series) >= 2 else w_sma20
-                        w_sma50_prev = float(sma50_series.iloc[-2]) if len(sma50_series) >= 2 else w_sma50
                         
                         w_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
                         
+                        # 1. MA stacking: Close >= SMA20 >= SMA50 >= SMA200
+                        stacking_ok = (w_close >= w_sma20) and (w_sma20 >= w_sma50)
+                        if pd.notna(w_sma200):
+                            stacking_ok = stacking_ok and (w_sma50 >= w_sma200)
+                        
+                        # Price-to-SMA gap constraints
                         cond_20_gap = abs(w_close - w_sma20) / w_sma20 <= 0.10 if pd.notna(w_sma20) else False
                         cond_50_gap = abs(w_close - w_sma50) / w_sma50 <= 0.10 if pd.notna(w_sma50) else False
-                        cond_200_gap = abs(w_close - w_sma200) / w_sma200 <= 0.10 if pd.notna(w_sma200) else False
+                        cond_200_gap = abs(w_close - w_sma200) / w_sma200 <= 0.20 if pd.notna(w_sma200) else False
                         
-                        # Tightness over last 5 bars
+                        # 3. Tightness over last 5 weekly bars (10% for weekly)
                         high_5 = d_frame['High'].iloc[-5:].max()
                         low_5 = d_frame['Low'].iloc[-5:].min()
                         tightness_ok = ((high_5 - low_5) / low_5) <= 0.10 if low_5 > 0 else False
                         
-                        # Upward slope check
-                        slope_ok = (w_sma20 > w_sma20_prev) and (w_sma50 > w_sma50_prev)
+                        # 2. Upward slope over 5 bars
+                        w_sma20_5ago = float(sma20_series.iloc[-5]) if len(sma20_series) >= 5 else w_sma20
+                        w_sma50_5ago = float(sma50_series.iloc[-5]) if len(sma50_series) >= 5 else w_sma50
+                        slope_ok = (w_sma20 > w_sma20_5ago) and (w_sma50 > w_sma50_5ago)
+                        
+                        # 4. Volume contraction: recent 5-bar avg volume not spiking vs 20-bar avg
+                        vol_5 = d_frame['Volume'].iloc[-5:].mean()
+                        vol_20 = d_frame['Volume'].rolling(window=20).mean().iloc[-1]
+                        vol_contracting = vol_5 <= vol_20 * 1.2 if pd.notna(vol_20) and vol_20 > 0 else True
                         
                         condition_weekly = (
                             pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma200) and
+                            stacking_ok and
                             cond_20_gap and cond_50_gap and cond_200_gap and
-                            tightness_ok and slope_ok and
+                            tightness_ok and slope_ok and vol_contracting and
                             (w_sma20 <= w_sma50 * sma20_upper_bound) and
                             (w_sma20 >= w_sma50 * sma20_lower_bound) and
-                            (w_sma50 <= w_sma200 * sma50_upper_bound) and
-                            (w_sma50 >= w_sma200 * sma50_lower_bound) and
-                            (w_close >= w_sma200 * 0.98)
+                            (w_sma50 <= w_sma200 * 1.20) and
+                            (w_sma50 >= w_sma200 * 0.90) and
+                            (w_close >= w_sma200)
                         )
                         return condition_weekly
                     except Exception: return False
@@ -2455,6 +2474,10 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                                       f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
                                       f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
                     
+                    # 5. Breakout proximity: price within 3% of 20-day high
+                    high_20d = df_resample['High'].iloc[-20:].max()
+                    near_breakout = ((high_20d - today_close_val) / today_close_val) <= 0.03 if today_close_val > 0 else False
+                    
                     res["above_ma"] = {
                         "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
                         "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
@@ -2462,11 +2485,13 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         "dist_50sma_pct": round(dist_50, 2),
                         "dist_200sma_pct": round(dist_200, 2),
                         "setup_type": "above_ma", "buy_price": above_buy_price, "exit_price": above_exit_price,
-                        "target_price": above_target_price, "confidence": "High (Multi-TF Uptrend Convergence)" if (passes_daily and passes_weekly and passes_monthly) else "Medium (Uptrend)",
+                        "target_price": above_target_price,
+                        "confidence": "🔥 High (Near Breakout + Multi-TF)" if (passes_daily and passes_weekly and near_breakout) else "High (Multi-TF Uptrend Convergence)" if (passes_daily and passes_weekly and passes_monthly) else "Medium (Uptrend)",
                         "recommendation": compute_rich_analysis(df_ma, sym, "20&50 SMA Multi-TF", base_above_rec, indicators=ind),
                         "passes_daily": passes_daily,
                         "passes_weekly": passes_weekly,
-                        "passes_monthly": passes_monthly
+                        "passes_monthly": passes_monthly,
+                        "near_breakout": near_breakout
                     }
 
                 yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
