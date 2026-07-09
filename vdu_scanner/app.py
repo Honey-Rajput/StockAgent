@@ -2343,13 +2343,34 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         return False
                     try:
                         d_close = float(d_frame['Close'].iloc[-1])
-                        d_sma20 = float(d_frame['Close'].rolling(window=20).mean().iloc[-1])
-                        d_sma50 = float(d_frame['Close'].rolling(window=50).mean().iloc[-1])
+                        
+                        sma20_series = d_frame['Close'].rolling(window=20).mean()
+                        sma50_series = d_frame['Close'].rolling(window=50).mean()
+                        
+                        d_sma20 = float(sma20_series.iloc[-1])
+                        d_sma50 = float(sma50_series.iloc[-1])
+                        d_sma20_prev = float(sma20_series.iloc[-2]) if len(sma20_series) >= 2 else d_sma20
+                        d_sma50_prev = float(sma50_series.iloc[-2]) if len(sma50_series) >= 2 else d_sma50
+                        
                         d_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
                         d_vol_sma20 = float(d_frame['Volume'].rolling(window=20).mean().iloc[-1])
                         
+                        cond_20_gap = abs(d_close - d_sma20) / d_sma20 <= 0.10 if pd.notna(d_sma20) else False
+                        cond_50_gap = abs(d_close - d_sma50) / d_sma50 <= 0.10 if pd.notna(d_sma50) else False
+                        cond_200_gap = abs(d_close - d_sma200) / d_sma200 <= 0.10 if pd.notna(d_sma200) else False
+                        
+                        # Tightness over last 5 bars
+                        high_5 = d_frame['High'].iloc[-5:].max()
+                        low_5 = d_frame['Low'].iloc[-5:].min()
+                        tightness_ok = ((high_5 - low_5) / low_5) <= 0.08 if low_5 > 0 else False
+                        
+                        # Upward slope check
+                        slope_ok = (d_sma20 > d_sma20_prev) and (d_sma50 > d_sma50_prev)
+                        
                         condition_daily = (
                             pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and pd.notna(d_sma200) and
+                            cond_20_gap and cond_50_gap and cond_200_gap and
+                            tightness_ok and slope_ok and
                             (d_sma20 <= d_sma50 * sma20_upper_bound) and
                             (d_sma20 >= d_sma50 * sma20_lower_bound) and
                             (d_sma50 <= d_sma200 * sma50_upper_bound) and
@@ -2372,11 +2393,33 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     if len(d_frame) < 50: return False
                     try:
                         w_close = float(d_frame['Close'].iloc[-1])
-                        w_sma20 = float(d_frame['Close'].rolling(window=20).mean().iloc[-1])
-                        w_sma50 = float(d_frame['Close'].rolling(window=50).mean().iloc[-1])
+                        
+                        sma20_series = d_frame['Close'].rolling(window=20).mean()
+                        sma50_series = d_frame['Close'].rolling(window=50).mean()
+                        
+                        w_sma20 = float(sma20_series.iloc[-1])
+                        w_sma50 = float(sma50_series.iloc[-1])
+                        w_sma20_prev = float(sma20_series.iloc[-2]) if len(sma20_series) >= 2 else w_sma20
+                        w_sma50_prev = float(sma50_series.iloc[-2]) if len(sma50_series) >= 2 else w_sma50
+                        
                         w_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
+                        
+                        cond_20_gap = abs(w_close - w_sma20) / w_sma20 <= 0.10 if pd.notna(w_sma20) else False
+                        cond_50_gap = abs(w_close - w_sma50) / w_sma50 <= 0.10 if pd.notna(w_sma50) else False
+                        cond_200_gap = abs(w_close - w_sma200) / w_sma200 <= 0.10 if pd.notna(w_sma200) else False
+                        
+                        # Tightness over last 5 bars
+                        high_5 = d_frame['High'].iloc[-5:].max()
+                        low_5 = d_frame['Low'].iloc[-5:].min()
+                        tightness_ok = ((high_5 - low_5) / low_5) <= 0.10 if low_5 > 0 else False
+                        
+                        # Upward slope check
+                        slope_ok = (w_sma20 > w_sma20_prev) and (w_sma50 > w_sma50_prev)
+                        
                         condition_weekly = (
                             pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma200) and
+                            cond_20_gap and cond_50_gap and cond_200_gap and
+                            tightness_ok and slope_ok and
                             (w_sma20 <= w_sma50 * sma20_upper_bound) and
                             (w_sma20 >= w_sma50 * sma20_lower_bound) and
                             (w_sma50 <= w_sma200 * sma50_upper_bound) and
