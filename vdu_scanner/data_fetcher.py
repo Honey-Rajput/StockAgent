@@ -169,15 +169,19 @@ def get_all_nse_symbols() -> list[str]:
         'Accept-Language': 'en-US,en;q=0.9',
     }
 
+    # Load from the local JSON file to completely bypass NSE blocking on Streamlit Cloud
+    import json
+    import os
     try:
-        import nsepython
-        symbols = nsepython.nse_eq_symbols()
-        if symbols and len(symbols) > 100:
-            clean_symbols = [s.strip() for s in symbols if s.strip() and s.strip() != 'SYMBOL']
-            print(f"Successfully loaded {len(clean_symbols)} active NSE symbols using nsepython.")
-            return clean_symbols
+        json_path = os.path.join(os.path.dirname(__file__), 'nse_all_symbols.json')
+        if os.path.exists(json_path):
+            with open(json_path, 'r') as f:
+                symbols = json.load(f)
+            if symbols and len(symbols) > 100:
+                print(f"Successfully loaded {len(symbols)} active NSE symbols from local JSON cache.")
+                return symbols
     except Exception as e:
-        print(f"nsepython.nse_eq_symbols() failed: {e}")
+        print(f"Failed to load local JSON cache: {e}")
 
     # Try the newer, more stable nsearchives URL first
     urls = [
