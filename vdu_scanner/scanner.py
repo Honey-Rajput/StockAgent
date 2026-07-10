@@ -160,8 +160,23 @@ def scan_stock(
     pct_change_close = ((today['Close'] - yesterday['Close']) / yesterday['Close'] * 100) if len(df) >= 2 else pct_change_intraday
     price_change_ok = (pct_change_intraday >= min_price_change) or (pct_change_close >= min_price_change)
     
-    if not (volume_surge_ok and bullish_candle_ok and price_change_ok):
-        return None
+    is_breakout = volume_surge_ok and bullish_candle_ok and price_change_ok
+    is_pre_breakout = False
+    
+    if not is_breakout:
+        # Pre-breakout condition: It's NOT a breakout today, BUT the current day is STILL a dry day.
+        # Specifically, if today's volume is also very dry and the price is consolidating tightly.
+        today_vol_dry = today['Volume'] <= (0.75 * baseline_avg_vol)
+        is_tight = abs(pct_change_close) < 2.0
+        # Check if the historical dry zone we found extends up to yesterday
+        is_current_dry_zone = (len(history_df) - 1 - end_idx) <= 2
+        
+        if today_vol_dry and is_tight and is_current_dry_zone:
+            is_pre_breakout = True
+        else:
+            return None
+            
+    setup_type = "VDU Breakout" if is_breakout else "VDU Pre-Breakout"
         
     # --- STEP 4: Signal Strength Score (0 to 100) & Indicators ---
     # Use pre-computed indicators DataFrame if available, otherwise compute
@@ -237,14 +252,24 @@ def scan_stock(
     else:
         confidence = f"Medium ({score}%)"
 
-    base_rec = (
-        f"Strong institutional VDU breakout! Volume ratio is {volume_ratio:.1f}x with signal score {score}%. "
-        f"R:R Ratio: {rr_ratio:.1f}:1. "
-        f"Buy Range: [₹{buy_price:.2f} to ₹{cmp:.2f}] (Nearest Support is ₹{support:.2f}). "
-        f"Set stop loss securely below support at ₹{exit_price:.2f} "
-        f"with a target near overhead resistance at ₹{target_price:.2f}."
-    )
-    recommendation = compute_rich_analysis(df_indicators, symbol, "VDU Breakout", base_rec, indicators=indicators)
+    if setup_type == "VDU Breakout":
+        base_rec = (
+            f"Strong institutional VDU breakout! Volume ratio is {volume_ratio:.1f}x with signal score {score}%. "
+            f"R:R Ratio: {rr_ratio:.1f}:1. "
+            f"Buy Range: [₹{buy_price:.2f} to ₹{cmp:.2f}] (Nearest Support is ₹{support:.2f}). "
+            f"Set stop loss securely below support at ₹{exit_price:.2f} "
+            f"with a target near overhead resistance at ₹{target_price:.2f}."
+        )
+    else:
+        base_rec = (
+            f"Tight VDU Pre-Breakout Consolidation! Stock is trading with extremely dry volume ({dryness_ratio:.1%} of avg). "
+            f"R:R Ratio: {rr_ratio:.1f}:1. "
+            f"Buy near support at ₹{support:.2f} or wait for a volume surge above ₹{cmp * 1.02:.2f}. "
+            f"Set tight stop loss at ₹{exit_price:.2f} "
+            f"with a breakout target at ₹{target_price:.2f}."
+        )
+        
+    recommendation = compute_rich_analysis(df_indicators, symbol, setup_type, base_rec, indicators=indicators)
 
     from config import get_company_name
     company_name = get_company_name(symbol)
@@ -253,6 +278,7 @@ def scan_stock(
         "symbol":           symbol.strip().upper(),
         "company_name":     company_name,
         "cmp":              cmp,
+        "setup_type":       setup_type,
         "day_change_pct":   round(day_change_pct, 2),
         "today_volume":     int(today['Volume']),
         "dry_avg_vol":      round(dry_avg_vol, 1),
@@ -2265,3 +2291,75 @@ def scan_bb_squeeze(symbol: str, df_daily: pd.DataFrame, df_weekly: pd.DataFrame
     except Exception:
         return None
 
+def scan_ema_support(symbol: str, df: pd.DataFrame, max_dist_9ema: float = 3.0, max_dist_21ema: float = 5.0) -> dict | None:
+    if df is None or len(df) < 22:
+        return None
+    try:
+        from config import get_company_name
+        cmp = float(df['Close'].iloc[-1])
+        if cmp < 100:
+            return None
+        
+        ema9 = df['Close'].ewm(span=9, adjust=False).mean()
+        ema21 = df['Close'].ewm(span=21, adjust=False).mean()
+        today_ema9 = float(ema9.iloc[-1])
+        today_ema21 = float(ema21.iloc[-1])
+        yest_ema9 = float(ema9.iloc[-2])
+        yest_ema21 = float(ema21.iloc[-2])
+        prev_close = float(df['Close'].iloc[-2])
+        day_change_pct = ((cmp - prev_close) / prev_close * 100) if prev_close > 0 else 0.0
+        
+        dist_9ema = (cmp - today_ema9) / today_ema9 * 100
+        dist_21ema = (cmp - today_ema21) / today_ema21 * 100
+        
+        # Support logic: Distance must be within threshold AND price must be above or very close to the EMA (taking support).
+        # We'll allow slight dips below the EMA (e.g. -0.5%) for support.
+        support_9 = (-0.5 <= dist_9ema <= max_dist_9ema)
+        support_21 = (-0.5 <= dist_21ema <= max_dist_21ema)
+        
+        if not (support_9 or support_21):
+            return None
+            
+        crossover = False
+        crossover_text = ""
+        if (yest_ema9 <= yest_ema21) and (today_ema9 > today_ema21):
+            crossover = True
+            crossover_text = "🔥 9 EMA just crossed above 21 EMA today!"
+        elif (ema9.iloc[-3] <= ema21.iloc[-3]) and (yest_ema9 > yest_ema21):
+            crossover = True
+            crossover_text = "🟢 9 EMA crossed above 21 EMA yesterday."
+            
+        if support_9 and support_21:
+            setup = "9 & 21 EMA Support"
+        elif support_9:
+            setup = "9 EMA Support"
+        else:
+            setup = "21 EMA Support"
+            
+        buy_price = round(today_ema21 if support_21 else today_ema9, 2)
+        sl = round(buy_price * 0.96, 2)
+        target = round(cmp * 1.12, 2)
+        score = 85.0 if crossover else 70.0
+        conf = "High" if crossover else "Medium"
+        
+        rec = f"{crossover_text} Stock is taking solid support at the {setup}. Accumulate near ₹{buy_price:,.2f} with tight SL below ₹{sl:,.2f}. Target ₹{target:,.2f}."
+        
+        return {
+            'symbol': symbol.strip().upper(),
+            'company_name': get_company_name(symbol),
+            'cmp': round(cmp, 2),
+            'day_change_pct': round(day_change_pct, 2),
+            'setup': setup,
+            'dist_9ema': round(dist_9ema, 2),
+            'dist_21ema': round(dist_21ema, 2),
+            'crossover': crossover,
+            'score': score,
+            'buy_price': buy_price,
+            'exit_price': sl,
+            'target_price': target,
+            'confidence': conf,
+            'recommendation': rec
+        }
+    except Exception as e:
+        print(f"Error in EMA Support scan for {symbol}: {e}")
+        return None

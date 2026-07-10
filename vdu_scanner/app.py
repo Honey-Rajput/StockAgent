@@ -634,6 +634,13 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r.get("cmp", 0.0):,.2f}</td>')
         
         if strategy_type == "vdu_breakout":
+            setup_val = r.get('setup_type', 'VDU Breakout')
+            if 'Pre-Breakout' in setup_val:
+                setup_badge = f'<span class="custom-badge" style="background: rgba(255,160,0,0.15); color: #ffa000; border: 1px solid #ffa000; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">⏳ Pre-Breakout</span>'
+            else:
+                setup_badge = f'<span class="custom-badge" style="background: rgba(0,230,118,0.15); color: #00e676; border: 1px solid #00e676; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">🚀 Breakout</span>'
+            cells.append(f'<td style="padding: 10px 12px; font-weight: 600;">{setup_badge}</td>')
+            
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
             cells.append(f'<td style="padding: 10px 12px;">{chg_badge}</td>')
             cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1;">{int(r.get("today_volume") or r.get("volume") or 0):,}</td>')
@@ -715,6 +722,20 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1;">{r.get("vol_50d", 0):,.0f}</td>')
             cells.append(f'<td style="padding: 10px 12px; color: #ffa000;">₹{r.get("pivot_price", 0.0):,.2f}</td>')
             
+        elif strategy_type == "bb_squeeze":
+            setup_badge = f'<span class="custom-badge" style="background: rgba(41,182,246,0.15); color: #29b6f6; border: 1px solid #29b6f6; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">{r.get("setup", "")}</span>'
+            cells.append(f'<td style="padding: 10px 12px; font-weight: 600;">{setup_badge}</td>')
+            chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
+            cells.append(f'<td style="padding: 10px 12px;">{chg_badge}</td>')
+            d9 = r.get("dist_9ema", 0.0)
+            d21 = r.get("dist_21ema", 0.0)
+            d9_col = "#00e676" if d9 >= 0 else "#ef4444"
+            d21_col = "#00e676" if d21 >= 0 else "#ef4444"
+            cells.append(f'<td style="padding: 10px 12px; color: {d9_col}; font-weight: 600;">{d9:+.2f}%</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: {d21_col}; font-weight: 600;">{d21:+.2f}%</td>')
+            cross_badge = '<span style="color:#00e676;">Yes ✅</span>' if r.get('crossover') else '<span style="color:#94a3b8;">No</span>'
+            cells.append(f'<td style="padding: 10px 12px;">{cross_badge}</td>')
+            
         elif strategy_type == "vpa":
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
             cells.append(f'<td style="padding: 10px 12px;">{chg_badge}</td>')
@@ -748,7 +769,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
     # Headers based on strategy
     headers = ["Watchlist", "Symbol", "Sector", "CMP"]
     if strategy_type == "vdu_breakout":
-        headers.extend(["Day Chg %", "Volume", "Dry Avg Vol", "Vol Ratio", "Dry Days", "Spikes", "Score"])
+        headers.extend(["Setup", "Day Chg %", "Volume", "Dry Avg Vol", "Vol Ratio", "Dry Days", "Spikes", "Score"])
     elif strategy_type == "gapup":
         headers.extend(["Prev Close", "Open", "Gap %", "Day Chg %", "Volume"])
     elif strategy_type in ["above_ma", "support_ma", "crossover_ma"]:
@@ -761,6 +782,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         headers.extend(["Day Chg %", "VCS Score"])
     elif strategy_type == "struct_vcp":
         headers.extend(["Day Chg %", "Contractions", "Avg Vol", "Pivot Price"])
+    elif strategy_type == "bb_squeeze":
+        headers.extend(["Setup", "Day Chg %", "Dist to 9 EMA", "Dist to 21 EMA", "Crossover"])
     elif strategy_type == "vpa":
         headers.extend(["Day Chg %", "VPA Score", "Pattern", "Trend"])
     elif strategy_type == "stage2":
@@ -1260,7 +1283,7 @@ def run_background_bb_squeeze_scan(force=False):
                     st.session_state.bb_squeeze_running = False
                     return
                 
-            from scanner import scan_bb_squeeze
+            from scanner import scan_ema_support
             raw_symbols = get_index_stocks("ALL NSE")
             symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
             
@@ -1271,8 +1294,6 @@ def run_background_bb_squeeze_scan(force=False):
             for chunk in chunks:
                 try:
                     df_daily = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
-                    df_weekly = yf.download(tickers=chunk, period="2y", interval="1wk", progress=False, threads=False)
-                    df_monthly = yf.download(tickers=chunk, period="5y", interval="1mo", progress=False, threads=False)
                     
                     for sym_ns in chunk:
                         try:
@@ -1281,13 +1302,7 @@ def run_background_bb_squeeze_scan(force=False):
                             d_df = df_daily.xs(sym_ns, axis=1, level=1).dropna(subset=['Close']) if isinstance(df_daily.columns, pd.MultiIndex) else df_daily.dropna(subset=['Close'])
                             if d_df.empty: continue
                             
-                            # Extract weekly
-                            w_df = df_weekly.xs(sym_ns, axis=1, level=1).dropna(subset=['Close']) if isinstance(df_weekly.columns, pd.MultiIndex) else df_weekly.dropna(subset=['Close'])
-                            
-                            # Extract monthly
-                            m_df = df_monthly.xs(sym_ns, axis=1, level=1).dropna(subset=['Close']) if isinstance(df_monthly.columns, pd.MultiIndex) else df_monthly.dropna(subset=['Close'])
-                            
-                            res = scan_bb_squeeze(sym, d_df, w_df, m_df)
+                            res = scan_ema_support(sym, d_df)
                             if res:
                                 bb_results.append(res)
                         except Exception:
@@ -1944,7 +1959,7 @@ min_signal_str = st.sidebar.slider(
     "Min Signal Strength Score",
     min_value=0,
     max_value=100,
-    value=50,
+    value=20,
     step=5,
     key="vdu_min_signal_str_v5",
     help="Filter stocks based on overall calculated algorithmic rating"
@@ -2353,25 +2368,49 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         d_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
                         d_vol_sma20 = float(d_frame['Volume'].rolling(window=20).mean().iloc[-1])
                         
+                        is_rounding = False
+                        if len(d_frame) >= 150:
+                            left_avg = d_frame['Close'].iloc[-150:-100].mean()
+                            mid_avg = d_frame['Close'].iloc[-100:-50].mean()
+                            right_avg = d_frame['Close'].iloc[-50:].mean()
+                            if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05:
+                                is_rounding = True
+                        elif len(d_frame) >= 90:
+                            left_avg = d_frame['Close'].iloc[-90:-60].mean()
+                            mid_avg = d_frame['Close'].iloc[-60:-30].mean()
+                            right_avg = d_frame['Close'].iloc[-30:].mean()
+                            if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05:
+                                is_rounding = True
+                                
                         # 1. MA stacking: Close >= SMA20 >= SMA50 >= SMA200
                         stacking_ok = (d_close >= d_sma20) and (d_sma20 >= d_sma50)
-                        if pd.notna(d_sma200):
+                        if pd.notna(d_sma200) and not is_rounding:
                             stacking_ok = stacking_ok and (d_sma50 >= d_sma200)
                         
-                        # Price-to-SMA gap constraints (max 10%)
-                        cond_20_gap = abs(d_close - d_sma20) / d_sma20 <= 0.10 if pd.notna(d_sma20) else False
-                        cond_50_gap = abs(d_close - d_sma50) / d_sma50 <= 0.10 if pd.notna(d_sma50) else False
-                        cond_200_gap = abs(d_close - d_sma200) / d_sma200 <= 0.10 if pd.notna(d_sma200) else False
+                        # Price-to-SMA gap constraints
+                        max_20_gap = 0.25 if is_rounding else 0.15
+                        max_50_gap = 0.35 if is_rounding else 0.20
+                        cond_20_gap = abs(d_close - d_sma20) / d_sma20 <= max_20_gap if pd.notna(d_sma20) else False
+                        cond_50_gap = abs(d_close - d_sma50) / d_sma50 <= max_50_gap if pd.notna(d_sma50) else False
+                        cond_200_gap = True  # Relaxed for strong uptrends
                         
                         # 3. Tightness over last 5 bars (5% for daily)
                         high_5 = d_frame['High'].iloc[-5:].max()
                         low_5 = d_frame['Low'].iloc[-5:].min()
-                        tightness_ok = ((high_5 - low_5) / low_5) <= 0.05 if low_5 > 0 else False
+                        max_tightness = 0.15 if is_rounding else 0.05
+                        tightness_ok = ((high_5 - low_5) / low_5) <= max_tightness if low_5 > 0 else False
                         
                         # 2. Upward slope over 5 bars (not just 1)
                         d_sma20_5ago = float(sma20_series.iloc[-5]) if len(sma20_series) >= 5 else d_sma20
                         d_sma50_5ago = float(sma50_series.iloc[-5]) if len(sma50_series) >= 5 else d_sma50
                         slope_ok = (d_sma20 > d_sma20_5ago) and (d_sma50 > d_sma50_5ago)
+                        
+                        # SMA bounds
+                        sma50_bounds_ok = True
+                        close_200_ok = True
+                        if not is_rounding:
+                            sma50_bounds_ok = (d_sma50 <= d_sma200 * sma50_upper_bound) and (d_sma50 >= d_sma200 * sma50_lower_bound)
+                            close_200_ok = (d_close >= d_sma200 * 0.98)
                         
                         condition_daily = (
                             pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and pd.notna(d_sma200) and
@@ -2380,23 +2419,21 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                             tightness_ok and slope_ok and
                             (d_sma20 <= d_sma50 * sma20_upper_bound) and
                             (d_sma20 >= d_sma50 * sma20_lower_bound) and
-                            (d_sma50 <= d_sma200 * sma50_upper_bound) and
-                            (d_sma50 >= d_sma200 * sma50_lower_bound) and
-                            (d_vol_sma20 >= sma20_min_volume) and
-                            (d_close >= d_sma200 * 0.98)
+                            sma50_bounds_ok and close_200_ok and
+                            (d_vol_sma20 >= sma20_min_volume)
                         )
-                        return condition_daily
+                        return condition_daily, is_rounding
                     except Exception:
-                        return False
+                        return False, False
 
                 df_resample = df_ma.copy()
                 if not isinstance(df_resample.index, pd.DatetimeIndex) and 'Date' in df_resample.columns:
                     df_resample['Date'] = pd.to_datetime(df_resample['Date'])
                     df_resample.set_index('Date', inplace=True)
                 
-                passes_daily = check_sma_conditions(df_resample)
+                passes_daily, is_rounding = check_sma_conditions(df_resample)
                 
-                def check_weekly_monthly_sma(d_frame):
+                def check_weekly_monthly_sma(d_frame, rounding_flag=False):
                     if len(d_frame) < 50: return False
                     try:
                         w_close = float(d_frame['Close'].iloc[-1])
@@ -2407,22 +2444,26 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         w_sma20 = float(sma20_series.iloc[-1])
                         w_sma50 = float(sma50_series.iloc[-1])
                         
-                        w_sma200 = float(d_frame['Close'].rolling(window=200).mean().iloc[-1]) if len(d_frame) >= 200 else float('nan')
+                        w_sma40 = float(d_frame['Close'].rolling(window=40).mean().iloc[-1]) if len(d_frame) >= 40 else float('nan')
                         
-                        # 1. MA stacking: Close >= SMA20 >= SMA50 >= SMA200
-                        stacking_ok = (w_close >= w_sma20) and (w_sma20 >= w_sma50)
-                        if pd.notna(w_sma200):
-                            stacking_ok = stacking_ok and (w_sma50 >= w_sma200)
+                        # 1. MA stacking: Close >= SMA20 >= SMA40 >= SMA50
+                        if pd.notna(w_sma40) and not rounding_flag:
+                            stacking_ok = (w_close >= w_sma20) and (w_sma20 >= w_sma40) and (w_sma40 >= w_sma50)
+                        else:
+                            stacking_ok = (w_close >= w_sma20) and (w_sma20 >= w_sma50)
                         
                         # Price-to-SMA gap constraints
-                        cond_20_gap = abs(w_close - w_sma20) / w_sma20 <= 0.10 if pd.notna(w_sma20) else False
-                        cond_50_gap = abs(w_close - w_sma50) / w_sma50 <= 0.10 if pd.notna(w_sma50) else False
-                        cond_200_gap = abs(w_close - w_sma200) / w_sma200 <= 0.20 if pd.notna(w_sma200) else False
+                        max_20_gap = 0.25 if rounding_flag else 0.15
+                        max_50_gap = 0.35 if rounding_flag else 0.20
+                        cond_20_gap = abs(w_close - w_sma20) / w_sma20 <= max_20_gap if pd.notna(w_sma20) else False
+                        cond_50_gap = abs(w_close - w_sma50) / w_sma50 <= max_50_gap if pd.notna(w_sma50) else False
+                        cond_200_gap = True  # Relaxed for strong uptrends
                         
-                        # 3. Tightness over last 5 weekly bars (10% for weekly)
+                        # 3. Tightness over last 5 weekly bars (20% for weekly)
                         high_5 = d_frame['High'].iloc[-5:].max()
                         low_5 = d_frame['Low'].iloc[-5:].min()
-                        tightness_ok = ((high_5 - low_5) / low_5) <= 0.10 if low_5 > 0 else False
+                        max_tightness = 0.30 if rounding_flag else 0.20
+                        tightness_ok = ((high_5 - low_5) / low_5) <= max_tightness if low_5 > 0 else False
                         
                         # 2. Upward slope over 5 bars
                         w_sma20_5ago = float(sma20_series.iloc[-5]) if len(sma20_series) >= 5 else w_sma20
@@ -2434,24 +2475,28 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                         vol_20 = d_frame['Volume'].rolling(window=20).mean().iloc[-1]
                         vol_contracting = vol_5 <= vol_20 * 1.2 if pd.notna(vol_20) and vol_20 > 0 else True
                         
+                        sma50_bounds_ok = True
+                        close_200_ok = True
+                        if not rounding_flag:
+                            sma50_bounds_ok = (w_sma50 <= w_sma40 * 1.20) and (w_sma50 >= w_sma40 * 0.90)
+                            close_200_ok = (w_close >= w_sma40)
+                        
                         condition_weekly = (
-                            pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma200) and
+                            pd.notna(w_sma20) and pd.notna(w_sma50) and pd.notna(w_close) and pd.notna(w_sma40) and
                             stacking_ok and
                             cond_20_gap and cond_50_gap and cond_200_gap and
                             tightness_ok and slope_ok and vol_contracting and
                             (w_sma20 <= w_sma50 * sma20_upper_bound) and
                             (w_sma20 >= w_sma50 * sma20_lower_bound) and
-                            (w_sma50 <= w_sma200 * 1.20) and
-                            (w_sma50 >= w_sma200 * 0.90) and
-                            (w_close >= w_sma200)
+                            sma50_bounds_ok and close_200_ok
                         )
                         return condition_weekly
                     except Exception: return False
                     
                 df_weekly = df_resample.resample('W').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
-                passes_weekly = check_weekly_monthly_sma(df_weekly)
+                passes_weekly = check_weekly_monthly_sma(df_weekly, is_rounding)
                 df_monthly = df_resample.resample('ME' if hasattr(pd.tseries.offsets, 'MonthEnd') else 'M').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
-                passes_monthly = check_weekly_monthly_sma(df_monthly)
+                passes_monthly = check_weekly_monthly_sma(df_monthly, is_rounding)
 
                 # Require VPA trend regardless of timeframe
                 vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
@@ -2473,6 +2518,9 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                                       f"Short and Mid-term VPA trends are Green (Uptrend). "
                                       f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
                                       f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
+                    
+                    if is_rounding:
+                        base_above_rec += " 🌟 Note: Added despite being near or below 200 SMA because a clean Rounding Bottom/Cup pattern was detected!"
                     
                     # 5. Breakout proximity: price within 3% of 20-day high
                     high_20d = df_resample['High'].iloc[-20:].max()
@@ -2763,7 +2811,7 @@ scan_data = st.session_state.scan_results
     "🚀 Gap-Up", "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 VCS", "🎯 VCP", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "💥 BB Squeeze"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "📈 9/21 EMA Support"
 ])
 
 # ==============================================================================
@@ -2813,8 +2861,9 @@ with tab_results:
             for r in sorted_scan:
                 export_rows.append({
                     "Symbol": r['symbol'],
-                "Sector": get_stock_sector(r['symbol']),
-                                        "CMP (₹)": r['cmp'],
+                    "Sector": get_stock_sector(r['symbol']),
+                    "CMP (₹)": r['cmp'],
+                    "Setup": r.get('setup_type', 'VDU Breakout'),
                     "Day Change %": r.get('day_change_pct', 0.0),
                     "Today Volume": r.get('today_volume', 0),
                     "Dry Avg Volume": r.get('dry_avg_vol', 0),
@@ -4119,13 +4168,14 @@ with tab_wave:
             help="Select the WaveTrend chart interval. Changing this dynamically runs a real-time parallel scan for active stocks."
         )
     with wt_col2:
+        default_wt_thresh = -20.0 if wt_timeframe in ["Weekly", "Monthly"] else -40.0
         wt_oversold_threshold = st.number_input(
             "📉 Oversold Threshold:",
             min_value=-100.0,
             max_value=0.0,
-            value=-40.0,
+            value=default_wt_thresh,
             step=5.0,
-            key="wt_oversold_threshold",
+            key=f"wt_oversold_threshold_{wt_timeframe}",
             help="Define the WT1 value below which a stock is considered oversold. Default is -40.0."
         )
         
@@ -7109,27 +7159,26 @@ with tab_rsi_wt:
 # TAB: BB SQUEEZE
 # ==============================================================================
 with tab_bb_squeeze:
-    st.markdown("### 💥 Bollinger Band Squeeze (Upward Blast Setups)")
-    st.markdown("Stocks in a severe volatility squeeze (tight Bollinger Bands), indicating they may blast upward soon.")
+    st.markdown("### 📈 9/21 EMA Support")
+    st.markdown("Stocks taking support at their 9 or 21 EMA with tight proximity, plus crossover signals.")
+    
     col_btn, col_note = st.columns([1, 2])
-    run_bb_btn = col_btn.button("🔍 Run BB Squeeze Scan", type="primary", use_container_width=True)
-    col_note.info("ℹ️ Re-run the scan to see **Score** and **Confidence** columns (new feature).")
-
+    run_bb_btn = col_btn.button("🔍 Run EMA Support Scan", type="primary", use_container_width=True)
+    
     if run_bb_btn:
         st.session_state.bb_squeeze_results = None
         ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = None
         run_background_bb_squeeze_scan(force=True)
         st.rerun()
-
-    # Pick up background scan results if available
+        
     if st.session_state.get('bb_squeeze_results') is None and ALL_TAB_SCAN_STATUS.get("bb_squeeze_results") is not None:
         st.session_state.bb_squeeze_results = ALL_TAB_SCAN_STATUS["bb_squeeze_results"]
-
+        
     if st.session_state.get('bb_squeeze_results') is not None:
-        bb_list = st.session_state.bb_squeeze_results
-
+        ema_list = st.session_state.bb_squeeze_results
+        
         # Apply Universe Filter
-        if "ALL NSE" not in universe_selection.upper() and len(bb_list) > 0:
+        if "ALL NSE" not in universe_selection.upper() and len(ema_list) > 0:
             from data_fetcher import get_index_stocks
             resolved_univ = "ALL NSE"
             if "NIFTY 500" in universe_selection: resolved_univ = "NIFTY 500"
@@ -7139,176 +7188,20 @@ with tab_bb_squeeze:
             if resolved_univ != "ALL NSE":
                 raw_symbols = get_index_stocks(resolved_univ)
                 valid_set = set([str(s).replace('.NS', '').strip().upper() for s in raw_symbols if str(s).strip()])
-                bb_list = [r for r in bb_list if r['symbol'] in valid_set]
-
-        if len(bb_list) > 0:
-            # Sort by squeeze_score (desc), fallback to timeframe count
-            bb_list.sort(key=lambda r: (r.get('squeeze_score', 0),
-                                         r.get('monthly_squeeze', False),
-                                         r.get('weekly_squeeze', False),
-                                         r.get('daily_squeeze', False)), reverse=True)
-
-            df_bb = pd.DataFrame(bb_list)
-            has_score = 'squeeze_score' in df_bb.columns
-
-            # ── Helper: build clean export df for a timeframe ──────────────────
-            def _build_tf_df(df_src, tf_squeeze_col, tf_width_col, tf_label):
-                """Filter to rows where tf_squeeze_col=True and format for display/export."""
-                df_tf = df_src[df_src[tf_squeeze_col] == True].copy()
-                if df_tf.empty:
-                    return df_tf
-
-                if has_score:
-                    df_tf['squeeze_score'] = pd.to_numeric(df_tf['squeeze_score'], errors='coerce').fillna(0).astype(int)
-                    df_tf = df_tf.sort_values('squeeze_score', ascending=False)
-                else:
-                    df_tf = df_tf.sort_values(tf_squeeze_col, ascending=False)
-
-                out = pd.DataFrame()
-                out['Symbol']       = df_tf['symbol'].values
-                out['Company']      = df_tf['company_name'].values if 'company_name' in df_tf.columns else ''
-                out['CMP (₹)']      = df_tf['cmp'].round(2).values
-                out['Change (%)']   = df_tf['day_change_pct'].round(2).values
-                if has_score:
-                    out['Score']        = df_tf['squeeze_score'].apply(lambda x: f"{int(x)}/100" if pd.notna(x) and x > 0 else '—')
-                    out['Confidence']   = df_tf['confidence'].fillna('—').values if 'confidence' in df_tf.columns else '—'
-                out['BB Width']     = df_tf[tf_width_col].round(4).values if tf_width_col in df_tf.columns else '—'
-                out['Above 50 DMA'] = df_tf['above_50dma'].map({True: 'Yes', False: 'No'}).values if 'above_50dma' in df_tf.columns else '—'
-                if has_score and 'score_breakdown' in df_tf.columns:
-                    out['Score Breakdown'] = df_tf['score_breakdown'].fillna('').values
-                return out
-
-
-            df_daily_tf   = _build_tf_df(df_bb, 'daily_squeeze',   'daily_bb_width',   'Daily')
-            df_weekly_tf  = _build_tf_df(df_bb, 'weekly_squeeze',  'weekly_bb_width',  'Weekly')
-            df_monthly_tf = _build_tf_df(df_bb, 'monthly_squeeze', 'monthly_bb_width', 'Monthly')
-
-            # ── Summary metrics row ─────────────────────────────────────────────
-            total  = len(df_bb)
-            d_sq   = len(df_daily_tf)
-            w_sq   = len(df_weekly_tf)
-            m_sq   = len(df_monthly_tf)
-            triple = int(((df_bb['daily_squeeze']) & (df_bb['weekly_squeeze']) & (df_bb['monthly_squeeze'])).sum())
-            avg_sc = int(pd.to_numeric(df_bb['squeeze_score'], errors='coerce').fillna(0).mean()) if has_score else 0
-
-            mc1, mc2, mc3, mc4, mc5, mc6 = st.columns(6)
-            mc1.metric("Total Setups", total)
-            mc2.metric("📅 Daily Only", d_sq)
-            mc3.metric("📈 Weekly Only", w_sq)
-            mc4.metric("📅 Monthly Only", m_sq)
-            mc5.metric("🔥 Triple Squeeze", triple)
-            mc6.metric("Avg Score", f"{avg_sc}/100" if has_score else "Re-run scan")
-
-            st.markdown("---")
-
-            # ── Multi-sheet Excel download ──────────────────────────────────────
-            import io
-            excel_buf = io.BytesIO()
-            with pd.ExcelWriter(excel_buf, engine='openpyxl') as writer:
-                if not df_daily_tf.empty:
-                    df_daily_tf.to_excel(writer, sheet_name='Daily Squeeze', index=False)
-                if not df_weekly_tf.empty:
-                    df_weekly_tf.to_excel(writer, sheet_name='Weekly Squeeze', index=False)
-                if not df_monthly_tf.empty:
-                    df_monthly_tf.to_excel(writer, sheet_name='Monthly Squeeze', index=False)
-                # All combined on last sheet
-                df_all_export = _build_tf_df(df_bb, 'daily_squeeze', 'daily_bb_width', 'All')
-                # rebuild all as combined
-                all_rows = []
-                for r in bb_list:
-                    row = {
-                        'Symbol':       r.get('symbol',''),
-                        'Company':      r.get('company_name',''),
-                        'CMP (₹)':      r.get('cmp', 0),
-                        'Change (%)':   r.get('day_change_pct', 0),
-                        'Daily Squeeze': 'YES' if r.get('daily_squeeze') else '',
-                        'D Width':      r.get('daily_bb_width', ''),
-                        'Weekly Squeeze': 'YES' if r.get('weekly_squeeze') else '',
-                        'W Width':      r.get('weekly_bb_width', ''),
-                        'Monthly Squeeze': 'YES' if r.get('monthly_squeeze') else '',
-                        'M Width':      r.get('monthly_bb_width', ''),
-                        'Above 50 DMA': 'Yes' if r.get('above_50dma') else 'No',
-                    }
-                    if has_score:
-                        row['Score']           = r.get('squeeze_score', '')
-                        row['Confidence']      = r.get('confidence', '')
-                        row['Score Breakdown'] = r.get('score_breakdown', '')
-                    all_rows.append(row)
-                pd.DataFrame(all_rows).to_excel(writer, sheet_name='All Squeezes', index=False)
-            excel_buf.seek(0)
-
-            from datetime import date
-            fname = f"BB_Squeeze_{date.today().strftime('%Y%m%d')}.xlsx"
-            st.download_button(
-                label="📥 Download Excel (4 sheets: Daily | Weekly | Monthly | All)",
-                data=excel_buf.getvalue(),
-                file_name=fname,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-
-            st.markdown("---")
-
-            # ── Separate Sub-tabs per timeframe ────────────────────────────────
-            stab_d, stab_w, stab_m, stab_all = st.tabs([
-                f"📅 Daily Squeeze ({d_sq})",
-                f"📈 Weekly Squeeze ({w_sq})",
-                f"📅 Monthly Squeeze ({m_sq})",
-                f"📊 All Combined ({total})"
-            ])
-
-            def _render_tf_table(df_tf, label):
-                if df_tf.empty:
-                    st.info(f"No {label} squeeze setups found.")
-                    return
-                st.dataframe(df_tf, use_container_width=True, hide_index=True)
-
-            with stab_d:
-                st.markdown(f"**{d_sq} stocks** currently in a **Daily Bollinger Band Squeeze**")
-                _render_tf_table(df_daily_tf, "Daily")
-
-            with stab_w:
-                st.markdown(f"**{w_sq} stocks** currently in a **Weekly Bollinger Band Squeeze**")
-                _render_tf_table(df_weekly_tf, "Weekly")
-
-            with stab_m:
-                st.markdown(f"**{m_sq} stocks** currently in a **Monthly Bollinger Band Squeeze**")
-                _render_tf_table(df_monthly_tf, "Monthly")
-
-            with stab_all:
-                st.markdown(f"**{total} stocks** with at least one active squeeze (sorted by score)")
-                # Build display df for combined view
-                disp = pd.DataFrame()
-                disp['Symbol']    = df_bb['symbol']
-                disp['Company']   = df_bb.get('company_name', '')
-                disp['CMP']       = df_bb['cmp'].apply(lambda x: f"₹{x:,.2f}")
-                disp['Change']    = df_bb['day_change_pct'].apply(lambda x: f"{x:+.2f}%")
-                if has_score:
-                    disp['Score']      = df_bb['squeeze_score'].apply(lambda x: f"{x}/100")
-                    disp['Confidence'] = df_bb.get('confidence', '—')
-                disp['Above 50D']  = df_bb['above_50dma'].map({True: '✅', False: '❌'}) if 'above_50dma' in df_bb.columns else '—'
-                disp['Daily']      = df_bb['daily_squeeze'].map({True: '🟢', False: '⚪'})
-                disp['D Width']    = df_bb['daily_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—') if 'daily_bb_width' in df_bb.columns else '—'
-                disp['Weekly']     = df_bb['weekly_squeeze'].map({True: '🟢', False: '⚪'})
-                disp['W Width']    = df_bb['weekly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—') if 'weekly_bb_width' in df_bb.columns else '—'
-                disp['Monthly']    = df_bb['monthly_squeeze'].map({True: '🟢', False: '⚪'})
-                disp['M Width']    = df_bb['monthly_bb_width'].apply(lambda x: f"{x:.4f}" if x else '—') if 'monthly_bb_width' in df_bb.columns else '—'
-                if has_score and 'score_breakdown' in df_bb.columns:
-                    disp['Why'] = df_bb['score_breakdown']
-                st.dataframe(disp, use_container_width=True, hide_index=True)
-
+                ema_list = [r for r in ema_list if r['symbol'] in valid_set]
+                
+        if len(ema_list) > 0:
+            st.markdown("### 📊 9/21 EMA Support Setups")
+            render_unified_strategy_table(ema_list, "bb_squeeze", "ema_support_tab")
         else:
             if st.session_state.get("bb_squeeze_running", False) or ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
-                st.info("⏳ Background scanner is analyzing BB Squeezes across Daily, Weekly, and Monthly timeframes... Please wait (~2 minutes).")
-                if st.button("🔄 Refresh BB Squeeze Status", key="refresh_bb_running_btn"):
-                    st.rerun()
+                st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
             else:
-                st.info("✅ Scan completed — no BB Squeeze setups found for the selected universe.")
+                st.info("✅ Scan completed — no EMA Support setups found for the selected universe.")
     else:
         if st.session_state.get("bb_squeeze_running", False) or ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
-            st.info("⏳ Background scanner is analyzing BB Squeezes across Daily, Weekly, and Monthly timeframes... Please wait (~2 minutes).")
-            if st.button("🔄 Refresh BB Squeeze Status", key="refresh_bb_none_btn"):
-                st.rerun()
+            st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
         else:
-            st.warning("⚠️ Scan has not been run yet. Click **'Run BB Squeeze Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")
+            st.warning("⚠️ Scan has not been run yet. Click **'Run EMA Support Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")
+
 
