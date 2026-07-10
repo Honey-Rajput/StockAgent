@@ -61,7 +61,7 @@ def _flatten_yf_dataframe(df: pd.DataFrame, symbol_ns: str = None) -> pd.DataFra
     return df_clean
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=900, max_entries=150, show_spinner=False)
 def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     """
     Fetches the last LOOKBACK_DAYS of daily OHLCV data for a given NSE symbol.
@@ -312,7 +312,7 @@ def get_stock_sector(symbol: str) -> str:
 
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=900, max_entries=150, show_spinner=False)
 def fetch_ohlcv_timeframe(symbol: str, interval: str = "1d", period: str = None) -> pd.DataFrame | None:
     """
     Fetches historical candles for a given NSE symbol, supporting customized intervals and lookback periods.

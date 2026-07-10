@@ -1284,7 +1284,7 @@ def run_background_bb_squeeze_scan(force=False):
                     return
                 
             from scanner import scan_ema_support
-            raw_symbols = get_index_stocks("NIFTY 500")
+            raw_symbols = get_index_stocks("ALL NSE")
             symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
             
             bb_results = []
@@ -1377,7 +1377,7 @@ def run_background_all_tab_scans():
                 else:
                     from scanner import scan_wt_cross
                     from data_fetcher import get_index_stocks
-                    raw_symbols = get_index_stocks("NIFTY 500")
+                    raw_symbols = get_index_stocks("ALL NSE")
                     symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
 
                     wt_tf_results = []
@@ -1440,7 +1440,7 @@ def run_background_all_tab_scans():
                 else:
                     from scanner import scan_vcs
                     from data_fetcher import get_index_stocks
-                    raw_symbols = get_index_stocks("NIFTY 500")
+                    raw_symbols = get_index_stocks("ALL NSE")
                     symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
 
                     custom_vcs_results = []
