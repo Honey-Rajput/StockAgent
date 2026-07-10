@@ -169,6 +169,16 @@ def get_all_nse_symbols() -> list[str]:
         'Accept-Language': 'en-US,en;q=0.9',
     }
 
+    try:
+        import nsepython
+        symbols = nsepython.nse_eq_symbols()
+        if symbols and len(symbols) > 100:
+            clean_symbols = [s.strip() for s in symbols if s.strip() and s.strip() != 'SYMBOL']
+            print(f"Successfully loaded {len(clean_symbols)} active NSE symbols using nsepython.")
+            return clean_symbols
+    except Exception as e:
+        print(f"nsepython.nse_eq_symbols() failed: {e}")
+
     # Try the newer, more stable nsearchives URL first
     urls = [
         "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv",
