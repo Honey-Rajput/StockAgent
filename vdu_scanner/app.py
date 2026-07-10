@@ -1,4 +1,4 @@
-# app.py
+import psycopg2
 import streamlit as st
 import pandas as pd
 

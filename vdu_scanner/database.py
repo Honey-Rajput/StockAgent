@@ -12,13 +12,18 @@ load_dotenv(env_path)
 
 DATABASE_URL = os.getenv("Database_URL")
 
+import threading
+
+db_lock = threading.Lock()
+
 def get_connection():
     """
-    Establishes a connection to the PostgreSQL (Neon) database.
+    Establishes a connection to the PostgreSQL (Neon) database securely.
     """
     if not DATABASE_URL:
         raise ValueError("Database_URL is not set in the environment or .env file.")
-    conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+    with db_lock:
+        conn = psycopg2.connect(DATABASE_URL, connect_timeout=5, gssencmode="disable")
     try:
         cur = conn.cursor()
         cur.execute("SET statement_timeout = 8000;")
