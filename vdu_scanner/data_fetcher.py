@@ -61,7 +61,36 @@ def _flatten_yf_dataframe(df: pd.DataFrame, symbol_ns: str = None) -> pd.DataFra
     return df_clean
 
 
-@st.cache_data(ttl=900, max_entries=150, show_spinner=False)
+import threading
+import time
+
+class ThreadSafeTTLCache:
+    def __init__(self, ttl_seconds, max_size):
+        self.cache = {}
+        self.ttl = ttl_seconds
+        self.max_size = max_size
+        self.lock = threading.Lock()
+
+    def get(self, key):
+        with self.lock:
+            if key in self.cache:
+                value, timestamp = self.cache[key]
+                if time.time() - timestamp < self.ttl:
+                    return value
+                else:
+                    del self.cache[key]
+            return None
+
+    def set(self, key, value):
+        with self.lock:
+            if len(self.cache) >= self.max_size:
+                # Remove oldest entry
+                oldest_key = min(self.cache.keys(), key=lambda k: self.cache[k][1])
+                del self.cache[oldest_key]
+            self.cache[key] = (value, time.time())
+
+_ohlcv_cache = ThreadSafeTTLCache(ttl_seconds=900, max_size=150)
+
 def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     """
     Fetches the last LOOKBACK_DAYS of daily OHLCV data for a given NSE symbol.
@@ -70,6 +99,10 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     formatted_symbol = symbol.strip().upper()
     if not formatted_symbol.endswith(".NS"):
         formatted_symbol = f"{formatted_symbol}.NS"
+        
+    cached_df = _ohlcv_cache.get(formatted_symbol)
+    if cached_df is not None:
+        return cached_df.copy()
 
     import time
     retries = 0
@@ -89,7 +122,8 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
 
             result = _flatten_yf_dataframe(df)
             if result is not None:
-                return result
+                _ohlcv_cache.set(formatted_symbol, result)
+                return result.copy()
             raise ValueError("Empty or invalid DataFrame from yfinance")
 
         except Exception as e:
@@ -311,8 +345,9 @@ def get_stock_sector(symbol: str) -> str:
         return 'Unknown'
 
 
+_ohlcv_timeframe_cache = ThreadSafeTTLCache(ttl_seconds=900, max_size=150)
 
-@st.cache_data(ttl=900, max_entries=150, show_spinner=False)
+
 def fetch_ohlcv_timeframe(symbol: str, interval: str = "1d", period: str = None) -> pd.DataFrame | None:
     """
     Fetches historical candles for a given NSE symbol, supporting customized intervals and lookback periods.
@@ -321,6 +356,11 @@ def fetch_ohlcv_timeframe(symbol: str, interval: str = "1d", period: str = None)
     formatted_symbol = symbol.strip().upper()
     if not formatted_symbol.endswith(".NS"):
         formatted_symbol = f"{formatted_symbol}.NS"
+        
+    cache_key = f"{formatted_symbol}_{interval}_{period}"
+    cached_df = _ohlcv_timeframe_cache.get(cache_key)
+    if cached_df is not None:
+        return cached_df.copy()
 
     if period is None:
         if interval == "15m":
@@ -366,8 +406,10 @@ def fetch_ohlcv_timeframe(symbol: str, interval: str = "1d", period: str = None)
                             df_clean = df_clean.reset_index()
                             df_clean.rename(columns={df_clean.columns[0]: 'Date'}, inplace=True)
                             df_clean['Date'] = pd.to_datetime(df_clean['Date']).dt.tz_localize(None)
-                            return df_clean
-                return result
+                            _ohlcv_timeframe_cache.set(cache_key, df_clean)
+                            return df_clean.copy()
+                _ohlcv_timeframe_cache.set(cache_key, result)
+                return result.copy()
             raise ValueError("Empty or invalid DataFrame from yfinance")
 
         except Exception as e:
