@@ -1341,6 +1341,7 @@ def run_background_all_tab_scans():
         return
 
     # Guard to prevent duplicate concurrent background scanning threads
+    import threading
     is_already_running = any(t.name == "Background_All_Tab_Scans" for t in threading.enumerate())
     if is_already_running:
         print("Background all-tab scan thread is already active. Skipping duplicate thread launch.")
@@ -1355,321 +1356,197 @@ def run_background_all_tab_scans():
         import pandas as pd
         import concurrent.futures
         import json
+        import database
+        from datetime import datetime
 
         try:
             today_str = get_market_date()
             print(f"[BG All-Tab] Starting background scans for date: {today_str}")
 
-            # ----------------------------------------------------------------
-            # 1/5: WaveTrend Scan (Daily, threshold -40.0)
-            # ----------------------------------------------------------------
-            ALL_TAB_SCAN_STATUS["current_scanner"] = "WaveTrend"
-            ALL_TAB_SCAN_STATUS["status_text"] = "Step 1/5 - Running WaveTrend scan..."
-            ALL_TAB_SCAN_STATUS["progress"] = 0.0
-            print("[BG All-Tab] Step 1/5: WaveTrend scan")
+            from scanner import scan_wt_cross, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_volume_profile
+            from data_fetcher import get_all_nse_symbols, get_index_stocks
 
-            try:
-                # Check DB cache first
-                cached_wt = database.get_cached_wt_cross(today_str)
-                if cached_wt and len(cached_wt) > 0:
-                    ALL_TAB_SCAN_STATUS["wt_results"] = cached_wt
-                    print(f"[BG All-Tab] WaveTrend: Loaded {len(cached_wt)} results from DB cache. Skipping scan.")
-                else:
-                    from scanner import scan_wt_cross
-                    from data_fetcher import get_index_stocks
-                    raw_symbols = get_index_stocks("ALL NSE")
-                    symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            # Phase 1: Check what needs to be run
+            run_wt = not bool(database.get_cached_wt_cross(today_str))
+            run_vcs = not bool(database.get_cached_vcs(today_str))
+            run_vpa = not bool(database.get_cached_vpa(today_str))
+            run_vp = not bool(database.get_cached_volume_profile(today_str))
+            run_s2 = not bool(database.get_cached_stage2(today_str))
 
-                    wt_tf_results = []
-                    chunk_size = 50
-                    chunks = [symbols_to_scan[i:i+chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
+            if not (run_wt or run_vcs or run_vpa or run_vp or run_s2):
+                ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
+                ALL_TAB_SCAN_STATUS["progress"] = 1.0
+                ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
+                ALL_TAB_SCAN_STATUS["is_running"] = False
+                print("[BG All-Tab] All background tab scans already cached. Skipping.")
+                return
 
-                    for c_idx, chunk in enumerate(chunks):
-                        ALL_TAB_SCAN_STATUS["progress"] = (c_idx / len(chunks)) * 0.2  # 0-20% for WaveTrend
+            raw_symbols = get_all_nse_symbols()
+            all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            
+            # Phase 2: Shared Daily Download (1y or 2y)
+            shared_daily_data = {}
+            if run_wt or run_vcs or run_vpa or run_vp:
+                ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
+                ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
+                ALL_TAB_SCAN_STATUS["progress"] = 0.05
+                print("[BG All-Tab] Downloading shared daily data...")
+                
+                # Use 2y if Volume Profile needs it, else 1y is enough
+                period_to_download = "2y" if run_vp else "1y"
+                chunk_size = 200
+                chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
+                
+                for c_idx, chunk in enumerate(chunks):
+                    ALL_TAB_SCAN_STATUS["progress"] = 0.05 + (c_idx / len(chunks)) * 0.25
+                    try:
+                        bulk_df = yf.download(tickers=chunk, period=period_to_download, interval="1d", progress=False, threads=False)
+                        if not bulk_df.empty:
+                            for sym_ns in chunk:
+                                try:
+                                    sym = sym_ns.replace('.NS', '')
+                                    if isinstance(bulk_df.columns, pd.MultiIndex):
+                                        all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                        matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                        if not matched_t:
+                                            continue
+                                        df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                    else:
+                                        df = bulk_df.dropna(subset=['Close'])
+                                    
+                                    if not df.empty:
+                                        # Filter out penny stocks to save processing time
+                                        if float(df['Close'].iloc[-1]) >= 100.0:
+                                            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                                            if all(col in df.columns for col in required_cols):
+                                                df = df[required_cols].dropna(subset=['Close'])
+                                                df = df[df['Volume'] > 0]
+                                                if len(df) >= 40:
+                                                    df = df.reset_index()
+                                                    df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+                                                    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                                                    shared_daily_data[sym] = df
+                                except Exception:
+                                    pass
+                    except Exception as chunk_ex:
+                        print(f"[BG All-Tab] Download chunk {c_idx} error: {chunk_ex}")
+                        
+                print(f"[BG All-Tab] Shared data downloaded for {len(shared_daily_data)} stocks.")
+
+            # Worker definitions
+            def run_wt_worker(sym, df):
+                res = scan_wt_cross(sym, df, wt_oversold_threshold=-40.0)
+                if res:
+                    res['timeframe'] = "Daily"
+                    res['is_oversold'] = res['wt_value'] <= -40.0
+                return ("wt", res)
+
+            def run_vcs_worker(sym, df):
+                if len(df) >= 63:
+                    res = scan_vcs(sym, df)
+                    if res:
+                        res['Timeframe'] = "Daily (1d)"
+                        res['Action'] = res.get('recommendation', 'Wait')
+                        return ("vcs", res)
+                return ("vcs", None)
+
+            def run_vpa_worker(sym, df):
+                if len(df) >= 60:
+                    res = scan_vpa_trend(sym, df)
+                    if res:
+                        res['market_cap_cr'] = 0
+                        return ("vpa", res)
+                return ("vpa", None)
+
+            def run_vp_worker(sym, df):
+                if len(df) >= 120:
+                    res = scan_volume_profile(sym, df, 0)
+                    if res:
+                        return ("vp", res)
+                return ("vp", None)
+
+            # Phase 3: Parallel Execution
+            wt_tf_results, custom_vcs_results, vpa_list, vp_list = [], [], [], []
+            
+            if shared_daily_data:
+                ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
+                ALL_TAB_SCAN_STATUS["status_text"] = "Running concurrent daily scans..."
+                
+                tasks_to_run = []
+                for sym, df in shared_daily_data.items():
+                    if run_wt: tasks_to_run.append((run_wt_worker, sym, df))
+                    if run_vcs: tasks_to_run.append((run_vcs_worker, sym, df))
+                    if run_vpa: tasks_to_run.append((run_vpa_worker, sym, df))
+                    if run_vp: tasks_to_run.append((run_vp_worker, sym, df))
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                    futures = [executor.submit(func, sym, df) for func, sym, df in tasks_to_run]
+                    for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                        if i % 100 == 0:
+                            ALL_TAB_SCAN_STATUS["progress"] = 0.30 + (i / len(tasks_to_run)) * 0.45
                         try:
-                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
-                            if not bulk_df.empty:
-                                for sym_ns in chunk:
-                                    try:
-                                        sym = sym_ns.replace('.NS', '')
-                                        if isinstance(bulk_df.columns, pd.MultiIndex):
-                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
-                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
-                                            if not matched_t:
-                                                continue
-                                            ticker_df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                        else:
-                                            ticker_df = bulk_df.dropna(subset=['Close'])
-
-                                        required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-                                        if all(col in ticker_df.columns for col in required_cols):
-                                            ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
-                                            ticker_df = ticker_df[ticker_df['Volume'] > 0]
-                                            if len(ticker_df) >= 40:
-                                                ticker_df = ticker_df.reset_index()
-                                                ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                                ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
-                                                wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=-40.0)
-                                                if wt_res is not None:
-                                                    wt_res['timeframe'] = "Daily"
-                                                    wt_res['is_oversold'] = wt_res['wt_value'] <= -40.0
-                                                    wt_tf_results.append(wt_res)
-                                    except Exception:
-                                        pass
-                        except Exception as chunk_ex:
-                            print(f"[BG All-Tab] WaveTrend chunk {c_idx} error: {chunk_ex}")
-
+                            scan_type, result = future.result()
+                            if result:
+                                if scan_type == "wt": wt_tf_results.append(result)
+                                elif scan_type == "vcs": custom_vcs_results.append(result)
+                                elif scan_type == "vpa": vpa_list.append(result)
+                                elif scan_type == "vp": vp_list.append(result)
+                        except Exception:
+                            pass
+                
+                # Save results
+                if run_wt:
                     ALL_TAB_SCAN_STATUS["wt_results"] = wt_tf_results
-                    print(f"[BG All-Tab] WaveTrend scan complete: {len(wt_tf_results)} results")
-            except Exception as wt_err:
-                print(f"[BG All-Tab] WaveTrend scan error: {wt_err}")
-
-            # ----------------------------------------------------------------
-            # 2/5: VCS Scan (Daily, default parameters)
-            # ----------------------------------------------------------------
-            ALL_TAB_SCAN_STATUS["current_scanner"] = "VCS"
-            ALL_TAB_SCAN_STATUS["status_text"] = "Step 2/5 - Running VCS scan..."
-            ALL_TAB_SCAN_STATUS["progress"] = 0.2
-            print("[BG All-Tab] Step 2/5: VCS scan")
-
-            try:
-                cached_vcs = database.get_cached_vcs(today_str)
-                if cached_vcs and len(cached_vcs) > 0:
-                    ALL_TAB_SCAN_STATUS["vcs_results"] = cached_vcs
-                    print(f"[BG All-Tab] VCS: Loaded {len(cached_vcs)} results from DB cache. Skipping scan.")
-                else:
-                    from scanner import scan_vcs
-                    from data_fetcher import get_index_stocks
-                    raw_symbols = get_index_stocks("ALL NSE")
-                    symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
-
-                    custom_vcs_results = []
-                    chunk_size = 50
-                    chunks = [symbols_to_scan[i:i+chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
-
-                    for c_idx, chunk in enumerate(chunks):
-                        ALL_TAB_SCAN_STATUS["progress"] = 0.2 + (c_idx / len(chunks)) * 0.2  # 20-40%
-                        try:
-                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
-                            if not bulk_df.empty:
-                                for sym_ns in chunk:
-                                    try:
-                                        sym = sym_ns.replace('.NS', '')
-                                        if isinstance(bulk_df.columns, pd.MultiIndex):
-                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
-                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
-                                            if not matched_t:
-                                                continue
-                                            t_df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                        else:
-                                            t_df = bulk_df.dropna(subset=['Close'])
-                                        if not t_df.empty and len(t_df) >= 63:
-                                            t_df = t_df.reset_index()
-                                            t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
-                                            res = scan_vcs(sym, t_df)
-                                            if res:
-                                                res['Timeframe'] = "Daily (1d)"
-                                                res['Action'] = res.get('recommendation', 'Wait')
-                                                custom_vcs_results.append(res)
-                                    except Exception:
-                                        pass
-                        except Exception as chunk_ex:
-                            print(f"[BG All-Tab] VCS chunk {c_idx} error: {chunk_ex}")
-
+                    try: database.save_scan_results(today_str, [], [], [], [], wt_tf_results, 0, [], []) 
+                    except: pass
+                if run_vcs:
                     ALL_TAB_SCAN_STATUS["vcs_results"] = custom_vcs_results
-                    try:
-                        database.save_vcs_only(today_str, custom_vcs_results)
-                    except Exception:
-                        pass
-                    print(f"[BG All-Tab] VCS scan complete: {len(custom_vcs_results)} results")
-            except Exception as vcs_err:
-                print(f"[BG All-Tab] VCS scan error: {vcs_err}")
-
-            # ----------------------------------------------------------------
-            # 3/5: Stage-2 Scan (Monthly, max run-up 20%)
-            # ----------------------------------------------------------------
-            ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
-            ALL_TAB_SCAN_STATUS["status_text"] = "Step 3/5 - Running Stage-2 scan..."
-            ALL_TAB_SCAN_STATUS["progress"] = 0.4
-            print("[BG All-Tab] Step 3/5: Stage-2 scan")
-
-            try:
-                cached_s2 = database.get_cached_stage2(today_str)
-                if cached_s2 and len(cached_s2) > 0:
-                    ALL_TAB_SCAN_STATUS["stage2_results"] = cached_s2
-                    print(f"[BG All-Tab] Stage-2: Loaded {len(cached_s2)} results from DB cache. Skipping scan.")
-                else:
-                    from scanner import scan_monthly_early_stage2
-                    from data_fetcher import get_index_stocks
-                    s2_cands = get_index_stocks("NIFTY 500")
-                    s2_res = []
-                    chunk_size = 50
-                    chunks = [s2_cands[i:i+chunk_size] for i in range(0, len(s2_cands), chunk_size)]
-
-                    for c_idx, chunk in enumerate(chunks):
-                        ALL_TAB_SCAN_STATUS["progress"] = 0.4 + (c_idx / len(chunks)) * 0.2  # 40-60%
-                        try:
-                            tkrs = [f"{s}.NS" for s in chunk]
-                            df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False)
-                            if not df_s2.empty:
-                                for sym in chunk:
-                                    try:
-                                        if isinstance(df_s2.columns, pd.MultiIndex):
-                                            all_tkrs = df_s2.columns.get_level_values(1).unique().tolist()
-                                            matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
-                                            if not matched_t:
-                                                continue
-                                            t_df = df_s2.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                        else:
-                                            t_df = df_s2.dropna(subset=['Close'])
-                                        if not t_df.empty and len(t_df) >= 24:
-                                            t_df = t_df.reset_index()
-                                            t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
-                                            res = scan_monthly_early_stage2(sym, t_df, max_run_up_pct=20.0)
-                                            if res:
-                                                s2_res.append(res)
-                                    except Exception:
-                                        pass
-                        except Exception as chunk_ex:
-                            print(f"[BG All-Tab] Stage-2 chunk {c_idx} error: {chunk_ex}")
-
-                    s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
-                    ALL_TAB_SCAN_STATUS["stage2_results"] = s2_res
-                    try:
-                        database.save_stage2_only(today_str, s2_res)
-                    except Exception:
-                        pass
-                    print(f"[BG All-Tab] Stage-2 scan complete: {len(s2_res)} results")
-            except Exception as s2_err:
-                print(f"[BG All-Tab] Stage-2 scan error: {s2_err}")
-
-            # ----------------------------------------------------------------
-            # 4/5: VPA Scan (All NSE, Price > ₹100)
-            # ----------------------------------------------------------------
-            ALL_TAB_SCAN_STATUS["current_scanner"] = "VPA"
-            ALL_TAB_SCAN_STATUS["status_text"] = "Step 4/5 - Running VPA scan..."
-            ALL_TAB_SCAN_STATUS["progress"] = 0.6
-            print("[BG All-Tab] Step 4/5: VPA scan")
-
-            try:
-                cached_vpa = database.get_cached_vpa(today_str)
-                if cached_vpa and len(cached_vpa) > 0:
-                    ALL_TAB_SCAN_STATUS["vpa_results"] = cached_vpa
-                    print(f"[BG All-Tab] VPA: Loaded {len(cached_vpa)} results from DB cache. Skipping scan.")
-                else:
-                    from scanner import scan_vpa_trend
-                    from data_fetcher import get_all_nse_symbols
-                    raw_symbols = get_all_nse_symbols()
-                    all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
-
-                    vpa_list = []
-                    chunk_size = 200
-                    chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
-
-                    for c_idx, chunk in enumerate(chunks):
-                        ALL_TAB_SCAN_STATUS["progress"] = 0.6 + (c_idx / len(chunks)) * 0.2  # 60-80%
-                        try:
-                            bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
-                            if not bulk_df.empty:
-                                # Filter by price > 100
-                                for sym_ns in chunk:
-                                    try:
-                                        sym = sym_ns.replace('.NS', '')
-                                        if isinstance(bulk_df.columns, pd.MultiIndex):
-                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
-                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
-                                            if not matched_t:
-                                                continue
-                                            df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                        else:
-                                            df = bulk_df.dropna(subset=['Close'])
-                                        if not df.empty and len(df) >= 60:
-                                            last_close = float(df['Close'].iloc[-1])
-                                            if last_close < 100:
-                                                continue
-                                            df = df.reset_index()
-                                            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
-                                            vpa_res = scan_vpa_trend(sym, df)
-                                            if vpa_res is not None:
-                                                vpa_res['market_cap_cr'] = 0
-                                                vpa_list.append(vpa_res)
-                                    except Exception:
-                                        pass
-                        except Exception as chunk_ex:
-                            print(f"[BG All-Tab] VPA chunk {c_idx} error: {chunk_ex}")
-
+                    try: database.save_vcs_only(today_str, custom_vcs_results)
+                    except: pass
+                if run_vpa:
                     ALL_TAB_SCAN_STATUS["vpa_results"] = vpa_list
-                    try:
-                        database.save_vpa_only(today_str, vpa_list)
-                    except Exception:
-                        pass
-                    print(f"[BG All-Tab] VPA scan complete: {len(vpa_list)} results")
-            except Exception as vpa_err:
-                print(f"[BG All-Tab] VPA scan error: {vpa_err}")
-
-            # ----------------------------------------------------------------
-            # 5/5: Volume Profile Scan (2yr history)
-            # ----------------------------------------------------------------
-            ALL_TAB_SCAN_STATUS["current_scanner"] = "Volume Profile"
-            ALL_TAB_SCAN_STATUS["status_text"] = "Step 5/5 - Running Volume Profile scan..."
-            ALL_TAB_SCAN_STATUS["progress"] = 0.8
-            print("[BG All-Tab] Step 5/5: Volume Profile scan")
-
-            try:
-                cached_vp = database.get_cached_volume_profile(today_str)
-                if cached_vp and len(cached_vp) > 0:
-                    ALL_TAB_SCAN_STATUS["vp_results"] = cached_vp
-                    print(f"[BG All-Tab] Volume Profile: Loaded {len(cached_vp)} results from DB cache. Skipping scan.")
-                else:
-                    from scanner import scan_volume_profile
-                    from data_fetcher import get_all_nse_symbols
-                    raw_symbols = get_all_nse_symbols()
-                    all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
-
-                    vp_list = []
-                    chunk_size = 200
-                    chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
-
-                    for c_idx, chunk in enumerate(chunks):
-                        ALL_TAB_SCAN_STATUS["progress"] = 0.8 + (c_idx / len(chunks)) * 0.2  # 80-100%
-                        try:
-                            bulk_df = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False)
-                            if not bulk_df.empty:
-                                for sym_ns in chunk:
-                                    try:
-                                        sym = sym_ns.replace('.NS', '')
-                                        if isinstance(bulk_df.columns, pd.MultiIndex):
-                                            all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
-                                            matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
-                                            if not matched_t:
-                                                continue
-                                            df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                        else:
-                                            df = bulk_df.dropna(subset=['Close'])
-                                        if not df.empty and len(df) >= 120:
-                                            last_close = float(df['Close'].iloc[-1])
-                                            if last_close < 100:
-                                                continue
-                                            df = df.reset_index()
-                                            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
-                                            res = scan_volume_profile(sym, df, 0)
-                                            if res:
-                                                vp_list.append(res)
-                                    except Exception:
-                                        pass
-                        except Exception as chunk_ex:
-                            print(f"[BG All-Tab] Volume Profile chunk {c_idx} error: {chunk_ex}")
-
+                    try: database.save_vpa_only(today_str, vpa_list)
+                    except: pass
+                if run_vp:
                     ALL_TAB_SCAN_STATUS["vp_results"] = vp_list
-                    try:
-                        database.save_volume_profile_only(today_str, vp_list)
-                    except Exception:
-                        pass
-                    print(f"[BG All-Tab] Volume Profile scan complete: {len(vp_list)} results")
-            except Exception as vp_err:
-                print(f"[BG All-Tab] Volume Profile scan error: {vp_err}")
+                    try: database.save_volume_profile_only(today_str, vp_list)
+                    except: pass
 
-            # All scans complete
+            # Phase 4: Stage-2 (Monthly)
+            if run_s2:
+                ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
+                ALL_TAB_SCAN_STATUS["status_text"] = "Running Stage-2 monthly scan..."
+                ALL_TAB_SCAN_STATUS["progress"] = 0.75
+                s2_cands = get_index_stocks("NIFTY 500")
+                s2_res = []
+                s2_chunks = [s2_cands[i:i+100] for i in range(0, len(s2_cands), 100)]
+                for c_idx, chunk in enumerate(s2_chunks):
+                    ALL_TAB_SCAN_STATUS["progress"] = 0.75 + (c_idx / len(s2_chunks)) * 0.20
+                    try:
+                        tkrs = [f"{s}.NS" for s in chunk]
+                        df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False)
+                        if not df_s2.empty:
+                            for sym in chunk:
+                                try:
+                                    if isinstance(df_s2.columns, pd.MultiIndex):
+                                        all_tkrs = df_s2.columns.get_level_values(1).unique().tolist()
+                                        matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
+                                        if not matched_t: continue
+                                        t_df = df_s2.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                    else:
+                                        t_df = df_s2.dropna(subset=['Close'])
+                                    if not t_df.empty and len(t_df) >= 24:
+                                        t_df = t_df.reset_index()
+                                        t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                        res = scan_monthly_early_stage2(sym, t_df, max_run_up_pct=20.0)
+                                        if res: s2_res.append(res)
+                                except Exception: pass
+                    except Exception: pass
+                s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
+                ALL_TAB_SCAN_STATUS["stage2_results"] = s2_res
+                try: database.save_stage2_only(today_str, s2_res)
+                except Exception: pass
+
             ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans complete!"
             ALL_TAB_SCAN_STATUS["progress"] = 1.0
             ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
@@ -1681,7 +1558,6 @@ def run_background_all_tab_scans():
             ALL_TAB_SCAN_STATUS["is_running"] = False
             print(f"[BG All-Tab] Fatal error: {err}")
 
-    # Launch daemon thread
     t = threading.Thread(target=thread_runner, name="Background_All_Tab_Scans", daemon=True)
     t.start()
 
@@ -2137,8 +2013,8 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
             st.session_state[cache_key_p1] = (open_price_map, close_price_map, volume_map, high_price_map, low_price_map)
 
                 
-        # Fast filter Price > 200 (reduces scanning load immensely by removing penny and low-priced stocks)
-        scan_symbols = [s for s in raw_symbols if close_price_map.get(s.strip().upper(), 0.0) > 200.0]
+        # Fast filter Price > 0 (removes completely dead/invalid symbols)
+        scan_symbols = [s for s in raw_symbols if close_price_map.get(s.strip().upper(), 0.0) > 0.0]
         
         n_stocks = len(scan_symbols)
         failed_count = 0
@@ -2238,7 +2114,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     st.session_state[cache_key_p2] = bulk_data
         
         mcap_cache = {}
-        status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities (Price > ₹200)...")
+        status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities...")
         prog_bar.progress(0)
         
 
@@ -2352,6 +2228,9 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 dist_20 = (c_val - sma20) / sma20 * 100 if sma20 else 0
                 dist_50 = (c_val - sma50) / sma50 * 100 if sma50 else 0
                 dist_200 = (c_val - sma200) / sma200 * 100 if sma200 else 0
+                
+                # Track if stock has already run >10% above 20 SMA or 50 SMA (overextended)
+                is_overextended = (dist_20 > 10 or dist_50 > 10)
 
                 def check_sma_conditions(d_frame):
                     if len(d_frame) < 50:
@@ -2373,13 +2252,16 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                             left_avg = d_frame['Close'].iloc[-150:-100].mean()
                             mid_avg = d_frame['Close'].iloc[-100:-50].mean()
                             right_avg = d_frame['Close'].iloc[-50:].mean()
-                            if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05:
+                            # Require meaningful dip: mid must be at least 5% below left to be a real cup/rounding bottom
+                            dip_depth = (left_avg - mid_avg) / left_avg if left_avg > 0 else 0
+                            if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05 and dip_depth >= 0.05:
                                 is_rounding = True
                         elif len(d_frame) >= 90:
                             left_avg = d_frame['Close'].iloc[-90:-60].mean()
                             mid_avg = d_frame['Close'].iloc[-60:-30].mean()
                             right_avg = d_frame['Close'].iloc[-30:].mean()
-                            if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05:
+                            dip_depth = (left_avg - mid_avg) / left_avg if left_avg > 0 else 0
+                            if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05 and dip_depth >= 0.05:
                                 is_rounding = True
                                 
                         # 1. MA stacking: Close >= SMA20 >= SMA50 >= SMA200
@@ -2506,7 +2388,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     if daily_vpa.get("minor", 0) >= 1 and daily_vpa.get("mid", 0) >= 1:
                         passes_vpa = True
 
-                if (passes_daily or passes_weekly or passes_monthly) and passes_vpa:
+                if (passes_daily or passes_weekly or passes_monthly) and passes_vpa and not is_overextended:
                     above_buy_price = round(sma20, 2)  # Support = 20 SMA
                     above_exit_price = round(sma50 * 0.97, 2) 
                     above_target_price = round(today_close_val * 1.12, 2) 
@@ -2519,7 +2401,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                                       f"If price goes down below the 9 EMA support (₹{ema9:.2f}), and 21 EMA support (₹{ema21:.2f}) is 2nd Support, "
                                       f"if not overcome then exit from the position. Target momentum ₹{above_target_price:.2f}.")
                     
-                    if is_rounding:
+                    if is_rounding and pd.notna(sma200) and sma200 > 0 and c_val < sma200 * 1.05:
                         base_above_rec += " 🌟 Note: Added despite being near or below 200 SMA because a clean Rounding Bottom/Cup pattern was detected!"
                     
                     # 5. Breakout proximity: price within 3% of 20-day high
@@ -2646,7 +2528,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
         import joblib
         import os
         
-        status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities (Price > ₹200)...")
+        status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities...")
         prog_bar.progress(0)
         
         # Parallel Execution Core

@@ -4,7 +4,7 @@ import database
 
 def render():
     st.header("🏆 Consistent Alerts (Frequent Flyers)")
-    st.write("Tracks stocks that have been frequently flagged across multiple scanner strategies over recent days.")
+    st.write("Tracks stocks that have been frequently flagged across multiple scanner strategies over recent days. **🆕 New Today** stocks are shown first — catch moves on Day 1!")
     
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -15,7 +15,7 @@ def render():
         frequent_stocks = database.get_frequent_stocks(days_lookback=lookback_days)
         
     if not frequent_stocks:
-        st.info(f"No stocks found appearing on multiple days in the last {lookback_days} scans.")
+        st.info(f"No stocks found in the last {lookback_days} scans.")
         return
         
     # Convert to DataFrame
@@ -30,39 +30,77 @@ def render():
         
     df['strategies'] = df['strategies'].apply(format_strategies)
     
-    # Sort
-    df = df.sort_values(by=['days_appeared', 'total_appearances'], ascending=[False, False])
+    # Split into New Today and Repeated
+    new_today_df = df[df.get('is_new_today', pd.Series([False]*len(df))) == True]
+    repeated_df = df[df.get('is_new_today', pd.Series([True]*len(df))) != True]
     
-    # Format for display
-    display_df = pd.DataFrame()
-    display_df['Symbol'] = df['symbol']
-    display_df['Consistency %'] = (df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
-    display_df['Days Appeared'] = df['days_appeared']
-    display_df['Score'] = df['max_score'].fillna(0).round(1)
-    display_df['RSI'] = df['rsi'].fillna(0).round(2)
-    display_df['CCI'] = df['cci'].fillna(0).round(2)
-    display_df['First Alert'] = df['first_seen_date']
-    display_df['Most Recent'] = df['last_seen_date']
-    display_df['Triggered Strategies'] = df['strategies']
+    # --- NEW TODAY SECTION ---
+    if len(new_today_df) > 0:
+        st.subheader(f"🆕 New Today — First Day Alerts ({len(new_today_df)} stocks)")
+        st.caption("These stocks just appeared in the scanner for the first time. Catch the move early!")
+        
+        new_display = pd.DataFrame()
+        new_display['Symbol'] = new_today_df['symbol']
+        new_display['Score'] = new_today_df['max_score'].fillna(0).round(1)
+        new_display['RSI'] = new_today_df['rsi'].fillna(0).round(2)
+        new_display['CCI'] = new_today_df['cci'].fillna(0).round(2)
+        new_display['Strategies'] = new_today_df['strategies']
+        new_display['Total Hits'] = new_today_df['total_appearances']
+        
+        st.dataframe(
+            new_display,
+            width="stretch",
+            hide_index=True,
+            height=min(400, 35 + len(new_display) * 35)
+        )
+        
+        st.write("---")
     
-    st.subheader(f"Top Repeated Alerts (Last {lookback_days} Scans)")
+    # --- REPEATED SECTION ---
+    if len(repeated_df) > 0:
+        repeated_df = repeated_df.sort_values(by=['days_appeared', 'total_appearances'], ascending=[False, False])
+        
+        rep_display = pd.DataFrame()
+        rep_display['Symbol'] = repeated_df['symbol']
+        rep_display['Consistency %'] = (repeated_df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
+        rep_display['Days Appeared'] = repeated_df['days_appeared']
+        rep_display['Score'] = repeated_df['max_score'].fillna(0).round(1)
+        rep_display['RSI'] = repeated_df['rsi'].fillna(0).round(2)
+        rep_display['CCI'] = repeated_df['cci'].fillna(0).round(2)
+        rep_display['First Alert'] = repeated_df['first_seen_date']
+        rep_display['Most Recent'] = repeated_df['last_seen_date']
+        rep_display['Triggered Strategies'] = repeated_df['strategies']
+        
+        st.subheader(f"🔁 Repeated Alerts (Last {lookback_days} Scans) — {len(repeated_df)} stocks")
+        
+        st.dataframe(
+            rep_display,
+            width="stretch",
+            hide_index=True,
+            height=600
+        )
     
-    st.dataframe(
-        display_df,
-        width="stretch",
-        hide_index=True,
-        height=600
-    )
+    # CSV Download — full data
+    full_display = pd.DataFrame()
+    full_display['Symbol'] = df['symbol']
+    full_display['New Today'] = df.get('is_new_today', False).apply(lambda x: '🆕 Yes' if x else 'No')
+    full_display['Consistency %'] = (df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
+    full_display['Days Appeared'] = df['days_appeared']
+    full_display['Score'] = df['max_score'].fillna(0).round(1)
+    full_display['RSI'] = df['rsi'].fillna(0).round(2)
+    full_display['CCI'] = df['cci'].fillna(0).round(2)
+    full_display['First Alert'] = df['first_seen_date']
+    full_display['Most Recent'] = df['last_seen_date']
+    full_display['Triggered Strategies'] = df['strategies']
     
-    # CSV Download
-    csv_data = display_df.to_csv(index=False).encode('utf-8')
+    csv_data = full_display.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="📥 Download Consistent Alerts (CSV)",
+        label="📥 Download All Alerts (CSV)",
         data=csv_data,
-        file_name="consistent_alerts.csv",
+        file_name="all_alerts.csv",
         mime="text/csv",
         width="content"
     )
     
     st.write("---")
-    st.caption(f"Showing {len(df)} stocks that appeared on more than 1 day out of the last {lookback_days} scans.")
+    st.caption(f"Showing {len(new_today_df)} new today + {len(repeated_df)} repeated = {len(df)} total stocks across the last {lookback_days} scans.")

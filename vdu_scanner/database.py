@@ -1796,6 +1796,16 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         SELECT symbol, scan_date, 'Monthly Momentum' as source, momentum_score as score FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'Stage-2 Breakout' as source, score FROM scanned_stage2 WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'WaveTrend Cross' as source, 0 AS score FROM scanned_wt_cross WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'VPA Trend' as source, 0 AS score FROM scanned_vpa WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Volume Profile' as source, 0 AS score FROM scanned_volume_profile WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Support RSI' as source, rsi_value as score FROM scanned_support_rsi WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        UNION ALL
+        SELECT symbol, scan_date, 'Weekly Momentum' as source, weekly_score as score FROM scanned_weekly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
     ),
     aggregated AS (
         SELECT symbol, 
@@ -1807,17 +1817,23 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
                MAX(score) as max_score
         FROM all_scans
         GROUP BY symbol
-        HAVING COUNT(*) > 1
+        HAVING COUNT(DISTINCT source) >= 2
+    ),
+    latest_date AS (
+        SELECT MAX(scan_date) as max_date FROM recent_dates
     )
-    SELECT a.*, v.daily_rsi as rsi, v.daily_cci as cci
+    SELECT a.*, v.daily_rsi as rsi, v.daily_cci as cci,
+           CASE WHEN a.first_seen_date = (SELECT max_date FROM latest_date) THEN TRUE ELSE FALSE END as is_new_today
     FROM aggregated a
     LEFT JOIN LATERAL (
         SELECT daily_rsi, daily_cci FROM scanned_vpa
         WHERE symbol = a.symbol
         ORDER BY scan_date DESC LIMIT 1
     ) v ON TRUE
-    ORDER BY a.days_appeared DESC, a.total_appearances DESC
-    LIMIT 200;
+    ORDER BY 
+        CASE WHEN a.first_seen_date = (SELECT max_date FROM latest_date) THEN 0 ELSE 1 END,
+        a.days_appeared DESC, a.total_appearances DESC
+    LIMIT 300;
     """
     conn = None
     results = []
