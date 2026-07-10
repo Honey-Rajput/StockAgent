@@ -99,7 +99,7 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
             print("All symbols already analyzed by AI. Skipping background daemon.")
             return
             
-        max_workers = min(20, len(to_scan)) # Increased from 5 to 20 for faster parallel processing
+        max_workers = min(5, len(to_scan)) # Reduced from 20 to 5 for Streamlit Cloud memory limits
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             executor.map(scan_and_save, to_scan)
         print("Background AI scan daemon thread finished successfully!")
@@ -1086,7 +1086,7 @@ def run_background_momentum_scans():
                     return sym, 0.0
 
             processed_mcap_count = 0
-            with _cf.ThreadPoolExecutor(max_workers=30) as pool:
+            with _cf.ThreadPoolExecutor(max_workers=6) as pool:
                 for sym_r, mcap_cr in pool.map(_fetch_single_mcap, passed_price_both):
                     mcap_map[sym_r] = mcap_cr
                     processed_mcap_count += 1
@@ -1479,7 +1479,7 @@ def run_background_all_tab_scans():
                     if run_vpa: tasks_to_run.append((run_vpa_worker, sym, df))
                     if run_vp: tasks_to_run.append((run_vp_worker, sym, df))
                 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = [executor.submit(func, sym, df) for func, sym, df in tasks_to_run]
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
                         if i % 100 == 0:
@@ -2101,7 +2101,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
@@ -5561,7 +5561,7 @@ with tab_stage2:
                 return chunk_res
 
             import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                 futures = []
                 for c_idx, chunk in enumerate(chunks):
                     futures.append(executor.submit(download_s2_chunk, c_idx, chunk))
@@ -5704,7 +5704,7 @@ with tab_vpa:
                     return chunk_data, chunk_filtered
                     
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vpa_chunk, chunk_idx, chunk))
@@ -6090,7 +6090,7 @@ with tab_volprofile:
                         pass
                     return chunk_data
                     
-                with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_vp_chunk, chunk_idx, chunk))
