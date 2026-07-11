@@ -10,6 +10,25 @@ from data_fetcher import get_stock_sector
 from utils import get_day_change_badge_html, get_signal_badge_html
 
 
+def matches_sma_timeframe_filter(record: dict, timeframe: str) -> bool:
+    """
+    Filter above_ma scan rows by Daily / Weekly / All timeframe.
+    Records loaded from DB before passes_* columns existed have no flags — include them
+    so cached results still appear (same as pre-filter behavior).
+    """
+    passes_daily = record.get("passes_daily")
+    passes_weekly = record.get("passes_weekly")
+    if passes_daily is None and passes_weekly is None:
+        return True
+    if timeframe == "Daily":
+        return bool(passes_daily)
+    if timeframe == "Weekly":
+        return bool(passes_weekly)
+    if timeframe == "All (Daily + Weekly Convergence)":
+        return bool(passes_daily) and bool(passes_weekly)
+    return True
+
+
 def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
     """
     Renders a premium, glassmorphic expandable sub-row card for trading guidance.
