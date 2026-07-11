@@ -2354,3 +2354,70 @@ def get_cached_bb_squeeze(date_str: str) -> list:
         if conn:
             conn.close()
     return results
+
+
+def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned: int) -> bool:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        
+        # 1. Clean existing SMA records for this date
+        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = %s;", (date_str,))
+        
+        # 2. Insert new trend setups
+        insert_trend_query = """
+        INSERT INTO scanned_trend_setups (symbol, company_name, cmp, day_change_pct, setup_type, scan_date,
+                                         buy_price, exit_price, target_price, confidence, recommendation,
+                                         run_up_200, run_up_52w, is_early,
+                                         dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
+                                         passes_daily, passes_weekly, passes_monthly, near_breakout)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
+            passes_daily = EXCLUDED.passes_daily,
+            passes_weekly = EXCLUDED.passes_weekly,
+            passes_monthly = EXCLUDED.passes_monthly,
+            near_breakout = EXCLUDED.near_breakout;
+        """
+        for r in trend_setups:
+            cur.execute(insert_trend_query, (
+                str(r['symbol']),
+                str(r['company_name']) if r['company_name'] else "",
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                str(r['setup_type']),
+                date_str,
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                str(r['confidence']) if r.get('confidence') else None,
+                str(r['recommendation']) if r.get('recommendation') is not None else None,
+                float(r['run_up_200']) if r.get('run_up_200') is not None else None,
+                float(r['run_up_52w']) if r.get('run_up_52w') is not None else None,
+                bool(r['is_early']) if r.get('is_early') is not None else None,
+                float(r['dist_20sma_pct']) if r.get('dist_20sma_pct') is not None else None,
+                float(r['dist_50sma_pct']) if r.get('dist_50sma_pct') is not None else None,
+                float(r['dist_65sma_pct']) if r.get('dist_65sma_pct') is not None else None,
+                float(r['dist_200sma_pct']) if r.get('dist_200sma_pct') is not None else None,
+                bool(r['passes_daily']) if r.get('passes_daily') is not None else None,
+                bool(r['passes_weekly']) if r.get('passes_weekly') is not None else None,
+                bool(r['passes_monthly']) if r.get('passes_monthly') is not None else None,
+                bool(r['near_breakout']) if r.get('near_breakout') is not None else None,
+            ))
+        
+        # 3. Update scan log
+        cur.execute("""
+            INSERT INTO scan_logs (scan_date, total_scanned) 
+            VALUES (%s, %s);
+        """, (date_str, int(total_scanned)))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving SMA scan results: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()

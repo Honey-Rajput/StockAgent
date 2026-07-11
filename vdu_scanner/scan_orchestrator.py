@@ -20,7 +20,7 @@ from scanner import (
 def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
                           min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
                           min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness,
-                          sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe):
+                          sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe, scan_mode="all"):
     res = {
         "failed": False,
         "gapup": None,
@@ -82,31 +82,32 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
     today_open_val = float(df['Open'].iloc[-1])
     today_close_val = float(df['Close'].iloc[-1])
     yesterday_close_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else today_open_val
-    if today_open_val > yesterday_close_val and today_close_val > yesterday_close_val and today_close_val >= (today_open_val * 0.97):
-        gap_pct = (today_open_val - yesterday_close_val) / yesterday_close_val * 100
-        if gap_pct >= 8.0:
-            target_multiplier = 1.04; target_pct_str = "+4.0%"
-        elif gap_pct >= 5.0:
-            target_multiplier = 1.06; target_pct_str = "+6.0%"
-        else:
-            target_multiplier = 1.10; target_pct_str = "+10.0%"
-            
-        gap_buy_price = round(min(today_open_val, yesterday_close_val) * 0.99, 2)  # Support = gap base (previous close)
-        gap_exit_price = round(yesterday_close_val * 0.97, 2)  # Stop below gap fill level
-        gap_target_price = round(today_close_val * target_multiplier, 2) 
-        gap_confidence = "High (Gap-Up Momentum)" if gap_pct > 3.0 else "Medium (Gap-Up)"
-        base_gap_rec = (f"Bullish gap-up breakout of {gap_pct:.2f}% on strong momentum. Buy near support ₹{gap_buy_price:.2f} "
-                        f"with a stop loss below today's open price at ₹{gap_exit_price:.2f} "
-                        f"targeting dynamic swing target ₹{gap_target_price:.2f} ({target_pct_str}).")
-        gap_recommendation = compute_rich_analysis(df, sym, "Gap-Up", base_gap_rec, indicators=ind)
-        res["gapup"] = {
-            "symbol": sym.strip().upper(), "company_name": get_company_name(sym),
-            "prev_close": yesterday_close_val, "open_price": today_open_val, "cmp": today_close_val,
-            "gap_pct": round(gap_pct, 2), "volume": int(df['Volume'].iloc[-1]),
-            "day_change_pct": round(((today_close_val - yesterday_close_val) / yesterday_close_val * 100), 2),
-            "buy_price": gap_buy_price, "exit_price": gap_exit_price, "target_price": gap_target_price,
-            "confidence": gap_confidence, "recommendation": gap_recommendation
-        }
+    if scan_mode == "all":
+        if today_open_val > yesterday_close_val and today_close_val > yesterday_close_val and today_close_val >= (today_open_val * 0.97):
+            gap_pct = (today_open_val - yesterday_close_val) / yesterday_close_val * 100
+            if gap_pct >= 8.0:
+                target_multiplier = 1.04; target_pct_str = "+4.0%"
+            elif gap_pct >= 5.0:
+                target_multiplier = 1.06; target_pct_str = "+6.0%"
+            else:
+                target_multiplier = 1.10; target_pct_str = "+10.0%"
+                
+            gap_buy_price = round(min(today_open_val, yesterday_close_val) * 0.99, 2)  # Support = gap base (previous close)
+            gap_exit_price = round(yesterday_close_val * 0.97, 2)  # Stop below gap fill level
+            gap_target_price = round(today_close_val * target_multiplier, 2) 
+            gap_confidence = "High (Gap-Up Momentum)" if gap_pct > 3.0 else "Medium (Gap-Up)"
+            base_gap_rec = (f"Bullish gap-up breakout of {gap_pct:.2f}% on strong momentum. Buy near support ₹{gap_buy_price:.2f} "
+                            f"with a stop loss below today's open price at ₹{gap_exit_price:.2f} "
+                            f"targeting dynamic swing target ₹{gap_target_price:.2f} ({target_pct_str}).")
+            gap_recommendation = compute_rich_analysis(df, sym, "Gap-Up", base_gap_rec, indicators=ind)
+            res["gapup"] = {
+                "symbol": sym.strip().upper(), "company_name": get_company_name(sym),
+                "prev_close": yesterday_close_val, "open_price": today_open_val, "cmp": today_close_val,
+                "gap_pct": round(gap_pct, 2), "volume": int(df['Volume'].iloc[-1]),
+                "day_change_pct": round(((today_close_val - yesterday_close_val) / yesterday_close_val * 100), 2),
+                "buy_price": gap_buy_price, "exit_price": gap_exit_price, "target_price": gap_target_price,
+                "confidence": gap_confidence, "recommendation": gap_recommendation
+            }
         
     # Use pre-computed SMAs from indicators — no need to recalculate
     df_ma = df  # Already has SMA20, SMA50, SMA65, SMA150, SMA200 from precompute_indicators()
@@ -366,54 +367,53 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
                 "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec, indicators=ind)
             }
 
-    if len(df_ma) >= 250:
-        today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]; c_val = float(today_row['Close'])
-        sma50 = float(today_row['SMA50']); sma150 = float(today_row['SMA150']); sma200 = float(today_row['SMA200'])
-        sma200_10d_ago = float(df_ma['SMA200'].iloc[-11]) if len(df_ma) >= 210 else sma200
-        high_52w = float(df_ma['High'].iloc[-250:].max()); low_52w = float(df_ma['Low'].iloc[-250:].min())
-        
-        if c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_10d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.30 * low_52w and c_val >= 0.75 * high_52w:
-            run_up_200 = round(((c_val - sma200) / sma200 * 100), 2)
-            run_up_52w = round(((c_val - low_52w) / low_52w * 100), 2)
-            is_early = bool(c_val <= 1.20 * sma200)
-            exit_price = round(min(sma200 * 0.98, c_val * 0.94), 2)
-            distance_200 = (c_val - sma200) / sma200
-            target_mult = 1.40 - min(0.15, distance_200 * 0.7) if is_early else 1.18 - min(0.06, (distance_200 - 0.20) * 0.4)
-            target_price = round(max(high_52w * 1.05, c_val * target_mult), 2)
-            min_confidence = "High (Minervini Stage-2)" if is_early else "Medium-High (Minervini Extended)"
-            rem_pct = ((target_price - c_val) / c_val * 100)
-            stage_label = "Early Stage-2 Accumulation" if is_early else "Extended Stage-2 Uptrend"
-            base_minervini_rec = (f"Mark Minervini Stage-2 Trend Template verified! The stock is in an active '{stage_label}' "
-                                  f"having run up {run_up_52w:.1f}% from its 52w low and holding {run_up_200:.1f}% above its 200 SMA support. "
-                                  f"Buy around CMP ₹{c_val:.2f}. Set stop loss at ₹{exit_price:.2f} (tight support lock) "
-                                  f"targeting momentum swing target of ₹{target_price:.2f} (remaining potential +{rem_pct:.1f}%).")
-            min_support = max(s for s in [sma50, sma150, sma200] if s < c_val) if any(s < c_val for s in [sma50, sma150, sma200]) else sma200
-            res["minervini"] = {
-                "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
-                "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
-                "setup_type": "minervini", "run_up_200": run_up_200, "run_up_52w": run_up_52w, "is_early": is_early,
-                "buy_price": round(min_support * 1.01, 2), "exit_price": exit_price, "target_price": target_price,
-                "confidence": min_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec, indicators=ind)
-            }
+    if scan_mode == "all":
+        if len(df_ma) >= 250:
+            today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]; c_val = float(today_row['Close'])
+            sma50 = float(today_row['SMA50']); sma150 = float(today_row['SMA150']); sma200 = float(today_row['SMA200'])
+            sma200_10d_ago = float(df_ma['SMA200'].iloc[-11]) if len(df_ma) >= 210 else sma200
+            high_52w = float(df_ma['High'].iloc[-250:].max()); low_52w = float(df_ma['Low'].iloc[-250:].min())
             
-    scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes, indicators=ind)
-    if scan_res is not None:
-        scan_res['market_cap_cr'] = 0.0
-        if scan_res['signal_strength'] >= min_signal_str:
+            if c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_10d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.30 * low_52w and c_val >= 0.75 * high_52w:
+                run_up_200 = round(((c_val - sma200) / sma200 * 100), 2)
+                run_up_52w = round(((c_val - low_52w) / low_52w * 100), 2)
+                is_early = bool(c_val <= 1.20 * sma200)
+                exit_price = round(min(sma200 * 0.98, c_val * 0.94), 2)
+                distance_200 = (c_val - sma200) / sma200
+                target_mult = 1.40 - min(0.15, distance_200 * 0.7) if is_early else 1.18 - min(0.06, (distance_200 - 0.20) * 0.4)
+                target_price = round(max(high_52w * 1.05, c_val * target_mult), 2)
+                min_confidence = "High (Minervini Stage-2)" if is_early else "Medium-High (Minervini Extended)"
+                rem_pct = ((target_price - c_val) / c_val * 100)
+                stage_label = "Early Stage-2 Accumulation" if is_early else "Extended Stage-2 Uptrend"
+                base_minervini_rec = (f"Mark Minervini Stage-2 Trend Template verified! The stock is in an active '{stage_label}' "
+                                      f"having run up {run_up_52w:.1f}% from its 52w low and holding {run_up_200:.1f}% above its 200 SMA support. "
+                                      f"Buy around CMP ₹{c_val:.2f}. Set stop loss at ₹{exit_price:.2f} (tight support lock) "
+                                      f"targeting momentum swing target of ₹{target_price:.2f} (remaining potential +{rem_pct:.1f}%).")
+                min_support = max(s for s in [sma50, sma150, sma200] if s < c_val) if any(s < c_val for s in [sma50, sma150, sma200]) else sma200
+                res["minervini"] = {
+                    "symbol": sym.strip().upper(), "company_name": get_company_name(sym), "cmp": today_close_val,
+                    "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
+                    "setup_type": "minervini", "run_up_200": run_up_200, "run_up_52w": run_up_52w, "is_early": is_early,
+                    "buy_price": round(min_support * 1.01, 2), "exit_price": exit_price, "target_price": target_price,
+                    "confidence": min_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec, indicators=ind)
+                }
+                
+        scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes, indicators=ind)
+        if scan_res and scan_res.get('signal_strength', 0) >= min_signal_str:
             if (not above_50dma_only or scan_res.get('above_50dma', False)) and (not above_200dma_only or scan_res.get('above_200dma', False)):
                 res["flagged"] = scan_res
                 
+    if scan_mode == "all":
+        df_wt = df
+        if df_wt is not None and len(df_wt) >= 40:
+            wt_res = scan_wt_cross(sym, df_wt, indicators=ind)
+            if wt_res is not None:
+                wt_res['timeframe'] = "Daily"
+                res["wt"] = wt_res
                 
-    df_wt = df
-    if df_wt is not None and len(df_wt) >= 40:
-        wt_res = scan_wt_cross(sym, df_wt, indicators=ind)
-        if wt_res is not None:
-            wt_res['timeframe'] = "Daily"
-            res["wt"] = wt_res
-            
-    if df is not None:
-        res["vcs"] = scan_vcs(sym, df, indicators=ind)
-        res["structural_vcp"] = scan_structural_vcp(sym, df, indicators=ind)
-        res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
+        if df is not None:
+            res["vcs"] = scan_vcs(sym, df, indicators=ind)
+            res["structural_vcp"] = scan_structural_vcp(sym, df, indicators=ind)
+            res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
         
     return res

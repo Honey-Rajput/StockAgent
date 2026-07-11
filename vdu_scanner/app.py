@@ -28,6 +28,7 @@ from utils import inject_premium_css, get_signal_badge_html, get_day_change_badg
 from scan_orchestrator import process_single_symbol
 from ui_components import (
     extract_clean_recommendation,
+    matches_sma_timeframe_filter,
     render_quick_trade_board,
     render_trading_setup_card,
     render_unified_strategy_table,
@@ -1223,7 +1224,14 @@ st.sidebar.markdown('---')
 
 
 # --- RUN SCAN ACTION ---
-if st.sidebar.button("🔍 Run Scanner", width="stretch"):
+col_scan1, col_scan2 = st.sidebar.columns(2)
+with col_scan1:
+    run_full = st.button("🔍 Run Full Scanner", use_container_width=True)
+with col_scan2:
+    run_sma = st.button("📈 Run SMA Only", use_container_width=True)
+
+if run_full or run_sma:
+    scan_mode_flag = "sma_only" if run_sma else "full"
     # Resolve the universe selected in the sidebar
     if "NIFTY 500" in universe_selection:
         universe_key = "NIFTY 500"
@@ -1490,7 +1498,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
         sma_timeframe_val = st.session_state.get("sma_timeframe_tab", "All (Multi-Timeframe Convergence)")
         generator = joblib.Parallel(n_jobs=n_workers, backend="threading", return_as="generator_unordered")(
             joblib.delayed(process_and_fetch_if_needed)(
-                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe_val
+                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe_val, scan_mode_flag
             ) for sym in scan_symbols
         )
         
@@ -1542,22 +1550,32 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
         try:
             today_ist_str = get_market_date()
             trend_setups_list = above_ma_list + support_ma_list + crossover_ma_list + minervini_list
-            database.save_scan_results(
-                date_str=today_ist_str,
-                breakouts=flagged_list,
-                squeezes=[],
-                gapups=gapup_list,
-                trend_setups=trend_setups_list,
-                wt_cross=wt_list,
-                total_scanned=n_stocks,
-                vcs_results=vcs_list,
-                vpa_results=vpa_list
-            )
-            st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
+            
+            if scan_mode_flag == "sma_only":
+                database.save_sma_scan_results(
+                    date_str=today_ist_str,
+                    trend_setups=trend_setups_list,
+                    total_scanned=n_stocks
+                )
+                st.toast("💾 Today's SMA scan results cached in Neon PostgreSQL!", icon="✅")
+            else:
+                database.save_scan_results(
+                    date_str=today_ist_str,
+                    breakouts=flagged_list,
+                    squeezes=[],
+                    gapups=gapup_list,
+                    trend_setups=trend_setups_list,
+                    wt_cross=wt_list,
+                    total_scanned=n_stocks,
+                    vcs_results=vcs_list,
+                    vpa_results=vpa_list
+                )
+                st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
             
             # Trigger background AI scans automatically in the backend!
             all_flagged_syms = [r['symbol'] for r in flagged_list]
-            run_background_ai_scan(all_flagged_syms, today_ist_str)
+            if len(all_flagged_syms) > 0:
+                run_background_ai_scan(all_flagged_syms, today_ist_str)
         except Exception as db_err:
             print(f"Failed to cache daily scan results to database: {db_err}")
         
@@ -2833,11 +2851,7 @@ with tab_sma:
         # Dynamically filter based on the UI dropdown
         filtered_above = []
         for r in above_ma_data:
-            if sma_timeframe_tab == "Daily" and r.get("passes_daily"):
-                filtered_above.append(r)
-            elif sma_timeframe_tab == "Weekly" and r.get("passes_weekly"):
-                filtered_above.append(r)
-            elif sma_timeframe_tab == "All (Daily + Weekly Convergence)" and r.get("passes_daily") and r.get("passes_weekly"):
+            if matches_sma_timeframe_filter(r, sma_timeframe_tab):
                 filtered_above.append(r)
                 
         if len(filtered_above) == 0:
