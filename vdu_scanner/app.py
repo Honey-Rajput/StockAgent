@@ -1927,7 +1927,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
             
             status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
             import time
-            chunk_size = 100  # Reduced to avoid yfinance URI length and timeout errors on large lists
+            chunk_size = 50  # Reduced to avoid memory spikes and yfinance URI length errors
             ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
             
             # Thread-safe accumulators for parallel quote downloads
@@ -2000,7 +2000,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                 return ({}, {}, {}, {}, {})
             
             # Parallel execution of Phase 1 quote downloads
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(ticker_chunks))) as p1_executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(ticker_chunks))) as p1_executor:
                 chunk_pairs = list(enumerate(ticker_chunks))
                 for i, result in enumerate(p1_executor.map(_download_quote_chunk, chunk_pairs)):
                     _o, _c, _v, _h, _l = result
@@ -2057,7 +2057,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
 
                 status_box.text(f"Phase 2/3: Downloading {scan_timeframe} historical OHLCV data...")
                 prog_bar.progress(0)
-                chunk_size = 100
+                chunk_size = 50
                 sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
                 
                 def download_chunk(chunk_idx, chunk):
@@ -2103,7 +2103,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
