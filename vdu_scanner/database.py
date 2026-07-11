@@ -1400,7 +1400,12 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                          run_up_200, run_up_52w, is_early,
                                          dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
                                          passes_daily, passes_weekly, passes_monthly, near_breakout)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
+            passes_daily = EXCLUDED.passes_daily,
+            passes_weekly = EXCLUDED.passes_weekly,
+            passes_monthly = EXCLUDED.passes_monthly,
+            near_breakout = EXCLUDED.near_breakout;
         """
         for r in trend_setups:
             cur.execute(insert_trend_query, (
@@ -1433,7 +1438,10 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
                                      buy_price, exit_price, target_price, confidence, recommendation,
                                      wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            above_20sma = EXCLUDED.above_20sma,
+            above_50sma = EXCLUDED.above_50sma;
         """
         for r in wt_cross:
             cur.execute(insert_wt_query, (
