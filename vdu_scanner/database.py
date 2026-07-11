@@ -385,6 +385,7 @@ def init_db() -> bool:
             "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
             "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
             "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS recommendation TEXT;",
+            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS setup_type VARCHAR(50);",
             
             "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
             "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
@@ -692,7 +693,7 @@ def get_cached_breakouts(date_str: str) -> list[dict]:
     SELECT symbol, company_name, cmp, day_change_pct, today_volume, dry_avg_vol, 
            volume_ratio, dry_days_count, dry_spikes, market_cap_cr, signal_strength, 
            above_50dma, above_200dma, dry_start_date, dry_end_date, scan_date,
-           buy_price, exit_price, target_price, confidence, recommendation
+           buy_price, exit_price, target_price, confidence, recommendation, setup_type
     FROM scanned_breakouts
     WHERE scan_date = %s;
     """
@@ -1315,8 +1316,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                       dry_avg_vol, volume_ratio, dry_days_count, dry_spikes, 
                                       market_cap_cr, signal_strength, above_50dma, above_200dma, dry_start_date, 
                                       dry_end_date, scan_date, buy_price, exit_price, target_price, 
-                                      confidence, recommendation)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                                      confidence, recommendation, setup_type)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         for r in breakouts:
             cur.execute(insert_breakout_query, (
@@ -1339,8 +1340,9 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 float(r['buy_price']) if r.get('buy_price') is not None else None,
                 float(r['exit_price']) if r.get('exit_price') is not None else None,
                 float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None
+                str(r['confidence']) if r.get('confidence') else None,
+                str(r['recommendation']) if r.get('recommendation') is not None else None,
+                str(r['setup_type']) if r.get('setup_type') is not None else 'VDU Breakout'
             ))
             
         # 3. Insert new squeezes

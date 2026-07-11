@@ -40,12 +40,12 @@ def render():
         st.caption("These stocks just appeared in the scanner for the first time. Catch the move early!")
         
         new_display = pd.DataFrame()
-        new_display['Symbol'] = new_today_df['symbol']
-        new_display['Score'] = new_today_df['max_score'].fillna(0).round(1)
-        new_display['RSI'] = new_today_df['rsi'].fillna(0).round(2)
-        new_display['CCI'] = new_today_df['cci'].fillna(0).round(2)
-        new_display['Strategies'] = new_today_df['strategies']
-        new_display['Total Hits'] = new_today_df['total_appearances']
+        new_display['Symbol'] = new_today_df['symbol'].astype(str)
+        new_display['Score'] = pd.to_numeric(new_today_df['max_score'], errors='coerce').fillna(0).astype(float).round(1)
+        new_display['RSI'] = pd.to_numeric(new_today_df['rsi'], errors='coerce').fillna(0).astype(float).round(2)
+        new_display['CCI'] = pd.to_numeric(new_today_df['cci'], errors='coerce').fillna(0).astype(float).round(2)
+        new_display['Strategies'] = new_today_df['strategies'].astype(str)
+        new_display['Total Hits'] = pd.to_numeric(new_today_df['total_appearances'], errors='coerce').fillna(0).astype(int)
         
         st.dataframe(
             new_display,
@@ -61,15 +61,15 @@ def render():
         repeated_df = repeated_df.sort_values(by=['days_appeared', 'total_appearances'], ascending=[False, False])
         
         rep_display = pd.DataFrame()
-        rep_display['Symbol'] = repeated_df['symbol']
-        rep_display['Consistency %'] = (repeated_df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
-        rep_display['Days Appeared'] = repeated_df['days_appeared']
-        rep_display['Score'] = repeated_df['max_score'].fillna(0).round(1)
-        rep_display['RSI'] = repeated_df['rsi'].fillna(0).round(2)
-        rep_display['CCI'] = repeated_df['cci'].fillna(0).round(2)
-        rep_display['First Alert'] = repeated_df['first_seen_date']
-        rep_display['Most Recent'] = repeated_df['last_seen_date']
-        rep_display['Triggered Strategies'] = repeated_df['strategies']
+        rep_display['Symbol'] = repeated_df['symbol'].astype(str)
+        rep_display['Consistency %'] = (pd.to_numeric(repeated_df['days_appeared'], errors='coerce').fillna(0) / lookback_days * 100).round(1).astype(str) + "%"
+        rep_display['Days Appeared'] = pd.to_numeric(repeated_df['days_appeared'], errors='coerce').fillna(0).astype(int)
+        rep_display['Score'] = pd.to_numeric(repeated_df['max_score'], errors='coerce').fillna(0).astype(float).round(1)
+        rep_display['RSI'] = pd.to_numeric(repeated_df['rsi'], errors='coerce').fillna(0).astype(float).round(2)
+        rep_display['CCI'] = pd.to_numeric(repeated_df['cci'], errors='coerce').fillna(0).astype(float).round(2)
+        rep_display['First Alert'] = repeated_df['first_seen_date'].astype(str)
+        rep_display['Most Recent'] = repeated_df['last_seen_date'].astype(str)
+        rep_display['Triggered Strategies'] = repeated_df['strategies'].astype(str)
         
         st.subheader(f"🔁 Repeated Alerts (Last {lookback_days} Scans) — {len(repeated_df)} stocks")
         
@@ -82,16 +82,16 @@ def render():
     
     # CSV Download — full data
     full_display = pd.DataFrame()
-    full_display['Symbol'] = df['symbol']
-    full_display['New Today'] = df.get('is_new_today', False).apply(lambda x: '🆕 Yes' if x else 'No')
-    full_display['Consistency %'] = (df['days_appeared'] / lookback_days * 100).round(1).astype(str) + "%"
-    full_display['Days Appeared'] = df['days_appeared']
-    full_display['Score'] = df['max_score'].fillna(0).round(1)
-    full_display['RSI'] = df['rsi'].fillna(0).round(2)
-    full_display['CCI'] = df['cci'].fillna(0).round(2)
-    full_display['First Alert'] = df['first_seen_date']
-    full_display['Most Recent'] = df['last_seen_date']
-    full_display['Triggered Strategies'] = df['strategies']
+    full_display['Symbol'] = df['symbol'].astype(str)
+    full_display['New Today'] = df.get('is_new_today', False).apply(lambda x: '🆕 Yes' if x else 'No').astype(str)
+    full_display['Consistency %'] = (pd.to_numeric(df['days_appeared'], errors='coerce').fillna(0) / lookback_days * 100).round(1).astype(str) + "%"
+    full_display['Days Appeared'] = pd.to_numeric(df['days_appeared'], errors='coerce').fillna(0).astype(int)
+    full_display['Score'] = pd.to_numeric(df['max_score'], errors='coerce').fillna(0).astype(float).round(1)
+    full_display['RSI'] = pd.to_numeric(df['rsi'], errors='coerce').fillna(0).astype(float).round(2)
+    full_display['CCI'] = pd.to_numeric(df['cci'], errors='coerce').fillna(0).astype(float).round(2)
+    full_display['First Alert'] = df['first_seen_date'].astype(str)
+    full_display['Most Recent'] = df['last_seen_date'].astype(str)
+    full_display['Triggered Strategies'] = df['strategies'].astype(str)
     
     csv_data = full_display.to_csv(index=False).encode('utf-8')
     st.download_button(
