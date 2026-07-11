@@ -1,0 +1,5 @@
+keys.txt
+streamlit_log.txt
+temp_search.txt
+__pycache__/
+.env

@@ -59,11 +59,13 @@ def calculate_trade_levels(df: pd.DataFrame, cmp: float, indicators: dict = None
         # Absolute fallback if DataFrame doesn't have enough history
         return round(cmp, 2), round(cmp * 0.95, 2), round(cmp * 1.15, 2), round(cmp * 0.95, 2), round(cmp * 1.15, 2)
 
-# Pre-load scipy at module level to avoid repeated import overhead in scan_structural_vcp
+# Pre-load scipy at module level to avoid repeated import overhead in scan_structural_vcp / volume profile
 try:
     from scipy.signal import find_peaks as _scipy_find_peaks
+    from scipy.signal import argrelextrema as _scipy_argrelextrema
 except ImportError:
     _scipy_find_peaks = None
+    _scipy_argrelextrema = None
 
 # Import the pre-computation accelerator
 from indicators import build_rich_analysis_from_indicators
@@ -403,8 +405,8 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
         df_copy['SMA50'] = df_copy['Close'].rolling(window=50).mean()
     today_sma20 = df_copy['SMA20'].iloc[-1]
     today_sma50 = df_copy['SMA50'].iloc[-1]
-    above_20sma = bool(buy_price > today_sma20) if not pd.isna(today_sma20) else False
-    above_50sma = bool(buy_price > today_sma50) if not pd.isna(today_sma50) else False
+    above_20sma = bool(cmp > today_sma20) if not pd.isna(today_sma20) else False
+    above_50sma = bool(cmp > today_sma50) if not pd.isna(today_sma50) else False
 
     # Compute RSI (14) for recommendation
     close_series = df_copy['Close']
@@ -600,6 +602,35 @@ def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=N
             cci_reasoning = f"CCI is at {cci_val:.1f} ({cci_status}), reflecting temporary sideways consolidation."
         else:
             cci_reasoning = f"CCI at {cci_val:.1f} ({cci_status}) shows extreme selling exhaustion, signaling an upward pivot."
+
+        # OI interpretation (when futures OI column is present)
+        oi_status = None
+        oi_interp = None
+        oi_reasoning = ""
+        if 'Open Interest' in df.columns and len(df) >= 2:
+            try:
+                prev_close = close_series.iloc[-2]
+                curr_close = close_series.iloc[-1]
+                prev_oi = df['Open Interest'].iloc[-2]
+                curr_oi = df['Open Interest'].iloc[-1]
+                if pd.notna(prev_oi) and pd.notna(curr_oi):
+                    price_up = curr_close > prev_close
+                    oi_up = curr_oi > prev_oi
+                    if price_up and oi_up:
+                        oi_status = "Long Build-up"
+                        oi_interp = "Bullish – New long positions are being created. Strong buying interest."
+                    elif not price_up and oi_up:
+                        oi_status = "Short Build-up"
+                        oi_interp = "Bearish – New short positions are being created. Strong selling interest."
+                    elif price_up and not oi_up:
+                        oi_status = "Short Covering"
+                        oi_interp = "Bullish – Existing short sellers are closing positions, causing price to rise."
+                    else:
+                        oi_status = "Long Unwinding"
+                        oi_interp = "Bearish – Existing long holders are exiting positions."
+                    oi_reasoning = f"OI Analysis: {oi_status} ({oi_interp})."
+            except Exception:
+                pass
 
         # Extract execution parameters (Stop Loss and Target) from base_rec_text
         sl_target_part = ""
@@ -1723,23 +1754,24 @@ def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivo
 # VOLUME PROFILE SCANNER
 # ==========================================
 
-from scipy.signal import argrelextrema
-
 PIVOT_LENGTH = 20
 PROFILE_LEVELS = 25
 BUY_ZONE_THRESHOLD = 35
 
 def find_last_pivot_swing(df, pivot_length=20):
+    if _scipy_argrelextrema is None:
+        return None
+
     highs = df['High'].values
     lows = df['Low'].values
 
-    pivot_highs = argrelextrema(
+    pivot_highs = _scipy_argrelextrema(
         highs,
         np.greater_equal,
         order=pivot_length
     )[0]
 
-    pivot_lows = argrelextrema(
+    pivot_lows = _scipy_argrelextrema(
         lows,
         np.less_equal,
         order=pivot_length

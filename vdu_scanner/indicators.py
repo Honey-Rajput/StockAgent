@@ -347,7 +347,7 @@ def build_rich_analysis_from_indicators(indicators: dict, symbol: str, strategy_
         else:
             sl_target_part = base_rec_text
 
-        final_text = f"{rsi_reasoning} {cci_reasoning} {ma_reasoning} {sl_target_part}"
+        final_text = f"{rsi_reasoning} {cci_reasoning} {ma_reasoning} {oi_reasoning} {sl_target_part}"
 
         analysis_payload = {
             "is_rich": True,
