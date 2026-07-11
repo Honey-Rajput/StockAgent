@@ -7,7 +7,7 @@ import streamlit as st
 
 import watchlist
 from data_fetcher import get_stock_sector
-from utils import get_day_change_badge_html
+from utils import get_day_change_badge_html, get_signal_badge_html
 
 
 def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
