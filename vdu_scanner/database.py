@@ -410,6 +410,10 @@ def init_db() -> bool:
             "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_50sma_pct DOUBLE PRECISION;",
             "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_65sma_pct DOUBLE PRECISION;",
             "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_200sma_pct DOUBLE PRECISION;",
+            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS passes_daily BOOLEAN;",
+            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS passes_weekly BOOLEAN;",
+            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS passes_monthly BOOLEAN;",
+            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS near_breakout BOOLEAN;",
             "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS above_200dma BOOLEAN DEFAULT FALSE;",
             
             "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
@@ -780,7 +784,8 @@ def get_cached_trend_setups(date_str: str, setup_type: str) -> list[dict]:
     SELECT symbol, company_name, cmp, day_change_pct, setup_type, scan_date,
            buy_price, exit_price, target_price, confidence, recommendation,
            run_up_200, run_up_52w, is_early,
-           dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct
+           dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
+           passes_daily, passes_weekly, passes_monthly, near_breakout
     FROM scanned_trend_setups
     WHERE scan_date = %s AND setup_type = %s;
     """
@@ -1393,8 +1398,9 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         INSERT INTO scanned_trend_setups (symbol, company_name, cmp, day_change_pct, setup_type, scan_date,
                                          buy_price, exit_price, target_price, confidence, recommendation,
                                          run_up_200, run_up_52w, is_early,
-                                         dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                                         dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
+                                         passes_daily, passes_weekly, passes_monthly, near_breakout)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         for r in trend_setups:
             cur.execute(insert_trend_query, (
@@ -1415,7 +1421,11 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 float(r['dist_20sma_pct']) if r.get('dist_20sma_pct') is not None else None,
                 float(r['dist_50sma_pct']) if r.get('dist_50sma_pct') is not None else None,
                 float(r['dist_65sma_pct']) if r.get('dist_65sma_pct') is not None else None,
-                float(r['dist_200sma_pct']) if r.get('dist_200sma_pct') is not None else None
+                float(r['dist_200sma_pct']) if r.get('dist_200sma_pct') is not None else None,
+                bool(r['passes_daily']) if r.get('passes_daily') is not None else None,
+                bool(r['passes_weekly']) if r.get('passes_weekly') is not None else None,
+                bool(r['passes_monthly']) if r.get('passes_monthly') is not None else None,
+                bool(r['near_breakout']) if r.get('near_breakout') is not None else None,
             ))
  
         # 3.9. Insert new WT Cross setups
@@ -1803,7 +1813,7 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         UNION ALL
         SELECT symbol, scan_date, 'Volume Profile' as source, 0 AS score FROM scanned_volume_profile WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
-        SELECT symbol, scan_date, 'Support RSI' as source, rsi_value as score FROM scanned_support_rsi WHERE scan_date IN (SELECT scan_date FROM recent_dates)
+        SELECT symbol, scan_date, 'Support RSI' as source, rsi as score FROM scanned_support_rsi WHERE scan_date IN (SELECT scan_date FROM recent_dates)
         UNION ALL
         SELECT symbol, scan_date, 'Weekly Momentum' as source, weekly_score as score FROM scanned_weekly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
     ),
