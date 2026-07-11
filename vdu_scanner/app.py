@@ -1878,10 +1878,12 @@ st.sidebar.markdown('---')
 # --- RUN SCAN ACTION ---
 if st.sidebar.button("🔍 Run Scanner", width="stretch"):
     # Resolve the universe selected in the sidebar
-    if "NIFTY 50" in universe_selection:
-        universe_key = "NIFTY 50"
+    if "NIFTY 500" in universe_selection:
+        universe_key = "NIFTY 500"
     elif "NIFTY 100" in universe_selection:
         universe_key = "NIFTY 100"
+    elif "NIFTY 50" in universe_selection:
+        universe_key = "NIFTY 50"
     elif "WATCHLIST" in universe_selection.upper():
         universe_key = "WATCHLIST"
     else:
@@ -1925,7 +1927,7 @@ if st.sidebar.button("🔍 Run Scanner", width="stretch"):
             
             status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
             import time
-            chunk_size = 500  # Increased from 300 for fewer API calls
+            chunk_size = 100  # Reduced to avoid yfinance URI length and timeout errors on large lists
             ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
             
             # Thread-safe accumulators for parallel quote downloads
@@ -4071,10 +4073,12 @@ with tab_wave:
     
     if run_wt_btn:
         # Resolve the universe selected in the global sidebar
-        if "NIFTY 50" in universe_selection:
-            universe_key = "NIFTY 50"
+        if "NIFTY 500" in universe_selection:
+            universe_key = "NIFTY 500"
         elif "NIFTY 100" in universe_selection:
             universe_key = "NIFTY 100"
+        elif "NIFTY 50" in universe_selection:
+            universe_key = "NIFTY 50"
         elif "WATCHLIST" in universe_selection.upper():
             universe_key = "WATCHLIST"
         else:
@@ -4727,10 +4731,12 @@ with tab_monthly:
 
         # Resolve universe
         from data_fetcher import get_index_stocks, get_all_nse_symbols
-        if "NIFTY 50" in universe_selection:
-            mm_universe = get_index_stocks("NIFTY 50")
+        if "NIFTY 500" in universe_selection:
+            mm_universe = get_index_stocks("NIFTY 500")
         elif "NIFTY 100" in universe_selection:
             mm_universe = get_index_stocks("NIFTY 100")
+        elif "NIFTY 50" in universe_selection:
+            mm_universe = get_index_stocks("NIFTY 50")
         else:
             mm_universe = get_all_nse_symbols()
 
@@ -5053,10 +5059,12 @@ with tab_weekly:
             import time as _time_wm
 
         from data_fetcher import get_index_stocks, get_all_nse_symbols
-        if "NIFTY 50" in universe_selection:
-            wm_universe = get_index_stocks("NIFTY 50")
+        if "NIFTY 500" in universe_selection:
+            wm_universe = get_index_stocks("NIFTY 500")
         elif "NIFTY 100" in universe_selection:
             wm_universe = get_index_stocks("NIFTY 100")
+        elif "NIFTY 50" in universe_selection:
+            wm_universe = get_index_stocks("NIFTY 50")
         else:
             wm_universe = get_all_nse_symbols()
 
@@ -5334,10 +5342,12 @@ with tab_vcs:
         vcs_interval = "1wk" if "Weekly" in vcs_timeframe else "1d"
         vcs_period = "5y" if vcs_interval == "1wk" else "1y"
         with st.spinner(f"Running custom VCS scan... downloading {vcs_timeframe} data..."):
-            if "NIFTY 50" in universe_selection:
-                universe_key = "NIFTY 50"
+            if "NIFTY 500" in universe_selection:
+                universe_key = "NIFTY 500"
             elif "NIFTY 100" in universe_selection:
                 universe_key = "NIFTY 100"
+            elif "NIFTY 50" in universe_selection:
+                universe_key = "NIFTY 50"
             elif "WATCHLIST" in universe_selection.upper():
                 universe_key = "WATCHLIST"
             else:
