@@ -1162,7 +1162,7 @@ min_price_chg = st.sidebar.slider(
     "Min Price Change %",
     min_value=0.0,
     max_value=30.0,
-    value=5.0,
+    value=7.0,
     step=0.5,
     key="vdu_min_price_chg_v5",
     help="Minimum price percentage increase on the breakout day (Close vs Open)"
@@ -1182,7 +1182,7 @@ min_dry_spikes = st.sidebar.slider(
     "Min Spikes in Dry Zone",
     min_value=0,
     max_value=20,
-    value=2,
+    value=7,
     step=1,
     key="vdu_min_dry_spikes_v6",
     help="Requires at least this many volume accumulation spikes inside the dry zone window (up to 20 spikes)"
