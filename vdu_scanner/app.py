@@ -1302,8 +1302,8 @@ if run_full or run_sma:
                 idx, chunk = idx_chunk_pair
                 _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
                 retries = 0
-                max_retries = 3
-                backoff = 2.0
+                max_retries = 5
+                backoff = 3.0
                 while retries <= max_retries:
                     try:
                         # yfinance 1.x: auto_adjust=True by default, threads param removed
@@ -1363,8 +1363,9 @@ if run_full or run_sma:
                         backoff *= 2.0
                 return ({}, {}, {}, {}, {})
             
-            # Parallel execution of Phase 1 quote downloads
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(ticker_chunks))) as p1_executor:
+            # Use a single worker for large universes to prevent aggressive yfinance rate-limiting
+            p1_workers = 1 if len(ticker_chunks) > 10 else min(3, len(ticker_chunks))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=p1_workers) as p1_executor:
                 chunk_pairs = list(enumerate(ticker_chunks))
                 for i, result in enumerate(p1_executor.map(_download_quote_chunk, chunk_pairs)):
                     _o, _c, _v, _h, _l = result
