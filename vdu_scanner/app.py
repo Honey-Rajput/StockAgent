@@ -6172,6 +6172,7 @@ with tab_stage_analysis:
             df_export = pd.DataFrame(sa_list)
             if 'sRet' in df_export.columns:
                 df_export.rename(columns={'sRet': 'sret'}, inplace=True)
+            df_export['symbol'] = df_export['symbol'].astype(str).str.replace('.NS', '', regex=False)
             df_export = df_export[['symbol', 'company_name', 'cmp', 'stage', 'template_str', 'score', 'sret', 'lo52', 'hi52']]
             df_export.columns = ['Symbol', 'Company', 'CMP', 'Stage', 'Template', 'Score', '6M Return', '52W Low', '52W High']
             
@@ -6201,6 +6202,7 @@ with tab_stage_analysis:
             
             for r in sa_list:
                 sym = r['symbol']
+                sym_display = sym.replace('.NS', '')
                 stg = r['stage']
                 tmpl = r['template_str']
                 sc = r['score']
@@ -6222,7 +6224,7 @@ with tab_stage_analysis:
                 tmpl_col = "#00FF00" if sc >= 7 else ("#FFFF00" if sc >= 5 else "#808080")
                 
                 html_parts.append('<tr style="border-bottom:1px solid #1e293b;">')
-                html_parts.append(f'<td style="padding:10px; font-weight:bold;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" style="color:#ffffff; text-decoration:none;">{sym}</a></td>')
+                html_parts.append(f'<td style="padding:10px; font-weight:bold;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{sym_display}" target="_blank" style="color:#ffffff; text-decoration:none;">{sym_display}</a></td>')
                 html_parts.append(f'<td style="padding:10px; color:{stg_col}; font-weight:bold; font-size:13px;">{stg_lbl}</td>')
                 html_parts.append(f'<td style="padding:10px; color:{tmpl_col}; font-weight:bold; font-size:13px;">{tmpl}</td>')
                 html_parts.append('</tr>')
