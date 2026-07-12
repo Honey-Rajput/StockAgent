@@ -6188,17 +6188,17 @@ with tab_stage_analysis:
             )
             
             # HTML Table rendering
-            html = '''
-            <table class="styled-table" style="width:100%; border-collapse:collapse; background:#0D1B2A; color:white; border: 1px solid #1e293b;">
-                <thead>
-                    <tr style="background:#1e293b; color:#C9A84C; font-size:14px; text-align:left;">
-                        <th style="padding:10px;">STOCK</th>
-                        <th style="padding:10px;">STAGE</th>
-                        <th style="padding:10px;">TEMPLATE</th>
-                    </tr>
-                </thead>
-                <tbody>
-            '''
+            html_parts = []
+            html_parts.append('<table class="styled-table" style="width:100%; border-collapse:collapse; background:#0D1B2A; color:white; border: 1px solid #1e293b;">')
+            html_parts.append('<thead>')
+            html_parts.append('<tr style="background:#1e293b; color:#C9A84C; font-size:14px; text-align:left;">')
+            html_parts.append('<th style="padding:10px;">STOCK</th>')
+            html_parts.append('<th style="padding:10px;">STAGE</th>')
+            html_parts.append('<th style="padding:10px;">TEMPLATE</th>')
+            html_parts.append('</tr>')
+            html_parts.append('</thead>')
+            html_parts.append('<tbody>')
+            
             for r in sa_list:
                 sym = r['symbol']
                 stg = r['stage']
@@ -6221,19 +6221,15 @@ with tab_stage_analysis:
                     
                 tmpl_col = "#00FF00" if sc >= 7 else ("#FFFF00" if sc >= 5 else "#808080")
                 
-                html += f'''
-                <tr style="border-bottom:1px solid #1e293b;">
-                    <td style="padding:10px; font-weight:bold;">
-                        <a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" style="color:#ffffff; text-decoration:none;">{sym}</a>
-                    </td>
-                    <td style="padding:10px; color:{stg_col}; font-weight:bold; font-size:13px;">{stg_lbl}</td>
-                    <td style="padding:10px; color:{tmpl_col}; font-weight:bold; font-size:13px;">{tmpl}</td>
-                </tr>
-                '''
-            html += "</tbody></table>"
-            # Remove newlines to prevent markdown from rendering indented HTML as a code block
-            html_minified = html.replace('\\n', ' ')
-            st.markdown(html_minified, unsafe_allow_html=True)
+                html_parts.append('<tr style="border-bottom:1px solid #1e293b;">')
+                html_parts.append(f'<td style="padding:10px; font-weight:bold;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" style="color:#ffffff; text-decoration:none;">{sym}</a></td>')
+                html_parts.append(f'<td style="padding:10px; color:{stg_col}; font-weight:bold; font-size:13px;">{stg_lbl}</td>')
+                html_parts.append(f'<td style="padding:10px; color:{tmpl_col}; font-weight:bold; font-size:13px;">{tmpl}</td>')
+                html_parts.append('</tr>')
+                
+            html_parts.append("</tbody></table>")
+            final_html = "".join(html_parts)
+            st.markdown(final_html, unsafe_allow_html=True)
             
         else:
             st.info("✅ Scan completed — no setups found for the selected universe.")
