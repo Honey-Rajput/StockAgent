@@ -1150,8 +1150,8 @@ st.sidebar.markdown('### 🔍 VDU Strategy Filters')
 # Algorithmic parameter sliders
 min_vol_ratio = st.sidebar.slider(
     "Min Volume Ratio",
-    min_value=2.0,
-    max_value=10.0,
+    min_value=1.0,
+    max_value=15.0,
     value=2.5,
     step=0.5,
     key="vdu_min_vol_ratio_v5",
@@ -1160,8 +1160,8 @@ min_vol_ratio = st.sidebar.slider(
 
 min_price_chg = st.sidebar.slider(
     "Min Price Change %",
-    min_value=1.5,
-    max_value=10.0,
+    min_value=0.0,
+    max_value=30.0,
     value=7.0,
     step=0.5,
     key="vdu_min_price_chg_v5",
@@ -1693,7 +1693,6 @@ with tab_results:
         m3.markdown(f'<div class="glass-card metric-glow-amber"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Highest Signal Score</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ffa000;">{top_score:.1f} <span style="font-size: 1.1rem; color: #94a3b8;">pts</span></h3></div>', unsafe_allow_html=True)
         m4.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Avg Volume Ratio</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{avg_vol_ratio:.2f}x</h3></div>', unsafe_allow_html=True)
         st.markdown("---")
-        st.info("💡 **Trading Note on Live Data**: Scans performed during active NSE market hours (9:15 AM - 3:30 PM IST) dynamically process real-time updates for today's active candle. Indicators (RSI, CCI) and scanner scores will naturally vary as today's close prices fluctuate. Scans run after market hours are 100% static and deterministic.")
         
         # 2. Main Scan Table
         if scan_data is None:
@@ -2264,7 +2263,6 @@ with tab_watchlist:
 with tab_ai:
     st.markdown("### 🤖 Technical Chart Pattern Recognition with AI")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Inspect daily candle charts with Euri / Groq AI technical analysts and save/cache findings in Neon PostgreSQL database.</p>", unsafe_allow_html=True)
-    st.info("💡 **Trading Note on Live Data**: Scans performed during active NSE market hours (9:15 AM - 3:30 PM IST) dynamically process real-time updates for today's active candle. Indicators (RSI, CCI) and scanner scores will naturally vary as today's close prices fluctuate. Scans run after market hours are 100% static and deterministic.")
     st.markdown("---")
 
     # Fetch available symbols for analyzer
@@ -6116,12 +6114,12 @@ with tab_stage_analysis:
             def process_sa_chunk(c_idx, chunk):
                 chunk_results = []
                 try:
-                    data = yf.download(chunk, period="1y", interval="1d", group_by="ticker", threads=True, progress=False)
+                    data = yf.download(chunk, period="2y", interval="1d", group_by="ticker", threads=True, progress=False)
                     for sym in chunk:
                         try:
                             df = data[sym] if len(chunk) > 1 else data
                             df = df.dropna(subset=['Close'])
-                            if len(df) >= 252:
+                            if len(df) >= 200:
                                 res = scan_stage_analysis(sym, df, bRet)
                                 if res: chunk_results.append(res)
                         except Exception as e: pass
