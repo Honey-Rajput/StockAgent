@@ -4284,7 +4284,7 @@ with tab_vcs:
     if run_zanger_btn:
         with st.spinner("Running Dan Zanger scan..."):
             import yfinance as yf
-            from zanger_scanner import ZangerConfig, scan_zanger, get_latest_signal
+            from zanger_scanner import ZangerConfig, scan_zanger, get_latest_signal, rank_signals
             
             if "NIFTY 500" in universe_selection:
                 universe_key = "NIFTY 500"
@@ -4353,16 +4353,28 @@ with tab_vcs:
                 except Exception as e:
                     pass
             
-            st.session_state.zanger_results = zanger_results
             if len(zanger_results) > 0:
+                import pandas as pd
+                hits_df = pd.DataFrame(zanger_results)
+                ranked_df = rank_signals(hits_df, cfg)
+                # Convert back to dicts for session_state to be consistent
+                st.session_state.zanger_results = ranked_df.to_dict('records')
                 st.success(f"Dan Zanger Scan Complete! Found {len(zanger_results)} setups.")
             else:
+                st.session_state.zanger_results = []
                 st.info("No Dan Zanger setups found today.")
                 
     if st.session_state.get('zanger_results') is not None:
         if len(st.session_state.zanger_results) > 0:
             import pandas as pd
             z_df = pd.DataFrame(st.session_state.zanger_results)
+            # Reorder columns to put rank and symbol first
+            cols = list(z_df.columns)
+            if 'rank' in cols and 'symbol' in cols:
+                cols.insert(0, cols.pop(cols.index('rank')))
+                cols.insert(1, cols.pop(cols.index('symbol')))
+                cols.insert(2, cols.pop(cols.index('company_name')))
+                z_df = z_df[cols]
             st.dataframe(z_df, use_container_width=True)
         else:
             st.info("No Dan Zanger setups found.")

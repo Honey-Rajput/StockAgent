@@ -26,6 +26,11 @@ class ZangerConfig:
 
     min_close_above_base_pct: float = 0.0  # 0 = just needs to close above resistance
 
+    # --- ranking weights (used by rank_signals / bulk scan) ---
+    max_acceptable_risk_pct: float = 15.0  # stop distances above this get penalized hard
+    volume_weight: float = 0.6             # how much conviction (volume) matters vs risk
+    risk_weight: float = 0.4
+
 
 # ---------------------------------------------------------------------------
 # Core indicators
@@ -134,10 +139,14 @@ def scan_zanger(df: pd.DataFrame, cfg: ZangerConfig = ZangerConfig()) -> pd.Data
     )
 
     out["suggested_stop"] = out[["base_low", "Low"]].max(axis=1)
+    out["risk_pct"] = (out["Close"] - out["suggested_stop"]) / out["Close"] * 100
+
     return out
 
 def get_latest_signal(df_result: pd.DataFrame) -> dict:
     row = df_result.iloc[-1]
+    vol_ratio = row["Volume"] / row["avg_vol"] if row["avg_vol"] else None
+    risk_pct = row["risk_pct"] if pd.notna(row["risk_pct"]) else None
     return {
         "date": df_result.index[-1],
         "close": row["Close"],
@@ -145,6 +154,38 @@ def get_latest_signal(df_result: pd.DataFrame) -> dict:
         "setup_type": row["setup_type"],
         "prior_run_pct": round(row["prior_run_pct"], 1) if pd.notna(row["prior_run_pct"]) else None,
         "base_depth_pct": round(row["base_depth_pct"], 1) if pd.notna(row["base_depth_pct"]) else None,
-        "breakout_volume_ratio": round(row["Volume"] / row["avg_vol"], 2) if row["avg_vol"] else None,
+        "breakout_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
         "suggested_stop": round(row["suggested_stop"], 2) if pd.notna(row["suggested_stop"]) else None,
+        "risk_pct": round(risk_pct, 2) if risk_pct is not None else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Ranking - conviction (volume) vs. risk (stop distance)
+# ---------------------------------------------------------------------------
+
+def rank_signals(hits: pd.DataFrame, cfg: ZangerConfig = ZangerConfig()) -> pd.DataFrame:
+    df = hits.copy()
+    if df.empty:
+        return df
+
+    max_vol_ratio = df["breakout_volume_ratio"].max() or 1
+    df["volume_score"] = (df["breakout_volume_ratio"] / max_vol_ratio * 100).clip(0, 100)
+
+    def risk_score(risk_pct):
+        if pd.isna(risk_pct):
+            return 0
+        if risk_pct <= cfg.max_acceptable_risk_pct:
+            return max(0, 100 - (risk_pct / cfg.max_acceptable_risk_pct) * 60)
+        overshoot = risk_pct - cfg.max_acceptable_risk_pct
+        return max(0, 40 - overshoot * 4)
+
+    df["risk_score"] = df["risk_pct"].apply(risk_score)
+
+    df["conviction_score"] = (
+        df["volume_score"] * cfg.volume_weight + df["risk_score"] * cfg.risk_weight
+    ).round(1)
+
+    df = df.sort_values("conviction_score", ascending=False).reset_index(drop=True)
+    df["rank"] = df.index + 1
+    return df
