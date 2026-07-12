@@ -134,8 +134,8 @@ def scan_stock(
             dry_zone_df = history_df.iloc[start_idx : idx + 1]
             dry_avg_vol = dry_zone_df['Volume'].mean()
             
-            # Enforce quality filter: consolidation zone average volume MUST be dry (<= 60% of baseline average)
-            if dry_avg_vol > 0 and dry_avg_vol <= (0.60 * baseline_avg_vol):
+            # Enforce quality filter: consolidation zone average volume MUST be dry (<= 90% of baseline average)
+            if dry_avg_vol > 0 and dry_avg_vol <= (0.90 * baseline_avg_vol):
                 # Count spikes (non-dry volume days where Volume > 40% of baseline) inside the window
                 not_dry_count = is_not_dry_mask.iloc[start_idx : idx + 1].sum()
                 if not_dry_count >= min_dry_spikes:
@@ -210,7 +210,7 @@ def scan_stock(
     #    Reward how "dry" the consolidation was relative to baseline.
     #    The drier the zone, the higher the quality of accumulation.
     dryness_ratio = dry_avg_vol / baseline_avg_vol  # e.g. 0.30 means 30% of baseline
-    dryness_score = max(0.0, (0.60 - dryness_ratio) / 0.60 * 20.0)  # up to 20 pts
+    dryness_score = max(0.0, (0.90 - dryness_ratio) / 0.90 * 20.0)  # up to 20 pts
     score += dryness_score
     # 4. Moving Average filter: 10 points
     if above_50dma:

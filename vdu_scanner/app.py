@@ -1233,11 +1233,8 @@ st.sidebar.markdown('---')
 
 
 # --- RUN SCAN ACTION ---
-col_scan1, col_scan2 = st.sidebar.columns(2)
-with col_scan1:
-    run_full = st.button("🔍 Run Full Scanner", use_container_width=True)
-with col_scan2:
-    run_sma = st.button("📈 Run SMA Only", use_container_width=True)
+run_full = st.sidebar.button("🔍 Run Full Scanner", use_container_width=True)
+run_sma = False
 
 if run_full or run_sma:
     scan_mode_flag = "sma_only" if run_sma else "full"
@@ -1666,7 +1663,7 @@ scan_data = st.session_state.scan_results
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "🚀 Gap-Up", "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
-    "📅 History", "📉 VCS", "🎯 VCP", "🚀 Stage2 Brk",
+    "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP", "🚀 Stage2 Brk",
     "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "📈 9/21 EMA Support", "🏆 Stage Analysis"
 ])
 
@@ -4261,54 +4258,22 @@ with tab_weekly:
 # ==============================================================================
 with tab_vcs:
     st.markdown("### 📉 Volatility Contraction Scanner (VCS)")
-    st.markdown("Identifies stocks with tightening ATR, Standard Deviation, and Volume contraction.")
+# ==============================================================================
+# TAB: DAN ZANGER SCANNER
+# ==============================================================================
+with tab_vcs:
+    st.markdown("### 📉 Dan Zanger Breakout Scanner")
+    st.markdown("Identifies stocks meeting Dan Zanger's criteria: Uptrend stack, prior massive run, shallow base, and high-volume breakout.")
     st.markdown("---")
     
-    # 1. Metrics row
-    v_m1, v_m2, v_m3 = st.columns(3)
+    col_btn, col_note = st.columns([1, 2])
+    run_zanger_btn = col_btn.button("🔍 Run Dan Zanger Scan", type="primary", use_container_width=True)
     
-    # Pick up background scan results if available
-    if not st.session_state.get('vcs_results') and ALL_TAB_SCAN_STATUS["vcs_results"] is not None:
-        st.session_state.vcs_results = ALL_TAB_SCAN_STATUS["vcs_results"]
-
-    vcs_data = st.session_state.get('vcs_results', None)
-    if vcs_data:
-        vcs_count = len(vcs_data)
-        min_vcs_score = min(r['vcs_score'] for r in vcs_data) if vcs_count > 0 else 0.0
-        avg_vcs_score = sum(r['vcs_score'] for r in vcs_data) / vcs_count if vcs_count > 0 else 0.0
-    else:
-        vcs_count = 0
-        min_vcs_score = 0.0
-        avg_vcs_score = 0.0
-        
-    v_m1.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">VCS Setups Found</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{vcs_count}</h3></div>', unsafe_allow_html=True)
-    v_m2.markdown(f'<div class="glass-card metric-glow-green"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Tightest Volatility Score</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#00e676;">{min_vcs_score:.2f}</h3></div>', unsafe_allow_html=True)
-    v_m3.markdown(f'<div class="glass-card metric-glow-amber"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Avg VCS Rating</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ffa000;">{avg_vcs_score:.1f} <span style="font-size: 1.1rem; color: #94a3b8;">pts</span></h3></div>', unsafe_allow_html=True)
-    
-    st.markdown("---")
-    st.markdown("#### Scanner Parameters")
-    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-    with col1:
-        vcs_timeframe = st.selectbox("Timeframe", ["Daily (1d)", "Weekly (1wk)"], index=0)
-    with col2:
-        vcs_min_price_chg = st.number_input("Min % Chg", min_value=-50.0, max_value=100.0, value=-5.0, step=0.5)
-    with col3:
-        vcs_len_short = st.number_input("Short ATR Len", min_value=1, max_value=100, value=13)
-    with col4:
-        vcs_len_long = st.number_input("Long ATR Len", min_value=1, max_value=200, value=63)
-    with col5:
-        vcs_len_vol = st.number_input("Volume Len", min_value=1, max_value=200, value=50)
-    with col6:
-        vcs_sensitivity = st.number_input("Sensitivity", min_value=0.1, max_value=10.0, value=2.0, step=0.1)
-    with col7:
-        vcs_max_score = st.number_input("Max Score Limit", min_value=1.0, max_value=100.0, value=10.0, step=1.0)
-        
-    run_vcs_btn = st.button("🔍 Run Custom VCS Scan", width="stretch", type="primary")
-    
-    if run_vcs_btn:
-        vcs_interval = "1wk" if "Weekly" in vcs_timeframe else "1d"
-        vcs_period = "5y" if vcs_interval == "1wk" else "1y"
-        with st.spinner(f"Running custom VCS scan... downloading {vcs_timeframe} data..."):
+    if run_zanger_btn:
+        with st.spinner("Running Dan Zanger scan..."):
+            import yfinance as yf
+            from zanger_scanner import ZangerConfig, scan_zanger, get_latest_signal
+            
             if "NIFTY 500" in universe_selection:
                 universe_key = "NIFTY 500"
             elif "NIFTY 100" in universe_selection:
@@ -4323,109 +4288,68 @@ with tab_vcs:
             if universe_key == "WATCHLIST":
                 import watchlist
                 wl = watchlist.load_watchlist()
-                custom_candidates = [s for s in wl['symbol'].tolist() if pd.notna(s)]
+                zanger_candidates = [s for s in wl['symbol'].tolist() if pd.notna(s)]
             else:
-                custom_candidates = get_index_stocks(universe_key)
+                from data_fetcher import get_index_stocks
+                zanger_candidates = get_index_stocks(universe_key)
             
-            custom_vcs_results = []
+            zanger_results = []
             chunk_size = 50
-            chunks = [custom_candidates[i:i+chunk_size] for i in range(0, len(custom_candidates), chunk_size)]
+            chunks = [zanger_candidates[i:i+chunk_size] for i in range(0, len(zanger_candidates), chunk_size)]
+            cfg = ZangerConfig()
             
-            for c_idx, chunk in enumerate(chunks):
+            for chunk in chunks:
                 tkrs = [f"{s}.NS" for s in chunk]
                 try:
-                    df_vcs = yf.download(tickers=tkrs, period=vcs_period, interval=vcs_interval, progress=False, threads=False)
-                    if not df_vcs.empty:
+                    df_zanger = yf.download(tickers=tkrs, period="1y", interval="1d", progress=False, threads=False)
+                    if not df_zanger.empty:
                         for sym in chunk:
                             try:
-                                if isinstance(df_vcs.columns, pd.MultiIndex):
-                                    all_tkrs = df_vcs.columns.get_level_values(1).unique().tolist()
+                                if isinstance(df_zanger.columns, pd.MultiIndex):
+                                    all_tkrs = df_zanger.columns.get_level_values(1).unique().tolist()
                                     matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
                                     if not matched_t:
                                         continue
-                                    t_df = df_vcs.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                    t_df = df_zanger.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
                                 else:
-                                    t_df = df_vcs.dropna(subset=['Close'])
+                                    t_df = df_zanger.dropna(subset=['Close'])
                                     
-                                if not t_df.empty and len(t_df) >= vcs_len_long:
+                                if not t_df.empty and len(t_df) > cfg.ma_slowest + 5:
                                     t_df = t_df.reset_index()
-                                    t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
-                                    res = scan_vcs(sym, t_df, 
-                                                   lenShort=vcs_len_short, 
-                                                   lenLong=vcs_len_long, 
-                                                   lenVol=vcs_len_vol, 
-                                                   sensitivity=vcs_sensitivity, 
-                                                   max_score=vcs_max_score)
-                                    if res:
-                                        if res.get('day_change_pct', 0.0) >= vcs_min_price_chg:
-                                            res['Timeframe'] = vcs_timeframe
-                                            res['Action'] = res.get('recommendation', 'Wait')
-                                            custom_vcs_results.append(res)
-                            except Exception:
+                                    if 'Date' not in t_df.columns:
+                                        t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                    t_df['Date'] = pd.to_datetime(t_df['Date'])
+                                    t_df.set_index('Date', inplace=True)
+                                    
+                                    res_df = scan_zanger(t_df, cfg)
+                                    latest = get_latest_signal(res_df)
+                                    
+                                    if latest.get("zanger_signal", False):
+                                        from config import get_company_name
+                                        latest["symbol"] = sym
+                                        latest["company_name"] = get_company_name(sym)
+                                        zanger_results.append(latest)
+                            except Exception as e:
                                 pass
-                except Exception:
+                except Exception as e:
                     pass
             
-            st.session_state.vcs_results = custom_vcs_results
-            try:
-                today_ist_str = get_market_date()
-                database.save_vcs_only(today_ist_str, custom_vcs_results)
-            except Exception as e:
-                print(f"Failed to cache custom VCS scan: {e}")
-            if len(custom_vcs_results) > 0:
-                st.success(f"Custom VCS Scan Complete! Found {len(custom_vcs_results)} stocks and saved to database.")
-
-    st.markdown("---")
-    
-    if st.session_state.vcs_results is None:
-        # Background scan progress indicator
-        if ALL_TAB_SCAN_STATUS["is_running"]:
-            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
-            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
-            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
-            st.markdown(f"""
-            <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
-                <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
-                    <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
-                </h4>
-                <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. VCS results will appear here when ready!</p>
-                <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
-            </div>
-            <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
-            """, unsafe_allow_html=True)
-            st.progress(_bg_progress)
-            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vcs_status_btn"):
-                st.rerun()
+            st.session_state.zanger_results = zanger_results
+            if len(zanger_results) > 0:
+                st.success(f"Dan Zanger Scan Complete! Found {len(zanger_results)} setups.")
+            else:
+                st.info("No Dan Zanger setups found today.")
                 
-        st.info("💡 Adjust parameters above and click 'Run Custom VCS Scan' to find setups, or run the global scanner from the sidebar.")
-    elif len(st.session_state.vcs_results) == 0:
-        st.info(f"ℹ️ No VCS setups found with a score < {vcs_max_score} today.")
+    if st.session_state.get('zanger_results') is not None:
+        if len(st.session_state.zanger_results) > 0:
+            import pandas as pd
+            z_df = pd.DataFrame(st.session_state.zanger_results)
+            st.dataframe(z_df, use_container_width=True)
+        else:
+            st.info("No Dan Zanger setups found.")
     else:
-        col_btn, _ = st.columns([2, 8])
-        with col_btn:
-            v_export_list = []
-            for r in st.session_state.vcs_results:
-                row = dict(r)
-                if 'recommendation' in row:
-                    row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
-                v_export_list.append(row)
-            vcs_df = pd.DataFrame(v_export_list)
-            csv_data = vcs_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="⬇️ Download CSV",
-                data=csv_data,
-                file_name="vcs_scan_results.csv",
-                mime="text/csv",
-                width="stretch"
-            )
-        render_unified_strategy_table(st.session_state.vcs_results, "vcs", "vcs_tab")
+        st.info("💡 Click 'Run Dan Zanger Scan' to find breakouts.")
 
-# ==============================================================================
-# TAB: STRUCTURAL VCP
-# ==============================================================================
-with tab_vcp:
-    st.markdown("### 🎯 Structural Volatility Contraction Pattern (VCP)")
-    st.markdown("Hunts for textbook VCP patterns: Flat-top resistance, successive higher lows (tightening), and extreme volume dry-up on the right side.")
     
     if st.session_state.structural_vcp_results is None:
         st.info("💡 Run the main scanner from the sidebar to populate Structural VCP setups.")
