@@ -2525,7 +2525,7 @@ def scan_stage_analysis(symbol: str, df: pd.DataFrame, bench_ret: float) -> dict
             'stage': stage,
             'score': int(score),
             'template_str': f"{int(score)}/8",
-            'sRet': round(sRet, 4),
+            'sret': round(sRet, 4),
             'lo52': round(lo52, 2),
             'hi52': round(hi52, 2)
         }

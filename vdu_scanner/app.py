@@ -6170,7 +6170,9 @@ with tab_stage_analysis:
             # Excel Download button
             import io
             df_export = pd.DataFrame(sa_list)
-            df_export = df_export[['symbol', 'company_name', 'cmp', 'stage', 'template_str', 'score', 'sRet', 'lo52', 'hi52']]
+            if 'sRet' in df_export.columns:
+                df_export.rename(columns={'sRet': 'sret'}, inplace=True)
+            df_export = df_export[['symbol', 'company_name', 'cmp', 'stage', 'template_str', 'score', 'sret', 'lo52', 'hi52']]
             df_export.columns = ['Symbol', 'Company', 'CMP', 'Stage', 'Template', 'Score', '6M Return', '52W Low', '52W High']
             
             buffer = io.BytesIO()

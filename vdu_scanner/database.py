@@ -2462,7 +2462,7 @@ def save_stage_analysis_only(date_str: str, results: list[dict]) -> bool:
                 int(r['stage']),
                 int(r['score']),
                 str(r['template_str']),
-                float(r['sRet']),
+                float(r.get('sret', r.get('sRet', 0.0))),
                 float(r['lo52']),
                 float(r['hi52']),
                 date_str
