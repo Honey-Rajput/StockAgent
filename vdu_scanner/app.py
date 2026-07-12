@@ -4254,11 +4254,6 @@ with tab_weekly:
 
 
 # ==============================================================================
-# TAB VCS: VOLATILITY CONTRACTION SCANNER
-# ==============================================================================
-with tab_vcs:
-    st.markdown("### 📉 Volatility Contraction Scanner (VCS)")
-# ==============================================================================
 # TAB: DAN ZANGER SCANNER
 # ==============================================================================
 with tab_vcs:
@@ -4381,6 +4376,11 @@ with tab_vcs:
     else:
         st.info("💡 Click 'Run Dan Zanger Scan' to find breakouts.")
 
+# ==============================================================================
+# TAB: STRUCTURAL VCP
+# ==============================================================================
+with tab_vcp:
+    st.markdown("### 🎯 Structural Volatility Contraction Pattern (VCP)")
     
     if st.session_state.structural_vcp_results is None:
         st.info("💡 Run the main scanner from the sidebar to populate Structural VCP setups.")
