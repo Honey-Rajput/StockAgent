@@ -68,7 +68,6 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
         
     today_close_val = df['Close'].iloc[-1]
     if today_close_val <= 200.0:
-        res["failed"] = True
         return res
     
     # =====================================================================
