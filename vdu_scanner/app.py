@@ -6128,11 +6128,13 @@ with tab_stage_analysis:
                 except Exception as e: pass
                 return chunk_results
                 
+            import time
             for c_idx, chunk in enumerate(chunks):
                 status_text.text(f"Scanning chunk {c_idx+1}/{len(chunks)}...")
                 chunk_res = process_sa_chunk(c_idx, chunk)
                 results_list.extend(chunk_res)
                 progress_bar.progress((c_idx + 1) / len(chunks))
+                time.sleep(0.5) # Throttle to prevent rate limit
                 
             today_str = get_market_date(for_display=False)
             database.save_stage_analysis_only(today_str, results_list)
@@ -6148,7 +6150,7 @@ with tab_stage_analysis:
     if st.session_state.stage_analysis_results is None:
         st.session_state.stage_analysis_results = database.get_cached_stage_analysis(sa_today_str)
         
-    if st.session_state.stage_analysis_results:
+    if st.session_state.stage_analysis_results is not None:
         sa_list = st.session_state.stage_analysis_results
         
         # Apply Universe Filter
