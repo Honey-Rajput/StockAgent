@@ -4264,6 +4264,18 @@ with tab_vcs:
 with tab_vcs:
     st.markdown("### 📉 Dan Zanger Breakout Scanner")
     st.markdown("Identifies stocks meeting Dan Zanger's criteria: Uptrend stack, prior massive run, shallow base, and high-volume breakout.")
+    
+    st.markdown("#### Scanner Parameters (Tweak if 0 results)")
+    col_z1, col_z2, col_z3 = st.columns(3)
+    z_min_run_pct = col_z1.number_input("Min Prior Run (%)", value=25.0, step=5.0)
+    z_hft_run_pct = col_z2.number_input("High-Tight Flag Run (%)", value=90.0, step=10.0)
+    z_max_base_depth = col_z3.number_input("Max Base Depth (%)", value=25.0, step=5.0)
+    
+    col_z4, col_z5, col_z6 = st.columns(3)
+    z_vol_mult = col_z4.number_input("Breakout Vol Multiplier", value=2.0, step=0.5)
+    z_base_lookback = col_z5.number_input("Base Lookback (Bars)", value=15, step=5)
+    z_hft_max_base = col_z6.number_input("HFT Max Base Depth (%)", value=20.0, step=5.0)
+
     st.markdown("---")
     
     col_btn, col_note = st.columns([1, 2])
@@ -4296,12 +4308,19 @@ with tab_vcs:
             zanger_results = []
             chunk_size = 50
             chunks = [zanger_candidates[i:i+chunk_size] for i in range(0, len(zanger_candidates), chunk_size)]
-            cfg = ZangerConfig()
+            cfg = ZangerConfig(
+                min_run_pct=float(z_min_run_pct),
+                hft_run_pct=float(z_hft_run_pct),
+                max_base_depth_pct=float(z_max_base_depth),
+                breakout_vol_mult=float(z_vol_mult),
+                base_lookback=int(z_base_lookback),
+                hft_max_base_depth_pct=float(z_hft_max_base)
+            )
             
             for chunk in chunks:
                 tkrs = [f"{s}.NS" for s in chunk]
                 try:
-                    df_zanger = yf.download(tickers=tkrs, period="1y", interval="1d", progress=False, threads=False)
+                    df_zanger = yf.download(tickers=tkrs, period="1100d", interval="1d", progress=False, threads=False)
                     if not df_zanger.empty:
                         for sym in chunk:
                             try:
