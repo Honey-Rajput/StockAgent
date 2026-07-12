@@ -43,7 +43,9 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
     last_df_date = df['Date'].iloc[-1].date()
     today_date = datetime.now(IST_TIMEZONE).date()
     
-    if last_df_date < today_date:
+    # Only append the live quote if we are scanning on a Daily timeframe.
+    # Otherwise, injecting a single day's quote into a Weekly/Monthly dataframe ruins the final candle.
+    if last_df_date < today_date and "Daily" in sma_timeframe:
         sym_clean = sym.strip().upper()
         if sym_clean in open_price_map and sym_clean in close_price_map:
             live_close = close_price_map[sym_clean]

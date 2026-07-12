@@ -1150,8 +1150,8 @@ st.sidebar.markdown('### 🔍 VDU Strategy Filters')
 # Algorithmic parameter sliders
 min_vol_ratio = st.sidebar.slider(
     "Min Volume Ratio",
-    min_value=1.0,
-    max_value=15.0,
+    min_value=2.0,
+    max_value=10.0,
     value=2.5,
     step=0.5,
     key="vdu_min_vol_ratio_v5",
@@ -1160,8 +1160,8 @@ min_vol_ratio = st.sidebar.slider(
 
 min_price_chg = st.sidebar.slider(
     "Min Price Change %",
-    min_value=0.0,
-    max_value=30.0,
+    min_value=1.5,
+    max_value=10.0,
     value=7.0,
     step=0.5,
     key="vdu_min_price_chg_v5",
