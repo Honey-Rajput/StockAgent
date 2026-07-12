@@ -6229,7 +6229,9 @@ with tab_stage_analysis:
                 </tr>
                 '''
             html += "</tbody></table>"
-            st.markdown(html, unsafe_allow_html=True)
+            # Remove newlines to prevent markdown from rendering indented HTML as a code block
+            html_minified = html.replace('\\n', ' ')
+            st.markdown(html_minified, unsafe_allow_html=True)
             
         else:
             st.info("✅ Scan completed — no setups found for the selected universe.")
