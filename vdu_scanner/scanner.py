@@ -2461,7 +2461,7 @@ def scan_stage_analysis(symbol: str, df: pd.DataFrame, bench_ret: float) -> dict
         return None
         
     try:
-        from utils import get_company_name
+        from config import get_company_name
         cmp = float(df['Close'].iloc[-1])
         
         # Calculate MAs
