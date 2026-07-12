@@ -1467,10 +1467,12 @@ if run_full or run_sma:
                     return chunk_data
 
                 import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                import time
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
+                        time.sleep(0.5) # Throttle chunk dispatching
                     
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
                         bulk_data.update(future.result())
@@ -6080,7 +6082,7 @@ with tab_stage_analysis:
             import yfinance as yf
             import concurrent.futures
             from scanner import scan_stage_analysis
-            from data_fetcher import get_index_stocks
+            from data_fetcher import get_index_stocks, get_all_nse_symbols
             
             # Fetch NIFTY 50 return
             try:
