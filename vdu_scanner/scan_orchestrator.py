@@ -369,7 +369,7 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
                 "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec, indicators=ind)
             }
 
-    if scan_mode == "all":
+    if scan_mode in ("all", "full"):
         if len(df_ma) >= 250:
             today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]; c_val = float(today_row['Close'])
             sma50 = float(today_row['SMA50']); sma150 = float(today_row['SMA150']); sma200 = float(today_row['SMA200'])
@@ -405,7 +405,7 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
             if (not above_50dma_only or scan_res.get('above_50dma', False)) and (not above_200dma_only or scan_res.get('above_200dma', False)):
                 res["flagged"] = scan_res
                 
-    if scan_mode == "all":
+    if scan_mode in ("all", "full"):
         df_wt = df
         if df_wt is not None and len(df_wt) >= 40:
             wt_res = scan_wt_cross(sym, df_wt, indicators=ind)
