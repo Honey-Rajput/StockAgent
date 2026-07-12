@@ -51,10 +51,11 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
             last_hist_close = df['Close'].iloc[-1]
             last_hist_vol = df['Volume'].iloc[-1]
             
+            import math
             # Prevent appending weekend/holiday duplicate candles.
-            # If the 1d "live" quote from yfinance exactly matches the last historical candle's
-            # close and volume, it means the market is closed and no new data exists for today.
-            if not (live_close == last_hist_close and live_vol == last_hist_vol):
+            # If the 1d "live" quote from yfinance matches the last historical candle's
+            # close, it means the market is closed (or price is entirely flat).
+            if not math.isclose(live_close, last_hist_close, rel_tol=1e-4):
                 new_row = {
                     'Date': pd.to_datetime(today_date),
                     'Open': open_price_map[sym_clean],
