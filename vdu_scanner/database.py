@@ -288,6 +288,23 @@ def init_db() -> bool:
         );
         """,
         """
+        CREATE TABLE IF NOT EXISTS scanned_stage_analysis (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            stage INT,
+            score INT,
+            template_str VARCHAR(20),
+            sret DOUBLE PRECISION,
+            lo52 DOUBLE PRECISION,
+            hi52 DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """,
+        """
         CREATE TABLE IF NOT EXISTS scanned_support_rsi (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
@@ -2423,3 +2440,63 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
     finally:
         if conn:
             conn.close()
+
+def save_stage_analysis_only(date_str: str, results: list[dict]) -> bool:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        
+        cur.execute("DELETE FROM scanned_stage_analysis WHERE scan_date = %s;", (date_str,))
+        
+        insert_query = """
+        INSERT INTO scanned_stage_analysis (symbol, company_name, cmp, stage, score, template_str, sret, lo52, hi52, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (symbol, scan_date) DO NOTHING;
+        """
+        for r in results:
+            cur.execute(insert_query, (
+                str(r['symbol']),
+                str(r.get('company_name', '')),
+                float(r['cmp']),
+                int(r['stage']),
+                int(r['score']),
+                str(r['template_str']),
+                float(r['sRet']),
+                float(r['lo52']),
+                float(r['hi52']),
+                date_str
+            ))
+            
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving stage analysis results: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_cached_stage_analysis(date_str: str) -> list[dict]:
+    query = "SELECT * FROM scanned_stage_analysis WHERE scan_date = %s ORDER BY stage ASC, score DESC;"
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        for r in rows:
+            r_dict = dict(r)
+            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            results.append(r_dict)
+    except Exception as e:
+        print(f"Error fetching cached stage analysis: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
+

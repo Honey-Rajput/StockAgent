@@ -13,14 +13,23 @@ from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, g
 from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
 from indicators import precompute_indicators
 
-def get_market_date():
+def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
     if today.isoweekday() == 7:
-        return (today - timedelta(days=2)).strftime('%Y-%m-%d')
+        target_date = (today - timedelta(days=2)).strftime('%Y-%m-%d')
     elif today.isoweekday() == 6:
-        return (today - timedelta(days=1)).strftime('%Y-%m-%d')
+        target_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
     else:
-        return today.strftime('%Y-%m-%d')
+        target_date = today.strftime('%Y-%m-%d')
+        
+    if for_display:
+        import database
+        if not database.has_scanned_today(target_date):
+            avail = database.get_available_scan_dates()
+            if avail:
+                return avail[0]
+                
+    return target_date
 
 
 import watchlist
@@ -915,7 +924,7 @@ if 'monthly_momentum_results' not in st.session_state:
 if 'weekly_momentum_results' not in st.session_state:
     st.session_state.weekly_momentum_results = None
 
-today_str_check = get_market_date()
+today_str_check = get_market_date(for_display=True)
 
 if st.session_state.monthly_momentum_results is None:
     # 1. Try fetching from PostgreSQL database first
@@ -1650,12 +1659,12 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_ai, tab_gapup, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_confluence, tab_support, tab_rsi_wt, tab_bb_squeeze) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_confluence, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_stage_analysis) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "🚀 Gap-Up", "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 VCS", "🎯 VCP", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "📈 9/21 EMA Support"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "📈 9/21 EMA Support", "🏆 Stage Analysis"
 ])
 
 # ==============================================================================
@@ -2304,9 +2313,10 @@ with tab_ai:
         
         # Get today's date in IST
         today_date_str = get_market_date()
+        display_date_str = get_market_date(for_display=True)
         
         # Check cache first (always check cache automatically to show today's output immediately!)
-        cached_result = database.get_pattern_by_date(ticker_to_analyze, today_date_str)
+        cached_result = database.get_pattern_by_date(ticker_to_analyze, display_date_str)
         
         if cached_result or btn_analyze:
             # We either load from cache or run live!
@@ -2518,7 +2528,7 @@ with tab_ai:
         st.info("💡 Run a market scan first from the sidebar to find breakout or contraction setups and dynamically batch-analyze them with AI here!")
     else:
         # Load cached patterns from database for all active flagged symbols
-        today_str = get_market_date()
+        today_str = get_market_date(for_display=True)
         
         flagged_db_records = {}
         all_today_patterns = database.get_all_patterns_by_date(today_str)
@@ -4458,7 +4468,7 @@ with tab_stage2:
     if st.session_state.stage2_results is None and ALL_TAB_SCAN_STATUS["stage2_results"] is not None:
         st.session_state.stage2_results = ALL_TAB_SCAN_STATUS["stage2_results"]
         # Try loading from DB
-        today_str = get_market_date()
+        today_str = get_market_date(for_display=True)
         try:
             cached_stage2 = database.get_cached_stage2(today_str)
             if cached_stage2 is not None:
@@ -5313,7 +5323,7 @@ with tab_confluence:
         )
         st.markdown("---")
 
-        today_str = get_market_date()
+        today_str = get_market_date(for_display=True)
         confluence_data = database.get_wt_vp_confluence(today_str)
 
         # Metrics row
@@ -5505,7 +5515,7 @@ with tab_support:
         )
         st.markdown("---")
 
-        today_str = get_market_date()
+        today_str = get_market_date(for_display=True)
 
         # Settings
         sup_col1, sup_col2, sup_col3 = st.columns(3)
@@ -5781,7 +5791,7 @@ with tab_rsi_wt:
         )
         st.markdown("---")
 
-        rw_today_str = get_market_date()
+        rw_today_str = get_market_date(for_display=True)
 
         # Settings
         rw_col1, rw_col2 = st.columns(2)
@@ -6051,5 +6061,177 @@ with tab_bb_squeeze:
             st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
         else:
             st.warning("⚠️ Scan has not been run yet. Click **'Run EMA Support Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")
+
+
+# ==============================================================================
+# TAB: STAGE ANALYSIS (MINERVINI TREND TEMPLATE)
+# ==============================================================================
+with tab_stage_analysis:
+    st.markdown("### 🏆 Minervini Trend Template — Stage Analyzer")
+    st.markdown("Analyzes Minervini's 8 Trend Template criteria to classify stocks into Stage 1, Stage 2 (Uptrend), Stage 3 (Topping), or Stage 4 (Decline).")
+    
+    col_sa1, col_sa2 = st.columns([1, 2])
+    run_sa_btn = col_sa1.button("🔍 Run Stage Analysis Scan", type="primary", use_container_width=True)
+    
+    if run_sa_btn:
+        st.session_state.stage_analysis_results = None
+        
+        with st.spinner(f"Running Stage Analysis Scan on {universe_selection}..."):
+            import yfinance as yf
+            import concurrent.futures
+            from scanner import scan_stage_analysis
+            from data_fetcher import get_index_stocks
+            
+            # Fetch NIFTY 50 return
+            try:
+                nifty_df = yf.download("^NSEI", period="1y", interval="1d", progress=False)
+                if len(nifty_df) >= 127:
+                    bC = float(nifty_df['Close'].iloc[-1].item() if hasattr(nifty_df['Close'].iloc[-1], 'item') else nifty_df['Close'].iloc[-1])
+                    bCold = float(nifty_df['Close'].iloc[-127].item() if hasattr(nifty_df['Close'].iloc[-127], 'item') else nifty_df['Close'].iloc[-127])
+                    bRet = (bC - bCold) / bCold
+                else:
+                    bRet = 0.0
+            except Exception as e:
+                print(f"Error fetching benchmark: {e}")
+                bRet = 0.0
+                
+            sa_universe = "ALL NSE"
+            if "NIFTY 500" in universe_selection: sa_universe = "NIFTY 500"
+            elif "NIFTY 100" in universe_selection: sa_universe = "NIFTY 100"
+            elif "NIFTY 50" in universe_selection: sa_universe = "NIFTY 50"
+            elif "WATCHLIST" in universe_selection.upper(): sa_universe = "WATCHLIST"
+            
+            raw_symbols = get_index_stocks(sa_universe) if sa_universe != "ALL NSE" else get_all_nse_symbols()
+            all_syms = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            results_list = []
+            chunk_size = 50
+            chunks = [all_syms[i:i + chunk_size] for i in range(0, len(all_syms), chunk_size)]
+            
+            def process_sa_chunk(c_idx, chunk):
+                chunk_results = []
+                try:
+                    data = yf.download(chunk, period="1y", interval="1d", group_by="ticker", threads=True, progress=False)
+                    for sym in chunk:
+                        try:
+                            df = data[sym] if len(chunk) > 1 else data
+                            df = df.dropna(subset=['Close'])
+                            if len(df) >= 252:
+                                res = scan_stage_analysis(sym, df, bRet)
+                                if res: chunk_results.append(res)
+                        except Exception as e: pass
+                except Exception as e: pass
+                return chunk_results
+                
+            for c_idx, chunk in enumerate(chunks):
+                status_text.text(f"Scanning chunk {c_idx+1}/{len(chunks)}...")
+                chunk_res = process_sa_chunk(c_idx, chunk)
+                results_list.extend(chunk_res)
+                progress_bar.progress((c_idx + 1) / len(chunks))
+                
+            today_str = get_market_date(for_display=False)
+            database.save_stage_analysis_only(today_str, results_list)
+            st.session_state.stage_analysis_results = results_list
+            status_text.text("✅ Stage Analysis Scan Complete!")
+            st.rerun()
+
+    # Display logic
+    if 'stage_analysis_results' not in st.session_state:
+        st.session_state.stage_analysis_results = None
+        
+    sa_today_str = get_market_date(for_display=True)
+    if st.session_state.stage_analysis_results is None:
+        st.session_state.stage_analysis_results = database.get_cached_stage_analysis(sa_today_str)
+        
+    if st.session_state.stage_analysis_results:
+        sa_list = st.session_state.stage_analysis_results
+        
+        # Apply Universe Filter
+        if "ALL NSE" not in universe_selection.upper() and len(sa_list) > 0:
+            from data_fetcher import get_index_stocks
+            resolved_univ = "ALL NSE"
+            if "NIFTY 500" in universe_selection: resolved_univ = "NIFTY 500"
+            elif "NIFTY 100" in universe_selection: resolved_univ = "NIFTY 100"
+            elif "NIFTY 50" in universe_selection: resolved_univ = "NIFTY 50"
+            elif "WATCHLIST" in universe_selection.upper(): resolved_univ = "WATCHLIST"
+            if resolved_univ != "ALL NSE":
+                raw_symbols = get_index_stocks(resolved_univ)
+                valid_set = set([str(s).replace('.NS', '').strip().upper() for s in raw_symbols if str(s).strip()])
+                sa_list = [r for r in sa_list if r['symbol'] in valid_set]
+                
+        if len(sa_list) > 0:
+            st.markdown(f"### 📊 Stage Analysis Setups ({len(sa_list)} stocks)")
+            
+            # Excel Download button
+            import io
+            df_export = pd.DataFrame(sa_list)
+            df_export = df_export[['symbol', 'company_name', 'cmp', 'stage', 'template_str', 'score', 'sRet', 'lo52', 'hi52']]
+            df_export.columns = ['Symbol', 'Company', 'CMP', 'Stage', 'Template', 'Score', '6M Return', '52W Low', '52W High']
+            
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                df_export.to_excel(writer, index=False, sheet_name='Stage Analysis')
+            
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer.getvalue(),
+                file_name=f"Stage_Analysis_{sa_today_str}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_sa_excel"
+            )
+            
+            # HTML Table rendering
+            html = '''
+            <table class="styled-table" style="width:100%; border-collapse:collapse; background:#0D1B2A; color:white; border: 1px solid #1e293b;">
+                <thead>
+                    <tr style="background:#1e293b; color:#C9A84C; font-size:14px; text-align:left;">
+                        <th style="padding:10px;">STOCK</th>
+                        <th style="padding:10px;">STAGE</th>
+                        <th style="padding:10px;">TEMPLATE</th>
+                    </tr>
+                </thead>
+                <tbody>
+            '''
+            for r in sa_list:
+                sym = r['symbol']
+                stg = r['stage']
+                tmpl = r['template_str']
+                sc = r['score']
+                
+                # Colors based on Pine Script mapping
+                if stg == 2:
+                    stg_lbl = "STAGE 2 ▲"
+                    stg_col = "#00FF00" # lime
+                elif stg == 4:
+                    stg_lbl = "STAGE 4 ▼"
+                    stg_col = "#FF0000" # red
+                elif stg == 3:
+                    stg_lbl = "STAGE 3 ◆"
+                    stg_col = "#FFA500" # orange
+                else:
+                    stg_lbl = "STAGE 1 ▬"
+                    stg_col = "#C0C0C0" # silver
+                    
+                tmpl_col = "#00FF00" if sc >= 7 else ("#FFFF00" if sc >= 5 else "#808080")
+                
+                html += f'''
+                <tr style="border-bottom:1px solid #1e293b;">
+                    <td style="padding:10px; font-weight:bold;">
+                        <a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" style="color:#ffffff; text-decoration:none;">{sym}</a>
+                    </td>
+                    <td style="padding:10px; color:{stg_col}; font-weight:bold; font-size:13px;">{stg_lbl}</td>
+                    <td style="padding:10px; color:{tmpl_col}; font-weight:bold; font-size:13px;">{tmpl}</td>
+                </tr>
+                '''
+            html += "</tbody></table>"
+            st.markdown(html, unsafe_allow_html=True)
+            
+        else:
+            st.info("✅ Scan completed — no setups found for the selected universe.")
+    else:
+        st.warning("⚠️ Scan has not been run yet. Click **'Run Stage Analysis Scan'** above to start.")
 
 

@@ -2395,3 +2395,86 @@ def scan_ema_support(symbol: str, df: pd.DataFrame, max_dist_9ema: float = 3.0, 
     except Exception as e:
         print(f"Error in EMA Support scan for {symbol}: {e}")
         return None
+
+def scan_stage_analysis(symbol: str, df: pd.DataFrame, bench_ret: float) -> dict | None:
+    """
+    Minervini Trend Template - Stage Analyzer.
+    Pine Script Translation:
+    Stage 2 requires 8 conditions.
+    Returns: stage, score, template string (e.g. '7/8').
+    """
+    if df is None or len(df) < 252:
+        return None
+        
+    try:
+        from utils import get_company_name
+        cmp = float(df['Close'].iloc[-1])
+        
+        # Calculate MAs
+        ma50_series = df['Close'].rolling(window=50).mean()
+        ma150_series = df['Close'].rolling(window=150).mean()
+        ma200_series = df['Close'].rolling(window=200).mean()
+        
+        if pd.isna(ma200_series.iloc[-1]):
+            return None
+            
+        c = float(df['Close'].iloc[-1])
+        ma50 = float(ma50_series.iloc[-1])
+        ma150 = float(ma150_series.iloc[-1])
+        ma200 = float(ma200_series.iloc[-1])
+        
+        # ma200old = ta.sma(close, 200)[21] -> 21 trading days ago
+        if len(ma200_series) >= 200 + 21:
+            ma200old = float(ma200_series.iloc[-22])
+        else:
+            return None
+            
+        lo52 = float(df['Low'].iloc[-252:].min())
+        hi52 = float(df['High'].iloc[-252:].max())
+        
+        if len(df) >= 127:
+            cOld = float(df['Close'].iloc[-127])
+        else:
+            return None
+            
+        sRet = (c - cOld) / cOld if cOld > 0 else 0
+        
+        # 8 Trend Template criteria
+        c1 = c > ma150 and c > ma200
+        c2 = ma150 > ma200
+        c3 = ma200 > ma200old  # 200MA rising >= 1 month
+        c4 = ma50 > ma150 and ma50 > ma200
+        c5 = c > ma50
+        c6 = c >= lo52 * 1.30
+        c7 = c >= hi52 * 0.75
+        c8 = sRet > bench_ret
+        
+        score = sum([c1, c2, c3, c4, c5, c6, c7, c8])
+        
+        ma200Rising = ma200 > ma200old
+        ma200Falling = ma200 < ma200old * 0.998
+        
+        stage = 1
+        if score >= 7 and c1 and c2 and c3:
+            stage = 2
+        elif c < ma200 and ma200Falling:
+            stage = 4
+        elif c > ma200 and not ma200Rising:
+            stage = 3
+        else:
+            stage = 1
+            
+        return {
+            'symbol': symbol.strip().upper(),
+            'company_name': get_company_name(symbol),
+            'cmp': round(c, 2),
+            'stage': stage,
+            'score': int(score),
+            'template_str': f"{int(score)}/8",
+            'sRet': round(sRet, 4),
+            'lo52': round(lo52, 2),
+            'hi52': round(hi52, 2)
+        }
+    except Exception as e:
+        print(f"Error in stage analysis for {symbol}: {e}")
+        return None
