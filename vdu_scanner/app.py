@@ -1430,61 +1430,76 @@ if run_full or run_sma:
 
                 status_box.text(f"Phase 2/3: Downloading {scan_timeframe} historical OHLCV data...")
                 prog_bar.progress(0)
-                chunk_size = 50
+                chunk_size = 100
                 sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
                 
                 def download_chunk(chunk_idx, chunk):
                     # Pre-fill with empty DataFrames so Phase 3 does not retry failed/delisted symbols individually
                     chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
                     chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
-                    try:
-                        # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
-                        df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
-                        if df_bulk is None or df_bulk.empty:
-                            return chunk_data
-                        for sym in chunk:
-                            sym_ns = f"{sym.strip().upper()}.NS"
-                            try:
-                                if isinstance(df_bulk.columns, pd.MultiIndex):
-                                    # yfinance 1.x multi-ticker: columns are (price_type, ticker)
-                                    # Find the ticker in level 1
-                                    all_tickers_bulk = df_bulk.columns.get_level_values(1).unique().tolist()
-                                    matched = next((t for t in all_tickers_bulk if t.upper() == sym_ns.upper()), None)
-                                    if matched is None:
-                                        continue
-                                    # Extract slice for this ticker across all price types
-                                    ticker_df = df_bulk.xs(matched, axis=1, level=1).copy()
-                                else:
-                                    # Single ticker download (fallback)
-                                    if len(chunk_ns) == 1:
-                                        ticker_df = df_bulk.copy()
-                                        if isinstance(ticker_df.columns, pd.MultiIndex):
-                                            ticker_df.columns = ticker_df.columns.droplevel(1)
+                    
+                    retries = 0
+                    max_retries = 5
+                    backoff = 3.0
+                    
+                    while retries <= max_retries:
+                        try:
+                            # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
+                            df_bulk = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=20)
+                            if df_bulk is None or df_bulk.empty:
+                                raise ValueError("Empty DataFrame returned from yfinance")
+                            
+                            for sym in chunk:
+                                sym_ns = f"{sym.strip().upper()}.NS"
+                                try:
+                                    if isinstance(df_bulk.columns, pd.MultiIndex):
+                                        # yfinance 1.x multi-ticker: columns are (price_type, ticker)
+                                        all_tickers_bulk = df_bulk.columns.get_level_values(1).unique().tolist()
+                                        matched = next((t for t in all_tickers_bulk if t.upper() == sym_ns.upper()), None)
+                                        if matched is None:
+                                            continue
+                                        ticker_df = df_bulk.xs(matched, axis=1, level=1).copy()
                                     else:
-                                        continue
+                                        # Single ticker download (fallback)
+                                        if len(chunk_ns) == 1:
+                                            ticker_df = df_bulk.copy()
+                                            if isinstance(ticker_df.columns, pd.MultiIndex):
+                                                ticker_df.columns = ticker_df.columns.droplevel(1)
+                                        else:
+                                            continue
 
-                                required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-                                if all(col in ticker_df.columns for col in required_cols):
-                                    ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
-                                    ticker_df = ticker_df[ticker_df['Volume'] > 0]
-                                    if not ticker_df.empty:
-                                        ticker_df = ticker_df.reset_index()
-                                        ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                        ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
-                                        chunk_data[sym.strip().upper()] = ticker_df
-                            except Exception as sym_ex:
-                                print(f"Error extracting {sym_ns} from bulk download: {sym_ex}")
-                    except Exception as chunk_ex:
-                        print(f"Error downloading parallel chunk {chunk_idx+1}: {chunk_ex}")
+                                    required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                                    if all(col in ticker_df.columns for col in required_cols):
+                                        ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
+                                        ticker_df = ticker_df[ticker_df['Volume'] > 0]
+                                        if not ticker_df.empty:
+                                            ticker_df = ticker_df.reset_index()
+                                            ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
+                                            ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                            chunk_data[sym.strip().upper()] = ticker_df
+                                except Exception as sym_ex:
+                                    pass
+                            
+                            return chunk_data
+                        except Exception as chunk_ex:
+                            retries += 1
+                            if retries > max_retries:
+                                print(f"Error downloading parallel chunk {chunk_idx+1} after {max_retries} retries: {chunk_ex}")
+                                break
+                            import time
+                            time.sleep(backoff)
+                            backoff *= 2.0
+                            
                     return chunk_data
 
                 import concurrent.futures
                 import time
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                p2_workers = 1 if len(sym_chunks) > 10 else 2
+                with concurrent.futures.ThreadPoolExecutor(max_workers=p2_workers) as executor:
                     futures = []
                     for chunk_idx, chunk in enumerate(sym_chunks):
                         futures.append(executor.submit(download_chunk, chunk_idx, chunk))
-                        time.sleep(0.5) # Throttle chunk dispatching
+                        time.sleep(1.0) # Throttle chunk dispatching
                     
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
                         bulk_data.update(future.result())
@@ -1510,9 +1525,8 @@ if run_full or run_sma:
         # Parallel Execution Core
         def process_and_fetch_if_needed(sym, df, benchmark_df, *args):
             try:
-                if df is None:
-                    # Bypass st.cache_data to avoid Thread '...' requires a context error in joblib workers
-                    df = fetch_ohlcv.__wrapped__(sym)
+                if df is None or len(df) == 0:
+                    df = fetch_ohlcv(sym)
                 return process_single_symbol(sym, df, benchmark_df, *args)
             except Exception as e:
                 print(f"Internal error processing {sym}: {e}")
