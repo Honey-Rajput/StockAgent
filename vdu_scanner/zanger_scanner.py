@@ -25,6 +25,7 @@ class ZangerConfig:
     avg_vol_window: int = 50
 
     min_close_above_base_pct: float = 0.0  # 0 = just needs to close above resistance
+    require_uptrend: bool = True # Toggle to turn off the strict 50>150>200 MA filter
 
     # --- ranking weights (used by rank_signals / bulk scan) ---
     max_acceptable_risk_pct: float = 15.0  # stop distances above this get penalized hard
@@ -101,6 +102,15 @@ def _breakout_signal(df: pd.DataFrame, base_high: pd.Series, cfg: ZangerConfig) 
     vol_break = df["Volume"] > df["avg_vol"] * cfg.breakout_vol_mult
     return price_break & vol_break
 
+def _early_entry_signal(df: pd.DataFrame, base_high: pd.Series, base_low: pd.Series) -> pd.Series:
+    # Price is within the base
+    in_base = (df["Close"] <= base_high) & (df["Close"] >= base_low)
+    # Price is in the upper half of the base or within 10% of high
+    near_high = (base_high - df["Close"]) / df["Close"] <= 0.10
+    # Volume is drying up (<= 1.2x average)
+    vol_dry = df["Volume"] <= df["avg_vol"] * 1.2
+    return in_base & near_high & vol_dry
+
 
 # ---------------------------------------------------------------------------
 # Main entry point
@@ -129,17 +139,30 @@ def scan_zanger(df: pd.DataFrame, cfg: ZangerConfig = ZangerConfig()) -> pd.Data
     out["is_flat_base"] = is_flat_base
 
     out["breakout"] = _breakout_signal(out, base_high, cfg)
+    out["early_entry"] = _early_entry_signal(out, base_high, base_low)
 
-    out["zanger_signal"] = out["trend_ok"] & (is_hft | is_flat_base) & out["breakout"]
+    if getattr(cfg, 'require_uptrend', True):
+        out["zanger_signal"] = out["trend_ok"] & (is_hft | is_flat_base) & (out["breakout"] | out["early_entry"])
+    else:
+        out["zanger_signal"] = (is_hft | is_flat_base) & (out["breakout"] | out["early_entry"])
 
-    out["setup_type"] = np.select(
-        [out["zanger_signal"] & is_hft, out["zanger_signal"] & is_flat_base],
-        ["high_tight_flag", "flat_base"],
-        default=None,
-    )
+    setup_conds = [
+        out["breakout"] & is_hft,
+        out["breakout"] & is_flat_base,
+        out["early_entry"] & is_hft,
+        out["early_entry"] & is_flat_base
+    ]
+    setup_labels = [
+        "Breakout (High Tight Flag)",
+        "Breakout (Flat Base)",
+        "Early Entry (High Tight Flag)",
+        "Early Entry (Flat Base)"
+    ]
+    out["setup_type"] = np.select(setup_conds, setup_labels, default=None)
 
     out["suggested_stop"] = out[["base_low", "Low"]].max(axis=1)
     out["risk_pct"] = (out["Close"] - out["suggested_stop"]) / out["Close"] * 100
+    out["target_price"] = out["Close"] + 3 * (out["Close"] - out["suggested_stop"])
 
     return out
 
@@ -148,7 +171,7 @@ def get_latest_signal(df_result: pd.DataFrame) -> dict:
     vol_ratio = row["Volume"] / row["avg_vol"] if row["avg_vol"] else None
     risk_pct = row["risk_pct"] if pd.notna(row["risk_pct"]) else None
     return {
-        "date": df_result.index[-1],
+        "date": df_result.index[-1].strftime('%Y-%m-%d') if hasattr(df_result.index[-1], 'strftime') else str(df_result.index[-1]).split(' ')[0],
         "close": row["Close"],
         "zanger_signal": bool(row["zanger_signal"]),
         "setup_type": row["setup_type"],
@@ -157,6 +180,10 @@ def get_latest_signal(df_result: pd.DataFrame) -> dict:
         "breakout_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
         "suggested_stop": round(row["suggested_stop"], 2) if pd.notna(row["suggested_stop"]) else None,
         "risk_pct": round(risk_pct, 2) if risk_pct is not None else None,
+        "target_price": round(row["target_price"], 2) if pd.notna(row.get("target_price")) else None,
+        "score": round(row.get("score"), 1) if "score" in row and pd.notna(row.get("score")) else None,
+        "confidence_level": row.get("confidence_level", None),
+        "breakout_status": row.get("breakout_status", None),
     }
 
 
@@ -182,10 +209,23 @@ def rank_signals(hits: pd.DataFrame, cfg: ZangerConfig = ZangerConfig()) -> pd.D
 
     df["risk_score"] = df["risk_pct"].apply(risk_score)
 
-    df["conviction_score"] = (
-        df["volume_score"] * cfg.volume_weight + df["risk_score"] * cfg.risk_weight
-    ).round(1)
+    vol_weight = getattr(cfg, "volume_weight", 0.6)
+    risk_weight = getattr(cfg, "risk_weight", 0.4)
 
-    df = df.sort_values("conviction_score", ascending=False).reset_index(drop=True)
-    df["rank"] = df.index + 1
+    df["score"] = (df["volume_score"] * vol_weight + df["risk_score"] * risk_weight).round(1)
+
+    # Calculate confidence level based on score
+    conditions = [
+        (df["score"] >= 80),
+        (df["score"] >= 50)
+    ]
+    choices = ["High", "Medium"]
+    df["confidence_level"] = np.select(conditions, choices, default="Low")
+
+    # Determine Breakout Status from setup_type
+    df["breakout_status"] = df["setup_type"].apply(lambda x: "Early Breakout" if isinstance(x, str) and "Early Entry" in x else "Already Breakout")
+
+    df = df.sort_values(by="score", ascending=False).reset_index(drop=True)
+    df.insert(0, "rank", df.index + 1)
+
     return df

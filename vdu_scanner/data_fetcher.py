@@ -157,11 +157,14 @@ def get_index_stocks(index_name: str) -> list[str]:
     return NIFTY50_SYMBOLS
 
 
+MAX_NSE_SYMBOLS = 1800  # Limit to top 1800 NSE stocks by prominence to reduce scan time
+
 def get_all_nse_symbols() -> list[str]:
     """
     Downloads the official constituent list of all listed equity shares on the
     National Stock Exchange of India (NSE) directly from the nsearchives.
     Filters to keep mainboard active equities (SERIES == 'EQ').
+    Returns at most MAX_NSE_SYMBOLS (1800) stocks for faster scanning.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -178,7 +181,8 @@ def get_all_nse_symbols() -> list[str]:
             with open(json_path, 'r') as f:
                 symbols = json.load(f)
             if symbols and len(symbols) > 100:
-                print(f"Successfully loaded {len(symbols)} active NSE symbols from local JSON cache.")
+                symbols = symbols[:MAX_NSE_SYMBOLS]
+                print(f"Successfully loaded {len(symbols)} active NSE symbols from local JSON cache (capped at {MAX_NSE_SYMBOLS}).")
                 return symbols
     except Exception as e:
         print(f"Failed to load local JSON cache: {e}")
@@ -205,7 +209,8 @@ def get_all_nse_symbols() -> list[str]:
                     symbols = eq_df['SYMBOL'].dropna().astype(str).tolist()
                     clean_symbols = [s.strip() for s in symbols if s.strip() and s.strip() != 'SYMBOL']
                     if len(clean_symbols) > 100:
-                        print(f"Successfully loaded {len(clean_symbols)} active NSE symbols from {url}.")
+                        clean_symbols = clean_symbols[:MAX_NSE_SYMBOLS]
+                        print(f"Successfully loaded {len(clean_symbols)} active NSE symbols from {url} (capped at {MAX_NSE_SYMBOLS}).")
                         return clean_symbols
         except Exception as e:
             print(f"Failed to fetch from {url}: {e}")

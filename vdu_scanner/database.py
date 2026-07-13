@@ -364,6 +364,28 @@ def init_db() -> bool:
         """
     ]
     
+
+    # Inject Dan Zanger Table
+    queries.append(
+        """
+        CREATE TABLE IF NOT EXISTS scanned_zanger (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            setup_type VARCHAR(50),
+            prior_run_pct DOUBLE PRECISION,
+            base_depth_pct DOUBLE PRECISION,
+            breakout_volume_ratio DOUBLE PRECISION,
+            suggested_stop DOUBLE PRECISION,
+            risk_pct DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """
+    )
+    
     # Inject BB Squeeze Table
     queries.append(
         """
@@ -381,6 +403,28 @@ def init_db() -> bool:
             monthly_bb_width DOUBLE PRECISION,
             above_50dma BOOLEAN,
             market_cap_cr DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """
+    )
+
+    # Inject VCP+Minervini Table
+    queries.append(
+        """
+        CREATE TABLE IF NOT EXISTS scanned_vcp_minervini (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            sector VARCHAR(200),
+            close DOUBLE PRECISION,
+            pressure VARCHAR(20),
+            risk_50d VARCHAR(20),
+            trend_tpr VARCHAR(20),
+            rs_rating DOUBLE PRECISION,
+            vcp_status VARCHAR(20),
+            vcp_range_pct DOUBLE PRECISION,
+            entry_signal VARCHAR(30),
             scan_date DATE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
@@ -683,8 +727,9 @@ def has_scanned_today(date_str: str) -> dict | None:
 def get_available_scan_dates() -> list[str]:
     """
     Retrieves all dates that have completed daily scan logs, sorted descending.
+    Ignores empty or aborted scans (total_scanned = 0).
     """
-    query = "SELECT DISTINCT scan_date FROM scan_logs ORDER BY scan_date DESC;"
+    query = "SELECT scan_date FROM scan_logs WHERE total_scanned > 0 ORDER BY scan_date DESC;"
     conn = None
     dates = []
     try:
@@ -696,6 +741,27 @@ def get_available_scan_dates() -> list[str]:
         dates = [r[0].strftime("%Y-%m-%d") if hasattr(r[0], 'strftime') else str(r[0]) for r in rows]
     except Exception as e:
         print(f"Error loading scan dates from database: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return dates
+
+def get_zanger_scan_dates() -> list[str]:
+    """
+    Retrieves all dates that have completed Dan Zanger scans, sorted descending.
+    """
+    query = "SELECT DISTINCT scan_date FROM scanned_zanger ORDER BY scan_date DESC;"
+    conn = None
+    dates = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        dates = [r[0].strftime("%Y-%m-%d") if hasattr(r[0], 'strftime') else str(r[0]) for r in rows]
+    except Exception as e:
+        print(f"Error loading Zanger scan dates from database: {e}")
     finally:
         if conn:
             conn.close()
@@ -2500,3 +2566,250 @@ def get_cached_stage_analysis(date_str: str) -> list[dict]:
             conn.close()
     return results
 
+
+
+def save_zanger_scan(scan_date: str, timeframe: str, results: list):
+    if not results:
+        return
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        
+        insert_query = """
+        INSERT INTO scanned_zanger (
+            symbol, sector, cmp, setup_type, 
+            prior_run_pct, base_depth_pct, breakout_volume_ratio, 
+            suggested_stop, risk_pct, scan_date,
+            target_price, rank, score, risk_score, volume_score, timeframe,
+            confidence_level, breakout_status
+        ) VALUES (
+            %s, %s, %s, %s, 
+            %s, %s, %s, 
+            %s, %s, %s,
+            %s, %s, %s, %s, %s, %s,
+            %s, %s
+        ) ON CONFLICT (symbol, scan_date, timeframe) DO UPDATE SET
+            cmp = EXCLUDED.cmp,
+            setup_type = EXCLUDED.setup_type,
+            prior_run_pct = EXCLUDED.prior_run_pct,
+            base_depth_pct = EXCLUDED.base_depth_pct,
+            breakout_volume_ratio = EXCLUDED.breakout_volume_ratio,
+            suggested_stop = EXCLUDED.suggested_stop,
+            risk_pct = EXCLUDED.risk_pct,
+            target_price = EXCLUDED.target_price,
+            rank = EXCLUDED.rank,
+            score = EXCLUDED.score,
+            risk_score = EXCLUDED.risk_score,
+            volume_score = EXCLUDED.volume_score,
+            confidence_level = EXCLUDED.confidence_level,
+            breakout_status = EXCLUDED.breakout_status
+        """
+        
+        data = []
+        for r in results:
+            data.append((
+                r.get('symbol', ''),
+                r.get('sector', ''),
+                r.get('close', 0),
+                r.get('setup_type', ''),
+                r.get('prior_run_pct', 0),
+                r.get('base_depth_pct', 0),
+                r.get('breakout_volume_ratio', 0),
+                r.get('suggested_stop', 0),
+                r.get('risk_pct', 0),
+                scan_date,
+                r.get('target_price', 0),
+                r.get('rank', 0),
+                r.get('score', 0),
+                r.get('risk_score', 0),
+                r.get('volume_score', 0),
+                timeframe,
+                r.get('confidence_level', ''),
+                r.get('breakout_status', '')
+            ))
+            
+        import psycopg2.extras
+        psycopg2.extras.execute_batch(cur, insert_query, data)
+        conn.commit()
+        try:
+            print(f" Saved {len(data)} Dan Zanger records to DB for {scan_date} ({timeframe})")
+        except UnicodeEncodeError:
+            print(f" Saved {len(data)} Dan Zanger records to DB for {scan_date} ({timeframe})")
+    except Exception as e:
+        print(f"Database error saving Dan Zanger scan: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_cached_zanger(scan_date: str, timeframe: str = 'Daily') -> list:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT symbol, sector, cmp, setup_type,
+                   prior_run_pct, base_depth_pct, breakout_volume_ratio,
+                   suggested_stop, risk_pct, target_price, rank,
+                   score, risk_score, volume_score, confidence_level, breakout_status
+            FROM scanned_zanger 
+            WHERE scan_date = %s AND timeframe = %s
+        """, (scan_date, timeframe))
+        rows = cur.fetchall()
+        if not rows:
+            return []
+            
+        results = []
+        for r in rows:
+            results.append({
+                'symbol': r[0],
+                'sector': r[1],
+                'close': float(r[2]) if r[2] is not None else None,
+                'setup_type': r[3],
+                'prior_run_pct': float(r[4]) if r[4] is not None else None,
+                'base_depth_pct': float(r[5]) if r[5] is not None else None,
+                'breakout_volume_ratio': float(r[6]) if r[6] is not None else None,
+                'suggested_stop': float(r[7]) if r[7] is not None else None,
+                'risk_pct': float(r[8]) if r[8] is not None else None,
+                'target_price': float(r[9]) if r[9] is not None else None,
+                'rank': int(r[10]) if r[10] is not None else None,
+                'score': float(r[11]) if r[11] is not None else None,
+                'risk_score': float(r[12]) if r[12] is not None else None,
+                'volume_score': float(r[13]) if r[13] is not None else None,
+                'confidence_level': r[14],
+                'breakout_status': r[15],
+                'date': scan_date,
+            })
+        return results
+    except Exception as e:
+        print(f"Error fetching Dan Zanger cache: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+# ==============================================================================
+# VCP+MINERVINI PERSISTENCE
+# ==============================================================================
+
+def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
+    """Save VCP+Minervini scan results to the database."""
+    if not results:
+        return False
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        insert_query = """
+        INSERT INTO scanned_vcp_minervini (
+            symbol, sector, close, pressure, risk_50d,
+            trend_tpr, rs_rating, vcp_status, vcp_range_pct,
+            entry_signal, scan_date
+        ) VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
+            %s, %s
+        ) ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            sector = EXCLUDED.sector,
+            close = EXCLUDED.close,
+            pressure = EXCLUDED.pressure,
+            risk_50d = EXCLUDED.risk_50d,
+            trend_tpr = EXCLUDED.trend_tpr,
+            rs_rating = EXCLUDED.rs_rating,
+            vcp_status = EXCLUDED.vcp_status,
+            vcp_range_pct = EXCLUDED.vcp_range_pct,
+            entry_signal = EXCLUDED.entry_signal
+        """
+
+        data = []
+        for r in results:
+            data.append((
+                r.get('symbol', ''),
+                r.get('Sector', r.get('sector', '')),
+                r.get('close', 0),
+                r.get('Pressure', r.get('pressure', '')),
+                r.get('Risk (50d)', r.get('risk_50d', '')),
+                r.get('Trend (TPR)', r.get('trend_tpr', '')),
+                r.get('RS Rating', r.get('rs_rating', 0)),
+                r.get('VCP (5d)', r.get('vcp_status', '')),
+                r.get('VCP range %', r.get('vcp_range_pct', 0)),
+                r.get('Entry Signal', r.get('entry_signal', '')),
+                scan_date
+            ))
+
+        import psycopg2.extras
+        psycopg2.extras.execute_batch(cur, insert_query, data)
+        conn.commit()
+        print(f"Saved {len(data)} VCP+Minervini records to DB for {scan_date}")
+        return True
+    except Exception as e:
+        print(f"Database error saving VCP+Minervini scan: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_cached_vcp_minervini(scan_date: str) -> list:
+    """Retrieve cached VCP+Minervini scan results from the database."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT symbol, sector, close, pressure, risk_50d,
+                   trend_tpr, rs_rating, vcp_status, vcp_range_pct,
+                   entry_signal
+            FROM scanned_vcp_minervini
+            WHERE scan_date = %s
+            ORDER BY rs_rating DESC NULLS LAST
+        """, (scan_date,))
+        rows = cur.fetchall()
+        if not rows:
+            return []
+
+        results = []
+        for r in rows:
+            results.append({
+                'symbol': r[0],
+                'Sector': r[1] or '',
+                'close': float(r[2]) if r[2] is not None else None,
+                'Pressure': r[3] or '',
+                'Risk (50d)': r[4] or '',
+                'Trend (TPR)': r[5] or '',
+                'RS Rating': float(r[6]) if r[6] is not None else None,
+                'VCP (5d)': r[7] or '',
+                'VCP range %': float(r[8]) if r[8] is not None else None,
+                'Entry Signal': r[9] or '',
+                'date': scan_date,
+            })
+        return results
+    except Exception as e:
+        print(f"Error fetching VCP+Minervini cache: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_vcp_minervini_scan_dates() -> list[str]:
+    """Get list of available VCP+Minervini scan dates, most recent first."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT scan_date FROM scanned_vcp_minervini
+            ORDER BY scan_date DESC LIMIT 30
+        """)
+        rows = cur.fetchall()
+        return [str(r[0]) for r in rows]
+    except Exception as e:
+        print(f"Error fetching VCP+Minervini scan dates: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()

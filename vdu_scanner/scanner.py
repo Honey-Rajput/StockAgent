@@ -79,7 +79,6 @@ def scan_stock(
     min_volume_ratio: float = MIN_VOLUME_RATIO,
     min_price_change: float = MIN_PRICE_CHANGE,
     min_dry_spikes: int = 2,
-    min_rr_ratio: float = 1.5,
     indicators: dict = None
 ) -> dict | None:
     """
@@ -244,10 +243,6 @@ def scan_stock(
     risk   = buy_price - exit_price
     reward = target_price - buy_price
     rr_ratio = round(reward / risk, 2) if risk > 0 else 0.0
-    if rr_ratio < min_rr_ratio:
-        return None
-
-
 
     # Confidence text based on algorithmic signal strength
     if score >= 75:

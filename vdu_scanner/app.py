@@ -1050,6 +1050,27 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                     st.session_state.bb_squeeze_results = database.get_cached_bb_squeeze(latest_date_str)
                 except Exception:
                     st.session_state.bb_squeeze_results = []
+                
+                # Fetch Zanger results using its own date list
+                zanger_dates = database.get_zanger_scan_dates()
+                if zanger_dates:
+                    try:
+                        tf_to_load = st.session_state.get('zanger_tf', 'Daily')
+                        st.session_state.zanger_results = database.get_cached_zanger(zanger_dates[0], timeframe=tf_to_load)
+                    except Exception:
+                        st.session_state.zanger_results = []
+                else:
+                    st.session_state.zanger_results = []
+
+                # Fetch VCP+Minervini results using its own date list
+                try:
+                    vcp_dates = database.get_vcp_minervini_scan_dates()
+                    if vcp_dates:
+                        st.session_state.vcp_minervini_results = database.get_cached_vcp_minervini(vcp_dates[0])
+                    else:
+                        st.session_state.vcp_minervini_results = []
+                except Exception:
+                    st.session_state.vcp_minervini_results = []
 
                 st.session_state.total_scanned = cached_log.get('total_scanned', 0)
                 st.session_state.failed_count = 0
@@ -1154,7 +1175,7 @@ min_vol_ratio = st.sidebar.slider(
     max_value=10.0,
     value=2.5,
     step=0.5,
-    key="vdu_min_vol_ratio_v5",
+    key="vdu_min_vol_ratio_v8",
     help="Breakout day volume compared to dry average volume (e.g., 2.0 = 2x surge)"
 )
 
@@ -1164,7 +1185,7 @@ min_price_chg = st.sidebar.slider(
     max_value=10.0,
     value=7.0,
     step=0.5,
-    key="vdu_min_price_chg_v5",
+    key="vdu_min_price_chg_v8",
     help="Minimum price percentage increase on the breakout day (Close vs Open)"
 )
 
@@ -1184,7 +1205,7 @@ min_dry_spikes = st.sidebar.slider(
     max_value=20,
     value=7,
     step=1,
-    key="vdu_min_dry_spikes_v6",
+    key="vdu_min_dry_spikes_v8",
     help="Requires at least this many volume accumulation spikes inside the dry zone window (up to 20 spikes)"
 )
 
@@ -1209,16 +1230,6 @@ above_200dma_only = st.sidebar.checkbox(
     "Above 200 DMA Only",
     value=False,
     help="If checked, only lists breakout stocks trading above their 200-day Simple Moving Average"
-)
-
-min_rr_ratio = st.sidebar.slider(
-    "Min Risk:Reward Ratio",
-    min_value=1.0,
-    max_value=5.0,
-    value=1.5,
-    step=0.25,
-    key="vdu_min_rr_ratio_v1",
-    help="Minimum R:R ratio required to show a signal. 1.5 = target must be at least 1.5x the stop loss distance. Signals below this are auto-filtered."
 )
 
 st.sidebar.markdown('---')
@@ -1423,7 +1434,8 @@ if run_full or run_sma:
                 sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
                 
                 def download_chunk(chunk_idx, chunk):
-                    chunk_data = {}
+                    # Pre-fill with empty DataFrames so Phase 3 does not retry failed/delisted symbols individually
+                    chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
                     chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
                     try:
                         # yfinance 1.x: group_by and threads params removed; MultiIndex is now (price_type, ticker)
@@ -1446,6 +1458,8 @@ if run_full or run_sma:
                                     # Single ticker download (fallback)
                                     if len(chunk_ns) == 1:
                                         ticker_df = df_bulk.copy()
+                                        if isinstance(ticker_df.columns, pd.MultiIndex):
+                                            ticker_df.columns = ticker_df.columns.droplevel(1)
                                     else:
                                         continue
 
@@ -1484,21 +1498,22 @@ if run_full or run_sma:
         prog_bar.progress(0)
         
 
-
-
         import joblib
         import os
+        
+        status_box.text(f"Phase 3/3: Fetching Benchmark Data (^NSEI)...")
+        nifty_benchmark_df = yf.download("^NSEI", period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
         
         status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities...")
         prog_bar.progress(0)
         
         # Parallel Execution Core
-        def process_and_fetch_if_needed(sym, df, *args):
+        def process_and_fetch_if_needed(sym, df, benchmark_df, *args):
             try:
                 if df is None:
                     # Bypass st.cache_data to avoid Thread '...' requires a context error in joblib workers
                     df = fetch_ohlcv.__wrapped__(sym)
-                return process_single_symbol(sym, df, *args)
+                return process_single_symbol(sym, df, benchmark_df, *args)
             except Exception as e:
                 print(f"Internal error processing {sym}: {e}")
                 return {"failed": True, "error": str(e)}
@@ -1507,7 +1522,7 @@ if run_full or run_sma:
         sma_timeframe_val = st.session_state.get("sma_timeframe_tab", "All (Multi-Timeframe Convergence)")
         generator = joblib.Parallel(n_jobs=n_workers, backend="threading", return_as="generator_unordered")(
             joblib.delayed(process_and_fetch_if_needed)(
-                sym, bulk_data.get(sym.strip().upper()), open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_rr_ratio, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe_val, scan_mode_flag
+                sym, bulk_data.get(sym.strip().upper()), nifty_benchmark_df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe_val, scan_mode_flag
             ) for sym in scan_symbols
         )
         
@@ -1663,7 +1678,7 @@ scan_data = st.session_state.scan_results
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "🚀 Gap-Up", "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
-    "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP", "🚀 Stage2 Brk",
+    "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
     "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI+Wave", "📈 9/21 EMA Support", "🏆 Stage Analysis"
 ])
 
@@ -1693,7 +1708,7 @@ with tab_results:
         st.markdown("---")
         
         # 2. Main Scan Table
-        if scan_data is None:
+        if scan_data is None or total_scanned == 0:
             st.info("💡 Get started by configuring your universe in the sidebar and clicking '**Run Scanner**'.")
         elif len(scan_data) == 0:
             st.info("ℹ️ No VDU breakouts found today matching these criteria. Try lowering the thresholds in the sidebar (e.g. Min Volume Ratio or Min Price Change) and re-running.")
@@ -4272,6 +4287,15 @@ with tab_vcs:
     z_hft_max_base = col_z6.number_input("HFT Max Base Depth (%)", value=20.0, step=5.0)
 
     st.markdown("---")
+    z_require_uptrend = st.checkbox("Require Strict Uptrend (Close > 50MA > 150MA > 200MA)", value=True, help="Uncheck this if you want to find setups even when the stock is in a broad market correction/downtrend.")
+    
+    st.markdown("---")
+    
+    col_z7, _ = st.columns([2, 8])
+    with col_z7:
+        zanger_tf = st.selectbox("Scan Timeframe", ["Daily", "Weekly"], index=0, key="zanger_tf")
+        
+    st.markdown("---")
     
     col_btn, col_note = st.columns([1, 2])
     run_zanger_btn = col_btn.button("🔍 Run Dan Zanger Scan", type="primary", use_container_width=True)
@@ -4309,13 +4333,17 @@ with tab_vcs:
                 max_base_depth_pct=float(z_max_base_depth),
                 breakout_vol_mult=float(z_vol_mult),
                 base_lookback=int(z_base_lookback),
-                hft_max_base_depth_pct=float(z_hft_max_base)
+                hft_max_base_depth_pct=float(z_hft_max_base),
+                require_uptrend=z_require_uptrend
             )
+            
+            yf_interval = "1wk" if zanger_tf == "Weekly" else "1d"
+            yf_period = "10y" if zanger_tf == "Weekly" else "1100d"
             
             for chunk in chunks:
                 tkrs = [f"{s}.NS" for s in chunk]
                 try:
-                    df_zanger = yf.download(tickers=tkrs, period="1100d", interval="1d", progress=False, threads=False)
+                    df_zanger = yf.download(tickers=tkrs, period=yf_period, interval=yf_interval, progress=False, threads=False)
                     if not df_zanger.empty:
                         for sym in chunk:
                             try:
@@ -4339,9 +4367,9 @@ with tab_vcs:
                                     latest = get_latest_signal(res_df)
                                     
                                     if latest.get("zanger_signal", False):
-                                        from config import get_company_name
+                                        from data_fetcher import get_stock_sector
                                         latest["symbol"] = sym
-                                        latest["company_name"] = get_company_name(sym)
+                                        latest["sector"] = get_stock_sector(sym)
                                         zanger_results.append(latest)
                             except Exception as e:
                                 pass
@@ -4354,7 +4382,11 @@ with tab_vcs:
                 ranked_df = rank_signals(hits_df, cfg)
                 # Convert back to dicts for session_state to be consistent
                 st.session_state.zanger_results = ranked_df.to_dict('records')
-                st.success(f"Dan Zanger Scan Complete! Found {len(zanger_results)} setups.")
+                try:
+                    database.save_zanger_scan(get_market_date(), zanger_tf, st.session_state.zanger_results)
+                except Exception as e:
+                    print(f"Error saving Dan Zanger scan: {e}")
+                st.success(f"Dan Zanger Scan Complete! Found {len(zanger_results)} setups ({zanger_tf}).")
             else:
                 st.session_state.zanger_results = []
                 st.info("No Dan Zanger setups found today.")
@@ -4365,50 +4397,194 @@ with tab_vcs:
             z_df = pd.DataFrame(st.session_state.zanger_results)
             # Reorder columns to put rank and symbol first
             cols = list(z_df.columns)
+            if 'date' in cols:
+                # keep as string, Streamlit will be told it's text
+                z_df['date'] = pd.to_datetime(z_df['date']).dt.strftime('%Y-%m-%d')
+            
+            # Clean up unwanted columns (like company_name if sector is there)
+            if 'company_name' in cols and 'sector' in cols:
+                cols.remove('company_name')
+                z_df = z_df.drop(columns=['company_name'])
+                
             if 'rank' in cols and 'symbol' in cols:
                 cols.insert(0, cols.pop(cols.index('rank')))
                 cols.insert(1, cols.pop(cols.index('symbol')))
-                cols.insert(2, cols.pop(cols.index('company_name')))
+                if 'sector' in cols:
+                    cols.insert(2, cols.pop(cols.index('sector')))
+                if 'score' in cols:
+                    cols.insert(3, cols.pop(cols.index('score')))
+                if 'confidence_level' in cols:
+                    cols.insert(4, cols.pop(cols.index('confidence_level')))
+                if 'breakout_status' in cols:
+                    cols.insert(5, cols.pop(cols.index('breakout_status')))
+                if 'target_price' in cols:
+                    risk_idx = cols.index('risk_pct') if 'risk_pct' in cols else len(cols)
+                    cols.insert(risk_idx + 1, cols.pop(cols.index('target_price')))
                 z_df = z_df[cols]
-            st.dataframe(z_df, use_container_width=True)
+                
+            st.dataframe(z_df, use_container_width=True, column_config={
+                "date": st.column_config.TextColumn("Date"),
+                "score": st.column_config.NumberColumn("Score (Out of 100)", format="%.1f"),
+                "confidence_level": st.column_config.TextColumn("Confidence Level"),
+                "breakout_status": st.column_config.TextColumn("Breakout Status")
+            })
         else:
             st.info("No Dan Zanger setups found.")
     else:
         st.info("💡 Click 'Run Dan Zanger Scan' to find breakouts.")
 
 # ==============================================================================
-# TAB: STRUCTURAL VCP
+# TAB: VCP+Minervini
 # ==============================================================================
 with tab_vcp:
-    st.markdown("### 🎯 Structural Volatility Contraction Pattern (VCP)")
+    st.markdown("### 🎯 Minervini Ultimate +VCP")
+    st.markdown("Scans for stocks passing the Minervini Trend Template with Volatility Contraction Pattern (VCP) squeeze.")
+
+    col_v1, col_v2, col_v3 = st.columns(3)
+    vcp_thresh = col_v1.number_input("Max VCP Range (%)", value=2.5, step=0.5, help="Maximum percentage range over lookback to be considered a squeeze")
+    vcp_lookback = col_v2.number_input("VCP Lookback (Bars)", value=5, step=1)
+    risk_low = col_v3.number_input("Max Low Risk (%)", value=15.0, step=1.0, help="Maximum distance above 50SMA to be considered Low Risk")
+
+    st.markdown("---")
     
-    if st.session_state.structural_vcp_results is None:
-        st.info("💡 Run the main scanner from the sidebar to populate Structural VCP setups.")
-    elif len(st.session_state.structural_vcp_results) == 0:
-        st.info("ℹ️ No textbook Structural VCP setups found today.")
-    else:
-        vcp_count = len(st.session_state.structural_vcp_results)
-        st.success(f"Found {vcp_count} Structural VCP setups!")
-        
-        col_btn, _ = st.columns([2, 8])
-        with col_btn:
-            sv_export_list = []
-            for r in st.session_state.structural_vcp_results:
-                row = dict(r)
-                if 'recommendation' in row:
-                    row['Recommendation'] = extract_clean_recommendation(row.pop('recommendation'))
-                sv_export_list.append(row)
-            sv_df = pd.DataFrame(sv_export_list)
-            sv_csv = sv_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(
-                label="⬇️ Download CSV",
-                data=sv_csv,
-                file_name="structural_vcp_results.csv",
-                mime="text/csv",
-                width="stretch"
+    col_v_btn, col_v_note = st.columns([1, 2])
+    run_vcp_btn = col_v_btn.button("🔍 Run VCP+Minervini Scan", type="primary", use_container_width=True)
+    
+    if run_vcp_btn:
+        with st.spinner("Running Minervini VCP scan across all NSE stocks..."):
+            from vcp_minervini import VCPConfig, MinerviniVCPAnalyzer
+            from data_fetcher import get_all_nse_symbols, get_stock_sector
+            import yfinance as yf
+            import pandas as pd
+            
+            # Use all NSE symbols (capped at 1800)
+            raw_symbols = get_all_nse_symbols()
+            symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            
+            cfg = VCPConfig(
+                vcp_thresh=vcp_thresh,
+                vcp_lookback=int(vcp_lookback),
+                risk_low=risk_low
             )
             
-        render_unified_strategy_table(st.session_state.structural_vcp_results, "struct_vcp", "struct_vcp_tab")
+            # Batch download data for speed, then run analyzer per-stock
+            vcp_results = []
+            chunk_size = 100
+            sym_chunks = [symbols[i:i+chunk_size] for i in range(0, len(symbols), chunk_size)]
+            progress_bar = st.progress(0, text="Downloading data...")
+            
+            for c_idx, chunk in enumerate(sym_chunks):
+                progress_bar.progress(
+                    (c_idx + 1) / len(sym_chunks),
+                    text=f"Processing chunk {c_idx+1}/{len(sym_chunks)} ({len(vcp_results)} setups found)..."
+                )
+                try:
+                    bulk_df = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False)
+                    if bulk_df.empty:
+                        continue
+                    
+                    for sym in chunk:
+                        try:
+                            # Extract single-stock data from bulk download
+                            if isinstance(bulk_df.columns, pd.MultiIndex):
+                                all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
+                                matched_t = next((t for t in all_tkrs if t.upper() == sym.upper()), None)
+                                if not matched_t:
+                                    continue
+                                t_df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                            else:
+                                t_df = bulk_df.dropna(subset=['Close'])
+                            
+                            if t_df.empty or len(t_df) < 250:
+                                continue
+                            
+                            # Run the Minervini analyzer with pre-fetched data
+                            analyzer = MinerviniVCPAnalyzer(sym, cfg)
+                            analyzer.df = t_df.copy()
+                            analyzer._moving_averages()
+                            analyzer._trend_template()
+                            analyzer._buy_risk()
+                            analyzer._pressure()
+                            # RPR needs benchmark download, skip for batch speed
+                            # Use a simple RS proxy instead
+                            analyzer.df["rpr_proxy"] = 50.0  # placeholder
+                            analyzer._vcp()
+                            analyzer._entry_signals()
+                            
+                            last = analyzer.df.iloc[-1]
+                            result = {
+                                "symbol": sym,
+                                "date": analyzer.df.index[-1].strftime("%Y-%m-%d"),
+                                "close": round(float(last["Close"]), 2),
+                                "Pressure": last["pressure_txt"],
+                                "Risk (50d)": last["risk_status"],
+                                "Trend (TPR)": last["tpr_txt"],
+                                "RS Rating": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
+                                "VCP (5d)": last["vcp_txt"],
+                                "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last["vcp_range_pct"]) else None,
+                                "Entry Signal": last["entry_signal"],
+                            }
+                            
+                            # Only keep stocks with meaningful signals
+                            if result["Entry Signal"] in ["BREAKOUT", "EARLY ENTRY"] or result["Trend (TPR)"] == "PASSED":
+                                result["Sector"] = get_stock_sector(sym)
+                                vcp_results.append(result)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            
+            progress_bar.empty()
+            
+            if vcp_results:
+                st.session_state.vcp_minervini_results = vcp_results
+                # Save to database
+                try:
+                    today_str = get_market_date()
+                    database.save_vcp_minervini_scan(today_str, vcp_results)
+                except Exception as e:
+                    print(f"Error saving VCP+Minervini scan: {e}")
+            else:
+                st.session_state.vcp_minervini_results = []
+            
+            st.rerun()
+
+    # Display results
+    if st.session_state.get('vcp_minervini_results'):
+        import pandas as pd
+        v_df = pd.DataFrame(st.session_state.vcp_minervini_results)
+        
+        vcp_count = len(v_df)
+        st.success(f"Found {vcp_count} VCP+Minervini setups!")
+        
+        # CSV Download
+        col_btn, _ = st.columns([2, 8])
+        with col_btn:
+            vcp_csv = v_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="⬇️ Download CSV",
+                data=vcp_csv,
+                file_name="vcp_minervini_results.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        # Reorder columns for display
+        display_cols = ['symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 
+                       'Pressure', 'Risk (50d)', 'RS Rating', 'VCP (5d)', 'VCP range %', 'date']
+        available_cols = [c for c in display_cols if c in v_df.columns]
+        v_df = v_df[available_cols]
+        
+        st.dataframe(v_df, use_container_width=True, column_config={
+            "date": st.column_config.TextColumn("Date"),
+            "close": st.column_config.NumberColumn("CMP", format="%.2f"),
+            "RS Rating": st.column_config.NumberColumn("RS Rating", format="%.1f"),
+            "VCP range %": st.column_config.NumberColumn("VCP Range %", format="%.2f"),
+            "Entry Signal": st.column_config.TextColumn("Entry Signal"),
+            "Trend (TPR)": st.column_config.TextColumn("Trend Template"),
+        })
+    else:
+        st.info("💡 Click 'Run VCP+Minervini Scan' to find setups.")
 
 # ==============================================================================
 # TAB: EARLY STAGE 2 BREAKOUT

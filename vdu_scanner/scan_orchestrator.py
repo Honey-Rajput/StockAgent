@@ -10,15 +10,15 @@ from indicators import precompute_indicators
 from scanner import (
     compute_rich_analysis,
     scan_stock,
-    scan_structural_vcp,
     scan_vcs,
     scan_vpa_trend,
     scan_wt_cross,
 )
+from vcp_minervini import MinerviniVCPAnalyzer
 
 
-def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
-                          min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_rr_ratio,
+def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
+                          min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
                           min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness,
                           sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe, scan_mode="all"):
     res = {
@@ -400,7 +400,7 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
                     "confidence": min_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "Minervini Stage-2", base_minervini_rec, indicators=ind)
                 }
                 
-        scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes, min_rr_ratio=min_rr_ratio, indicators=ind)
+        scan_res = scan_stock(symbol=sym, df=df, min_dry_days=min_dry, max_dry_days=max_dry, min_volume_ratio=min_vol_ratio, min_price_change=min_price_chg, min_dry_spikes=min_dry_spikes, indicators=ind)
         if scan_res and scan_res.get('signal_strength', 0) >= min_signal_str:
             if (not above_50dma_only or scan_res.get('above_50dma', False)) and (not above_200dma_only or scan_res.get('above_200dma', False)):
                 res["flagged"] = scan_res
@@ -415,7 +415,7 @@ def process_single_symbol(sym, df, open_price_map, close_price_map, high_price_m
                 
         if df is not None:
             res["vcs"] = scan_vcs(sym, df, indicators=ind)
-            res["structural_vcp"] = scan_structural_vcp(sym, df, indicators=ind)
+            res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df, benchmark_df).run()
             res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
         
     return res
