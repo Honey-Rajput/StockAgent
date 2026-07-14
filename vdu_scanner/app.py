@@ -1267,6 +1267,7 @@ if run_full or run_sma:
     if not raw_symbols:
         st.sidebar.error("❌ No symbols found to scan.")
     else:
+      try:
         # UI Scanner Feedback
         status_box = st.empty()
         prog_bar = st.progress(0)
@@ -1307,7 +1308,14 @@ if run_full or run_sma:
                 # Market is closed — check if today's data is already in Turso
                 status_box.text("Phase 1/3: Checking Turso DB for today's cached quotes...")
                 try:
-                    _db_quotes = database.get_today_quotes(raw_symbols, today_date_str)
+                    import concurrent.futures as _p1_cf
+                    with _p1_cf.ThreadPoolExecutor(max_workers=1) as _p1_tex:
+                        _fut = _p1_tex.submit(database.get_today_quotes, raw_symbols, today_date_str)
+                        try:
+                            _db_quotes = _fut.result(timeout=10)  # 10s timeout — don't hang the UI
+                        except _p1_cf.TimeoutError:
+                            print("Phase 1 DB check timed out after 10s — falling back to Yahoo")
+                            _db_quotes = {}
                 except Exception as _dq_err:
                     print(f"Phase 1 DB check error: {_dq_err}")
                     _db_quotes = {}
@@ -1806,6 +1814,11 @@ if run_full or run_sma:
             
         st.success("✅ Scanner complete! Results have been updated.")
 
+      except Exception as _scan_top_err:
+          import traceback
+          st.error(f"❌ Scanner crashed: {_scan_top_err}")
+          st.code(traceback.format_exc())
+          print(f"[SCAN TOP-LEVEL ERROR] {traceback.format_exc()}")  
 
 
 # Display Last Scanned Timestamp
