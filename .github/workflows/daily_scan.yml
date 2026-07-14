@@ -2,8 +2,8 @@ name: Daily Volume Surge Scanner
 
 on:
   schedule:
-    # 12:30 UTC = 6:00 PM IST (Monday to Friday)
-    - cron: '30 12 * * 1-5'
+    # 18:15 UTC = 11:45 PM IST (Monday to Friday)
+    - cron: '15 18 * * 1-5'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:

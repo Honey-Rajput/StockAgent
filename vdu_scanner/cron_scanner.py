@@ -18,7 +18,7 @@ if not os.environ.get('TURSO_DATABASE_URL') or not os.environ.get('TURSO_AUTH_TO
 import database
 from local_cache_manager import get_cached_ohlcv, save_to_cache, bulk_get_cached_ohlcv
 from config import LOOKBACK_DAYS, IST_TIMEZONE
-from fetcher import get_index_stocks, get_market_date
+from data_fetcher import get_index_stocks, get_market_date
 from scan_orchestrator import process_single_symbol
 import ai_detector
 
