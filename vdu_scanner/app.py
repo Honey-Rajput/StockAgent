@@ -1573,7 +1573,7 @@ if run_full or run_sma:
                 print(f"Internal error processing {sym}: {e}")
                 return {"failed": True, "error": str(e)}
 
-        n_workers = min(32, os.cpu_count() * 2 if os.cpu_count() else 8)
+        n_workers = 4
         sma_timeframe_val = st.session_state.get("sma_timeframe_tab", "All (Multi-Timeframe Convergence)")
         generator = joblib.Parallel(n_jobs=n_workers, backend="threading", return_as="generator_unordered")(
             joblib.delayed(process_and_fetch_if_needed)(
