@@ -104,7 +104,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
             
         chunk_size = 200
         for j in range(0, len(stmts), chunk_size):
-            client.batch(stmts[j:j+chunk_size])
+            client.execute_batch(stmts[j:j+chunk_size])
             
     except Exception as e:
         print(f"Error saving DB cache for {clean_sym}: {e}")
