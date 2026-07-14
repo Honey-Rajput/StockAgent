@@ -1450,11 +1450,11 @@ if run_full or run_sma:
                         # Pre-fill with empty DataFrames so Phase 3 does not retry failed/delisted symbols individually
                         chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
                         chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
-                    
+
                         retries = 0
                         max_retries = 5
                         backoff = 3.0
-                    
+
                         while retries <= max_retries:
                             try:
                                 # yfinance 1.x
@@ -1466,90 +1466,80 @@ if run_full or run_sma:
                                     threads=False,
                                     timeout=20
                                 )
-                    
+
                                 if df_bulk is None or df_bulk.empty:
                                     raise ValueError("Empty DataFrame returned from yfinance")
-                    
+
                                 for sym in chunk:
                                     sym_ns = f"{sym.strip().upper()}.NS"
-                    
+
                                     try:
                                         if isinstance(df_bulk.columns, pd.MultiIndex):
                                             all_tickers_bulk = df_bulk.columns.get_level_values(1).unique().tolist()
                                             matched = next((t for t in all_tickers_bulk if t.upper() == sym_ns.upper()), None)
-                    
+
                                             if matched is None:
                                                 continue
-                    
+
                                             ticker_df = df_bulk.xs(matched, axis=1, level=1).copy()
-                    
+
                                         else:
                                             if len(chunk_ns) == 1:
                                                 ticker_df = df_bulk.copy()
-                    
+
                                                 if isinstance(ticker_df.columns, pd.MultiIndex):
                                                     ticker_df.columns = ticker_df.columns.droplevel(1)
                                             else:
                                                 continue
-                    
+
                                         required_cols = ["Open", "High", "Low", "Close", "Volume"]
-                    
+
                                         if all(col in ticker_df.columns for col in required_cols):
                                             ticker_df = ticker_df[required_cols].dropna(subset=["Close"])
                                             ticker_df = ticker_df[ticker_df["Volume"] > 0]
-                    
+
                                             if not ticker_df.empty:
                                                 ticker_df = ticker_df.reset_index()
                                                 ticker_df.rename(columns={ticker_df.columns[0]: "Date"}, inplace=True)
                                                 ticker_df["Date"] = pd.to_datetime(ticker_df["Date"]).dt.tz_localize(None)
-                    
+
                                                 chunk_data[sym.strip().upper()] = ticker_df
                                                 save_to_cache(sym.strip().upper(), ticker_df, scan_timeframe)
-                    
+
                                     except Exception:
                                         pass
-                    
+
                                 return chunk_data
 
-        except Exception as chunk_ex:
-            retries += 1
+                            except Exception as chunk_ex:
+                                retries += 1
 
-            if retries > max_retries:
-                print(f"Error downloading chunk {chunk_idx+1}: {chunk_ex}")
-                break
+                                if retries > max_retries:
+                                    print(f"Error downloading chunk {chunk_idx+1}: {chunk_ex}")
+                                    break
 
-            import time
-            time.sleep(backoff)
-            backoff *= 2.0
+                                import time
+                                time.sleep(backoff)
+                                backoff *= 2.0
 
-    return chunk_data
-                        except Exception as chunk_ex:
-                            retries += 1
-                            if retries > max_retries:
-                                print(f"Error downloading parallel chunk {chunk_idx+1} after {max_retries} retries: {chunk_ex}")
-                                break
-                            import time
-                            time.sleep(backoff)
-                            backoff *= 2.0
-                            
-                    return chunk_data
+                        return chunk_data
 
                     import concurrent.futures
                     import time
                     # Use fewer workers to prevent aggressive yfinance rate-limiting
                     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                         futures = []
-                        
+
                         # Dispatch chunk downloads with throttling
                         for chunk_idx, chunk in enumerate(sym_chunks):
                             futures.append(executor.submit(download_chunk, chunk_idx, chunk))
                             time.sleep(2.0) # Throttle chunk dispatching
-                        
+
                         for i, future in enumerate(concurrent.futures.as_completed(futures)):
                             bulk_data.update(future.result())
                             prog_bar.progress((i + 1) / len(sym_chunks))
                             status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
-                
+
                 if len(bulk_data) > 0:
                     st.session_state[cache_key_p2] = bulk_data
         
