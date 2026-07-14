@@ -752,44 +752,26 @@ def run_background_all_tab_scans():
                 ALL_TAB_SCAN_STATUS["progress"] = 0.05
                 print("[BG All-Tab] Downloading shared daily data...")
                 
-                # Use 2y if Volume Profile needs it, else 1y is enough
-                period_to_download = "2y" if run_vp else "1y"
-                chunk_size = 200
-                chunks = [all_symbols[i:i+chunk_size] for i in range(0, len(all_symbols), chunk_size)]
+                # Use incremental fetching from data_fetcher for efficiency
+                from data_fetcher import fetch_ohlcv
+                import concurrent.futures
                 
-                for c_idx, chunk in enumerate(chunks):
-                    ALL_TAB_SCAN_STATUS["progress"] = 0.05 + (c_idx / len(chunks)) * 0.25
-                    try:
-                        bulk_df = yf.download(tickers=chunk, period=period_to_download, interval="1d", progress=False, threads=False)
-                        if not bulk_df.empty:
-                            for sym_ns in chunk:
-                                try:
-                                    sym = sym_ns.replace('.NS', '')
-                                    if isinstance(bulk_df.columns, pd.MultiIndex):
-                                        all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
-                                        matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
-                                        if not matched_t:
-                                            continue
-                                        df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                    else:
-                                        df = bulk_df.dropna(subset=['Close'])
-                                    
-                                    if not df.empty:
-                                        # Filter out penny stocks to save processing time
-                                        if float(df['Close'].iloc[-1]) >= 100.0:
-                                            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-                                            if all(col in df.columns for col in required_cols):
-                                                df = df[required_cols].dropna(subset=['Close'])
-                                                df = df[df['Volume'] > 0]
-                                                if len(df) >= 40:
-                                                    df = df.reset_index()
-                                                    df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
-                                                    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
-                                                    shared_daily_data[sym] = df
-                                except Exception:
-                                    pass
-                    except Exception as chunk_ex:
-                        print(f"[BG All-Tab] Download chunk {c_idx} error: {chunk_ex}")
+                processed_count = 0
+                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                    futures = {executor.submit(fetch_ohlcv, sym.replace('.NS', '')): sym.replace('.NS', '') for sym in all_symbols}
+                    for future in concurrent.futures.as_completed(futures):
+                        sym = futures[future]
+                        processed_count += 1
+                        if processed_count % 50 == 0:
+                            ALL_TAB_SCAN_STATUS["progress"] = 0.05 + (processed_count / len(all_symbols)) * 0.25
+                        try:
+                            df = future.result()
+                            if df is not None and not df.empty and len(df) >= 40:
+                                # Filter out penny stocks to save processing time
+                                if float(df['Close'].iloc[-1]) >= 100.0:
+                                    shared_daily_data[sym] = df
+                        except Exception as e:
+                            pass
                         
                 print(f"[BG All-Tab] Shared data downloaded for {len(shared_daily_data)} stocks.")
 
@@ -4407,9 +4389,20 @@ with tab_vcs:
     
     st.markdown("---")
     
+    def on_zanger_tf_change():
+        import database
+        zanger_dates = database.get_zanger_scan_dates()
+        if zanger_dates:
+            try:
+                st.session_state.zanger_results = database.get_cached_zanger(zanger_dates[0], timeframe=st.session_state.zanger_tf)
+            except Exception:
+                st.session_state.zanger_results = []
+        else:
+            st.session_state.zanger_results = []
+
     col_z7, _ = st.columns([2, 8])
     with col_z7:
-        zanger_tf = st.selectbox("Scan Timeframe", ["Daily", "Weekly"], index=0, key="zanger_tf")
+        zanger_tf = st.selectbox("Scan Timeframe", ["Daily", "Weekly"], index=0, key="zanger_tf", on_change=on_zanger_tf_change)
         
     st.markdown("---")
     
@@ -4455,6 +4448,12 @@ with tab_vcs:
             
             yf_interval = "1wk" if zanger_tf == "Weekly" else "1d"
             yf_period = "10y" if zanger_tf == "Weekly" else "1100d"
+            
+            if zanger_tf == "Weekly":
+                cfg.ma_fast = 10     # 50 days = 10 weeks
+                cfg.ma_slow = 30     # 150 days = 30 weeks
+                cfg.ma_slowest = 40  # 200 days = 40 weeks
+                cfg.base_lookback = max(3, cfg.base_lookback // 5)
             
             for chunk in chunks:
                 tkrs = [f"{s}.NS" for s in chunk]

@@ -93,8 +93,7 @@ _ohlcv_cache = ThreadSafeTTLCache(ttl_seconds=900, max_size=150)
 
 def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     """
-    Fetches the last LOOKBACK_DAYS of daily OHLCV data for a given NSE symbol.
-    Compatible with yfinance 1.x (auto_adjust=True is the new default).
+    Fetches daily OHLCV data using a local SQLite database for incremental caching.
     """
     formatted_symbol = symbol.strip().upper()
     if not formatted_symbol.endswith(".NS"):
@@ -104,12 +103,49 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     if cached_df is not None:
         return cached_df.copy()
 
-    from local_cache_manager import get_cached_ohlcv, save_to_cache
+    try:
+        import market_data_db
+    except ImportError:
+        market_data_db = None
     
-    cached_parquet_df = get_cached_ohlcv(formatted_symbol, "1d")
-    if cached_parquet_df is not None and not cached_parquet_df.empty:
-        _ohlcv_cache.set(formatted_symbol, cached_parquet_df)
-        return cached_parquet_df.copy()
+    db_df = None
+    latest_date_in_db = None
+    need_full_fetch = True
+    fetch_period = f"{LOOKBACK_DAYS}d"
+
+    if market_data_db:
+        db_df = market_data_db.get_historical_data(formatted_symbol, limit=LOOKBACK_DAYS)
+        latest_date_in_db = market_data_db.get_latest_date(formatted_symbol)
+        
+        if latest_date_in_db:
+            from datetime import datetime, timedelta
+            try:
+                latest_date = datetime.strptime(latest_date_in_db, "%Y-%m-%d").date()
+                today = datetime.now().date()
+                days_diff = (today - latest_date).days
+                
+                # Assume weekend/holiday diff up to 3 days is normal and doesn't need fetch if it's the weekend
+                if days_diff <= 0 or (days_diff <= 2 and today.weekday() >= 5):
+                    if db_df is not None and not db_df.empty:
+                        _ohlcv_cache.set(formatted_symbol, db_df)
+                        return db_df.copy()
+                
+                if days_diff < LOOKBACK_DAYS:
+                    # Incremental update: fetch missing days plus a 5 day buffer
+                    fetch_period = f"{min(days_diff + 5, LOOKBACK_DAYS)}d"
+                    need_full_fetch = False
+            except Exception as e:
+                print(f"Date parsing error in fetch_ohlcv: {e}")
+                
+    # Fallback to local_cache_manager if db fails and needs full fetch
+    if need_full_fetch:
+        from local_cache_manager import get_cached_ohlcv, save_to_cache
+        cached_parquet_df = get_cached_ohlcv(formatted_symbol, "1d")
+        if cached_parquet_df is not None and not cached_parquet_df.empty:
+            if market_data_db:
+                market_data_db.save_data(formatted_symbol, cached_parquet_df)
+            _ohlcv_cache.set(formatted_symbol, cached_parquet_df)
+            return cached_parquet_df.copy()
 
     import time
     import threading
@@ -127,17 +163,27 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             with fetch_ohlcv._yf_semaphore:
                 df = yf.download(
                     tickers=formatted_symbol,
-                    period=f"{LOOKBACK_DAYS}d",
+                    period=fetch_period,
                     interval="1d",
                     progress=False,
-                # NOTE: auto_adjust=True is the default in yfinance 1.x
-                # threads param was removed in yfinance 1.x
-            )
+                )
 
             result = _flatten_yf_dataframe(df)
             if result is not None:
+                # Save to database
+                if market_data_db:
+                    market_data_db.save_data(formatted_symbol, result)
+                    
+                    # If it was an incremental fetch, combine with DB data
+                    if not need_full_fetch and db_df is not None and not db_df.empty:
+                        combined = pd.concat([db_df, result]).drop_duplicates(subset=['Date'], keep='last')
+                        combined = combined.sort_values('Date').tail(LOOKBACK_DAYS).reset_index(drop=True)
+                        result = combined
+                else:
+                    from local_cache_manager import save_to_cache
+                    save_to_cache(formatted_symbol, result, "1d")
+                    
                 _ohlcv_cache.set(formatted_symbol, result)
-                save_to_cache(formatted_symbol, result, "1d")
                 return result.copy()
             raise ValueError("Empty or invalid DataFrame from yfinance")
 
@@ -145,6 +191,10 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             retries += 1
             if retries > max_retries:
                 print(f"Error fetching OHLCV for symbol {symbol} after {max_retries} retries: {e}")
+                # Return whatever we have in DB if fetch fails
+                if db_df is not None and not db_df.empty:
+                    _ohlcv_cache.set(formatted_symbol, db_df)
+                    return db_df.copy()
                 return None
             time.sleep(backoff)
             backoff *= 2.0

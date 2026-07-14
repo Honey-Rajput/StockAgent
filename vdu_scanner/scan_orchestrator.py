@@ -173,10 +173,10 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 cond_50_gap = abs(d_close - d_sma50) / d_sma50 <= max_50_gap if pd.notna(d_sma50) else False
                 cond_200_gap = True  # Relaxed for strong uptrends
                 
-                # 3. Tightness over last 5 bars (5% for daily)
+                # 3. Tightness over last 5 bars (10% for daily, 20% for rounding)
                 high_5 = d_frame['High'].iloc[-5:].max()
                 low_5 = d_frame['Low'].iloc[-5:].min()
-                max_tightness = 0.15 if is_rounding else 0.05
+                max_tightness = 0.20 if is_rounding else 0.10
                 tightness_ok = ((high_5 - low_5) / low_5) <= max_tightness if low_5 > 0 else False
                 
                 # 2. Upward slope over 5 bars (not just 1)
@@ -277,12 +277,13 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         df_monthly = df_resample.resample('ME' if hasattr(pd.tseries.offsets, 'MonthEnd') else 'M').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
         passes_monthly = check_weekly_monthly_sma(df_monthly, is_rounding)
 
-        # Require VPA trend regardless of timeframe
+        # Require non-bearish VPA trend regardless of timeframe
         vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
         passes_vpa = False
         if vpa_res is not None:
             daily_vpa = vpa_res.get("daily", {})
-            if daily_vpa.get("minor", 0) >= 1 and daily_vpa.get("mid", 0) >= 1:
+            # Relaxed: just require it's not in a severe downtrend (>= 0 means neutral/bullish)
+            if daily_vpa.get("minor", 0) >= 0 and daily_vpa.get("mid", 0) >= 0:
                 passes_vpa = True
 
         if (passes_daily or passes_weekly or passes_monthly) and passes_vpa and not is_overextended:
