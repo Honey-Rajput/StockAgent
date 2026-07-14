@@ -72,7 +72,7 @@ def execute_values(cur, query, argslist, page_size=100):
     # Execute in batches of page_size
     for i in range(0, len(stmts), page_size):
         batch = stmts[i:i+page_size]
-        cur.client.execute_batch(batch)
+        cur.client.batch(batch)
 
 
 import threading
@@ -157,7 +157,7 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
         # Batch insert in pages of 200 to stay within Turso limits
         page = 200
         for i in range(0, len(stmts), page):
-            conn.client.execute_batch(stmts[i:i + page])
+            conn.client.batch(stmts[i:i + page])
         print(f"save_today_quotes: saved {len(stmts)} symbols for {date_str}")
     except Exception as e:
         print(f"save_today_quotes error: {e}")
