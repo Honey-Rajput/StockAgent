@@ -1494,7 +1494,7 @@ if run_full or run_sma:
                                 except Exception as sym_ex:
                                     pass
                             
-                                return chunk_data
+                                    return chunk_data
                         except Exception as chunk_ex:
                             retries += 1
                             if retries > max_retries:
