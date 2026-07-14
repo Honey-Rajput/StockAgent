@@ -104,18 +104,19 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
         return cached_df.copy()
 
     try:
-        import market_data_db
+        import database
     except ImportError:
-        market_data_db = None
+        database = None
     
     db_df = None
     latest_date_in_db = None
     need_full_fetch = True
     fetch_period = f"{LOOKBACK_DAYS}d"
 
-    if market_data_db:
-        db_df = market_data_db.get_historical_data(formatted_symbol, limit=LOOKBACK_DAYS)
-        latest_date_in_db = market_data_db.get_latest_date(formatted_symbol)
+    # 2. Try fetching from SQLite/Postgres DB
+    if database:
+        db_df = database.get_historical_data_ohlcv(formatted_symbol, limit=LOOKBACK_DAYS)
+        latest_date_in_db = database.get_latest_date_ohlcv(formatted_symbol)
         
         if latest_date_in_db:
             from datetime import datetime, timedelta
@@ -142,8 +143,8 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
         from local_cache_manager import get_cached_ohlcv, save_to_cache
         cached_parquet_df = get_cached_ohlcv(formatted_symbol, "1d")
         if cached_parquet_df is not None and not cached_parquet_df.empty:
-            if market_data_db:
-                market_data_db.save_data(formatted_symbol, cached_parquet_df)
+            if database:
+                database.save_data_ohlcv(formatted_symbol, cached_parquet_df)
             _ohlcv_cache.set(formatted_symbol, cached_parquet_df)
             return cached_parquet_df.copy()
 
@@ -171,8 +172,8 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             result = _flatten_yf_dataframe(df)
             if result is not None:
                 # Save to database
-                if market_data_db:
-                    market_data_db.save_data(formatted_symbol, result)
+                if database:
+                    database.save_data_ohlcv(formatted_symbol, result)
                     
                     # If it was an incremental fetch, combine with DB data
                     if not need_full_fetch and db_df is not None and not db_df.empty:

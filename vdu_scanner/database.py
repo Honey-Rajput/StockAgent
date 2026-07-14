@@ -432,6 +432,23 @@ def init_db() -> bool:
         """
     )
     
+    # Inject OHLCV Daily Table
+    queries.append(
+        """
+        CREATE TABLE IF NOT EXISTS ohlcv_daily (
+            symbol VARCHAR(20) NOT NULL,
+            date DATE NOT NULL,
+            open DOUBLE PRECISION,
+            high DOUBLE PRECISION,
+            low DOUBLE PRECISION,
+            close DOUBLE PRECISION,
+            volume BIGINT,
+            PRIMARY KEY (symbol, date)
+        );
+        """
+    )
+    queries.append("CREATE INDEX IF NOT EXISTS idx_ohlcv_daily_symbol_date ON ohlcv_daily (symbol, date DESC);")
+    
     conn = None
     try:
         conn = get_connection()
@@ -2810,6 +2827,118 @@ def get_vcp_minervini_scan_dates() -> list[str]:
     except Exception as e:
         print(f"Error fetching VCP+Minervini scan dates: {e}")
         return []
+    finally:
+        if conn:
+            conn.close()
+
+from psycopg2.extras import execute_values
+import numpy as np
+
+def get_latest_date_ohlcv(symbol: str) -> str | None:
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(date) FROM ohlcv_daily WHERE symbol = %s;", (symbol.strip().upper(),))
+        row = cur.fetchone()
+        if row and row[0]:
+            return row[0].strftime('%Y-%m-%d')
+        return None
+    except Exception as e:
+        print(f"Error getting latest date for {symbol}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_historical_data_ohlcv(symbol: str, limit: int = 1100) -> pd.DataFrame | None:
+    conn = get_connection()
+    try:
+        query = """
+            SELECT date as Date, open as Open, high as High, low as Low, close as Close, volume as Volume 
+            FROM ohlcv_daily 
+            WHERE symbol = %s 
+            ORDER BY date DESC
+            LIMIT %s
+        """
+        df = pd.read_sql_query(query, conn, params=(symbol.strip().upper(), limit))
+        if df.empty:
+            return None
+        
+        # Reverse to get chronological order (oldest to newest)
+        df = df.iloc[::-1].reset_index(drop=True)
+        df['Date'] = pd.to_datetime(df['Date'])
+        return df
+    except Exception as e:
+        print(f"Error reading from ohlcv_daily for {symbol}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def save_data_ohlcv(symbol: str, df: pd.DataFrame):
+    if df is None or df.empty:
+        return
+        
+    conn = get_connection()
+    try:
+        df_to_save = df.copy()
+        col_map = {c: c.lower() for c in df_to_save.columns}
+        df_to_save.rename(columns=col_map, inplace=True)
+        
+        if 'date' not in df_to_save.columns:
+            if df_to_save.index.name == 'Date' or df_to_save.index.name == 'date':
+                df_to_save = df_to_save.reset_index()
+                df_to_save.rename(columns={'index': 'date', 'Date': 'date'}, inplace=True)
+            else:
+                return
+                
+        df_to_save['date'] = pd.to_datetime(df_to_save['date']).dt.strftime('%Y-%m-%d')
+        df_to_save['symbol'] = symbol.strip().upper()
+        
+        req_cols = ['symbol', 'date', 'open', 'high', 'low', 'close', 'volume']
+        for col in req_cols:
+            if col not in df_to_save.columns:
+                df_to_save[col] = None
+                
+        # Drop duplicates and replace NaN with None for psycopg2
+        df_to_save = df_to_save.drop_duplicates(subset=['symbol', 'date'], keep='last')
+        df_to_save = df_to_save[req_cols]
+        df_to_save = df_to_save.replace({np.nan: None})
+        
+        records = df_to_save.to_records(index=False)
+        data_tuples = list(records)
+        
+        query = """
+            INSERT INTO ohlcv_daily (symbol, date, open, high, low, close, volume)
+            VALUES %s
+            ON CONFLICT (symbol, date) DO UPDATE SET
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close = EXCLUDED.close,
+                volume = EXCLUDED.volume;
+        """
+        cur = conn.cursor()
+        execute_values(cur, query, data_tuples, page_size=5000)
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Error saving data to ohlcv_daily for {symbol}: {e}")
+        if conn:
+            conn.rollback()
+    finally:
+        if conn:
+            conn.close()
+
+def prune_old_data_ohlcv(days: int = 1200):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM ohlcv_daily WHERE date < CURRENT_DATE - INTERVAL '{days} days';")
+        conn.commit()
+        print(f"Pruned OHLCV data older than {days} days.")
+    except Exception as e:
+        print(f"Error pruning OHLCV data: {e}")
     finally:
         if conn:
             conn.close()
