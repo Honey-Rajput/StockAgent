@@ -9,14 +9,14 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 # 8 hours TTL. It will download fresh data if the cached file is older than 8 hours.
 CACHE_TTL_SECONDS = 8 * 3600
 
-def get_cached_ohlcv(symbol: str, timeframe: str = "1d") -> pd.DataFrame | None:
-    """Returns the cached DataFrame if it exists and is not stale."""
+def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = False) -> pd.DataFrame | None:
+    """Returns the cached DataFrame if it exists and is not stale (unless ignore_ttl=True)."""
     clean_sym = symbol.strip().upper().replace(".NS", "")
     file_path = os.path.join(CACHE_DIR, f"{clean_sym}_{timeframe}.parquet")
     
     if os.path.exists(file_path):
         mtime = os.path.getmtime(file_path)
-        if time.time() - mtime < CACHE_TTL_SECONDS:
+        if ignore_ttl or (time.time() - mtime < CACHE_TTL_SECONDS):
             try:
                 df = pd.read_parquet(file_path)
                 return df
