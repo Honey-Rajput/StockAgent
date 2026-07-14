@@ -1719,7 +1719,12 @@ if run_full or run_sma:
                                         t_df.rename(columns={t_df.columns[0]: "Date"}, inplace=True)
                                         t_df["Date"] = pd.to_datetime(t_df["Date"]).dt.tz_localize(None)
                                         bulk_data[sym.strip().upper()] = t_df
-                                        save_to_cache(sym.strip().upper(), t_df, scan_timeframe)
+                                        # Save to cache in background to not block the retry loop
+                                        _t_df_copy = t_df.copy()
+                                        _sym_key = sym.strip().upper()
+                                        _tf_key = scan_timeframe
+                                        import threading as _rt
+                                        _rt.Thread(target=save_to_cache, args=(_sym_key, _t_df_copy, _tf_key), daemon=True).start()
                             except Exception:
                                 pass
                 except Exception as retry_ex:
