@@ -20,7 +20,54 @@ from local_cache_manager import get_cached_ohlcv, save_to_cache, bulk_get_cached
 from config import LOOKBACK_DAYS, IST_TIMEZONE
 from fetcher import get_index_stocks, get_market_date
 from scan_orchestrator import process_single_symbol
-from background_agent import run_background_ai_scan
+import ai_detector
+
+def run_background_ai_scan(symbols_list, date_str, force=False):
+    print(f"Starting AI analysis for {len(symbols_list)} breakouts...")
+    def scan_and_save(sym):
+        try:
+            if not force:
+                existing = database.get_pattern_by_date(sym, date_str)
+                if existing and existing.get('pattern_name') not in ["Error", "Pending"]:
+                    return sym, True
+            
+            # Simple fallback fetch since cron_scanner already downloaded data, but we can hit Yahoo here too
+            df_hist = yf.download(f"{sym}.NS", period="2y", progress=False, threads=False)
+            if df_hist is not None and not df_hist.empty:
+                if isinstance(df_hist.columns, pd.MultiIndex):
+                    df_hist = df_hist.xs(df_hist.columns.get_level_values(1)[0], axis=1, level=1)
+                
+                req = ["Open", "High", "Low", "Close", "Volume"]
+                df_hist = df_hist[req].dropna()
+                df_hist = df_hist.reset_index().rename(columns={"index": "Date", "Datetime": "Date"})
+                
+                ans_dict = ai_detector.detect_chart_pattern(sym, df_hist)
+                if ans_dict:
+                    pattern_name = ans_dict.get("pattern_name", "None")
+                    if pattern_name == "Error": pattern_name = "None Detected"
+                    
+                    subset_5d = df_hist.iloc[-5:]
+                    snap_list = [f"{row['Date'].strftime('%m-%d')}:{row['Close']:.0f}" for _, row in subset_5d.iterrows()]
+                    snap_str = ",".join(snap_list)
+                    
+                    success = database.save_pattern(
+                        symbol=sym,
+                        pattern_name=pattern_name,
+                        confidence=ans_dict.get('confidence', 'None'),
+                        direction=ans_dict.get('direction', 'None'),
+                        analysis_text=ans_dict.get('analysis_text', 'No details available.'),
+                        price_data_snapshot=snap_str,
+                        date_str=date_str
+                    )
+                    return sym, success
+        except Exception as e:
+            print(f"Background AI scan failed for {sym}: {e}")
+        return sym, False
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        for i, (sym, success) in enumerate(executor.map(scan_and_save, symbols_list)):
+            if success:
+                print(f"AI Scanned ({i+1}/{len(symbols_list)}): {sym}")
 
 def run_headless_scan():
     print("=" * 50)
