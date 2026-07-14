@@ -1648,7 +1648,11 @@ if run_full or run_sma:
         import os
         
         status_box.text(f"Phase 3/3: Fetching Benchmark Data (^NSEI)...")
-        nifty_benchmark_df = yf.download("^NSEI", period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
+        try:
+            nifty_benchmark_df = yf.download("^NSEI", period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
+        except Exception as _nsei_err:
+            print(f"Warning: Failed to download Nifty benchmark data: {_nsei_err}")
+            nifty_benchmark_df = pd.DataFrame()  # Use empty DF as fallback
         
         status_box.text(f"Phase 3/3: Scanning {n_stocks} active NSE listed equities...")
         prog_bar.progress(0)
@@ -1699,7 +1703,14 @@ if run_full or run_sma:
         prog_bar.empty()
         status_box.empty()
         # Retry pass for symbols that failed the first time (often just rate-limited, not actually bad)
-        failed_syms_retry = [s for s in scan_symbols if bulk_data.get(s.strip().upper()) is None or bulk_data.get(s.strip().upper()).empty]
+        def _is_empty_data(sym_key):
+            """Safely check if a symbol has no usable data in bulk_data."""
+            v = bulk_data.get(sym_key)
+            if v is None: return True
+            if isinstance(v, pd.DataFrame): return v.empty
+            return True
+
+        failed_syms_retry = [s for s in scan_symbols if _is_empty_data(s.strip().upper())]
         if failed_syms_retry and len(failed_syms_retry) < n_stocks * 0.6:
             status_box.text(f"Retrying {len(failed_syms_retry)} failed symbols after cool-down...")
             time.sleep(5)
