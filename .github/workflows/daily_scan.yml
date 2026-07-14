@@ -22,6 +22,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
+          cd vdu_scanner
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
@@ -31,4 +32,5 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
+          cd vdu_scanner
           python cron_scanner.py
