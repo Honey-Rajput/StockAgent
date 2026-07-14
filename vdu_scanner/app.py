@@ -1539,7 +1539,7 @@ if run_full or run_sma:
                         # Dispatch chunk downloads with throttling
                         for chunk_idx, chunk in enumerate(sym_chunks):
                             futures.append(executor.submit(download_chunk, chunk_idx, chunk))
-                            time.sleep(random.uniform(1.5,3.0) # Throttle chunk dispatching
+                            time.sleep(random.uniform(1.5,3.0)) # Throttle chunk dispatching
 
                         for i, future in enumerate(concurrent.futures.as_completed(futures)):
                             bulk_data.update(future.result())
