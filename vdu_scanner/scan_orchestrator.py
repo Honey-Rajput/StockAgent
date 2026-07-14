@@ -277,16 +277,8 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         df_monthly = df_resample.resample('ME' if hasattr(pd.tseries.offsets, 'MonthEnd') else 'M').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna()
         passes_monthly = check_weekly_monthly_sma(df_monthly, is_rounding)
 
-        # Require non-bearish VPA trend regardless of timeframe
-        vpa_res = scan_vpa_trend(sym, df_ma, indicators=ind)
-        passes_vpa = False
-        if vpa_res is not None:
-            daily_vpa = vpa_res.get("daily", {})
-            # Relaxed: just require it's not in a severe downtrend (>= 0 means neutral/bullish)
-            if daily_vpa.get("minor", 0) >= 0 and daily_vpa.get("mid", 0) >= 0:
-                passes_vpa = True
-
-        if (passes_daily or passes_weekly or passes_monthly) and passes_vpa and not is_overextended:
+        # VPA requirement removed per user configuration
+        if (passes_daily or passes_weekly or passes_monthly) and not is_overextended:
             above_buy_price = round(sma20, 2)  # Support = 20 SMA
             above_exit_price = round(sma50 * 0.97, 2) 
             above_target_price = round(today_close_val * 1.12, 2) 

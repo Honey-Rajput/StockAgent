@@ -2244,99 +2244,75 @@ def get_latest_support_rsi() -> tuple[list[dict], str | None]:
     return results, scan_date
 
 
-def get_rsi_wt_combo(date_str: str, rsi_threshold: float = 35.0, wt_threshold: float = -40.0) -> list[dict]:
+def get_rsi_oversold(date_str: str, rsi_threshold: float = 35.0) -> list[dict]:
     """
-    Finds stocks that appear in BOTH scanned_wt_cross (WT oversold + buy signal)
-    and scanned_support_rsi (RSI oversold) on the same scan date.
-    JOINs the two tables for fast database-only retrieval.
-    Computes a combo score and confidence level.
+    Finds stocks from scanned_support_rsi (RSI oversold) on the given scan date.
+    Computes a score and confidence level based on RSI depth and support touches.
     """
     query = """
     SELECT
-        wt.symbol,
-        wt.company_name,
-        wt.cmp,
-        wt.day_change_pct,
+        sr.symbol,
+        sr.company_name,
+        sr.cmp,
+        sr.day_change_pct,
         sr.rsi,
         sr.cci,
-        wt.wt_value,
-        wt.wt2_value,
-        wt.wt_diff,
-        wt.buy_signal,
         sr.support_price,
         sr.support_touches,
         sr.distance_to_support_pct,
-        wt.above_20sma,
-        wt.above_50sma,
         sr.above_200sma,
-        wt.volume,
-        wt.buy_price,
-        wt.exit_price,
-        wt.target_price,
-        wt.confidence AS wt_confidence,
-        wt.recommendation,
-        wt.scan_date
-    FROM scanned_wt_cross wt
-    INNER JOIN scanned_support_rsi sr
-        ON wt.symbol = sr.symbol AND wt.scan_date = sr.scan_date
-    WHERE wt.scan_date = %s
-      AND wt.wt_value <= %s
+        sr.volume,
+        sr.scan_date
+    FROM scanned_support_rsi sr
+    WHERE sr.scan_date = %s
       AND sr.rsi <= %s
-    ORDER BY sr.rsi ASC, wt.wt_value ASC;
+    ORDER BY sr.rsi ASC;
     """
     conn = None
     results = []
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (date_str, wt_threshold, rsi_threshold))
+        cur.execute(query, (date_str, rsi_threshold))
         rows = cur.fetchall()
         cur.close()
         for r in rows:
             r_dict = dict(r)
             r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
             rsi_val = float(r_dict.get('rsi') or 0.0)
-            wt_val = float(r_dict.get('wt_value') or 0.0)
             r_dict['rsi'] = rsi_val
             r_dict['cci'] = float(r_dict.get('cci') or 0.0)
-            r_dict['wt_value'] = wt_val
-            r_dict['wt2_value'] = float(r_dict.get('wt2_value') or 0.0)
-            r_dict['wt_diff'] = float(r_dict.get('wt_diff') or 0.0)
-            r_dict['buy_signal'] = bool(r_dict.get('buy_signal', False))
             r_dict['support_price'] = float(r_dict.get('support_price') or 0.0)
             r_dict['support_touches'] = int(r_dict.get('support_touches') or 0)
             r_dict['distance_to_support_pct'] = float(r_dict.get('distance_to_support_pct') or 0.0)
-            r_dict['above_20sma'] = bool(r_dict.get('above_20sma', False))
-            r_dict['above_50sma'] = bool(r_dict.get('above_50sma', False))
             r_dict['above_200sma'] = bool(r_dict.get('above_200sma', False))
             r_dict['volume'] = int(r_dict.get('volume') or 0)
 
-            # Compute combo score
+            # Compute score (purely RSI + support touches)
             rsi_bonus = max(0, (rsi_threshold - rsi_val)) * 2.0
-            wt_bonus = max(0, abs(wt_val) - abs(wt_threshold)) * 1.5
-            signal_bonus = 25.0 if r_dict['buy_signal'] else 0.0
             touch_bonus = r_dict['support_touches'] * 10.0
-            combo_score = round(rsi_bonus + wt_bonus + signal_bonus + touch_bonus, 1)
-            r_dict['score'] = combo_score
+            score = round(rsi_bonus + touch_bonus, 1)
+            r_dict['score'] = score
 
             # Compute confidence
-            if rsi_val <= 30 and wt_val <= -50 and r_dict['buy_signal'] and r_dict['support_touches'] >= 3:
+            if rsi_val <= 30 and r_dict['support_touches'] >= 3:
                 r_dict['confidence'] = 'High'
-            elif rsi_val <= rsi_threshold and wt_val <= wt_threshold and r_dict['buy_signal']:
+            elif rsi_val <= rsi_threshold:
                 r_dict['confidence'] = 'Medium'
             else:
                 r_dict['confidence'] = 'Low'
 
             results.append(r_dict)
 
-        # Sort by combo score descending
+        # Sort by score descending
         results.sort(key=lambda x: x.get('score', 0), reverse=True)
     except Exception as e:
-        print(f"Error loading RSI+WT combo from database: {e}")
+        print(f"Error loading RSI oversold from database: {e}")
     finally:
         if conn:
             conn.close()
     return results
+
 
 
 def save_rsi_wt_combo(date_str: str, results: list[dict]) -> bool:
