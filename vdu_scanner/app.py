@@ -1580,7 +1580,7 @@ if run_full or run_sma:
         def process_and_fetch_if_needed(sym, df, benchmark_df, *args):
             try:
                 if df is None or len(df) == 0:
-                    df = fetch_ohlcv(sym)
+                    return {"failed": True, "error": "No historical data available"}
                 return process_single_symbol(sym, df, benchmark_df, *args)
             except Exception as e:
                 print(f"Internal error processing {sym}: {e}")
