@@ -1451,7 +1451,7 @@ if run_full or run_sma:
                 missing_symbols = []
                 
                 for sym in scan_symbols:
-                    cached_df = get_cached_ohlcv(sym, scan_timeframe)
+                    cached_df = get_cached_ohlcv(sym, scan_timeframe, ignore_ttl=True)
                     if cached_df is not None and not cached_df.empty:
                         bulk_data[sym.strip().upper()] = cached_df
                     else:
