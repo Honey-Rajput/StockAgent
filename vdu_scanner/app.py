@@ -1514,6 +1514,7 @@ if run_full or run_sma:
 
                     import concurrent.futures
                     import time
+                    import random
                     # Use fewer workers to prevent aggressive yfinance rate-limiting
                     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         futures = []
