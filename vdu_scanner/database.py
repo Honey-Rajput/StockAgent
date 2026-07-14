@@ -86,6 +86,83 @@ def get_connection():
         _thread_local.conn = TursoConnection(DATABASE_URL, TURSO_AUTH_TOKEN)
     return _thread_local.conn
 
+
+def get_today_quotes(symbols: list, date_str: str) -> dict:
+    """
+    Fetches today's OHLCV for a list of symbols from the historical_ohlcv table
+    in a single batch query.  Returns:
+        { "SYMBOL": {"open": x, "high": x, "low": x, "close": x, "volume": x} }
+    Missing symbols are simply absent from the result dict.
+    """
+    if not symbols:
+        return {}
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Use IN clause — split into chunks of 500 to avoid URI length limits
+        result = {}
+        chunk_size = 500
+        clean_symbols = [s.strip().upper().replace(".NS", "") for s in symbols]
+        for i in range(0, len(clean_symbols), chunk_size):
+            chunk = clean_symbols[i:i + chunk_size]
+            placeholders = ",".join(["?" for _ in chunk])
+            cur.execute(
+                f"SELECT symbol, open, high, low, close, volume FROM historical_ohlcv "
+                f"WHERE timeframe='Daily (1d)' AND date=? AND symbol IN ({placeholders})",
+                [date_str] + chunk
+            )
+            for row in cur.fetchall():
+                sym = row["symbol"]
+                result[sym] = {
+                    "open":   float(row["open"])   if row["open"]   is not None else 0.0,
+                    "high":   float(row["high"])   if row["high"]   is not None else 0.0,
+                    "low":    float(row["low"])    if row["low"]    is not None else 0.0,
+                    "close":  float(row["close"])  if row["close"]  is not None else 0.0,
+                    "volume": int(row["volume"])   if row["volume"] is not None else 0,
+                }
+        return result
+    except Exception as e:
+        print(f"get_today_quotes error: {e}")
+        return {}
+
+
+def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
+                      high_map: dict, low_map: dict, volume_map: dict) -> None:
+    """
+    Persists today's Phase 1 live quote maps into historical_ohlcv so that
+    the next scan on the same day can skip Yahoo Finance entirely.
+    Uses INSERT OR REPLACE to handle re-runs gracefully.
+    """
+    if not close_map:
+        return
+    try:
+        conn = get_connection()
+        stmts = []
+        for sym, close_price in close_map.items():
+            clean_sym = sym.strip().upper().replace(".NS", "")
+            stmts.append(libsql_client.Statement(
+                "INSERT OR REPLACE INTO historical_ohlcv "
+                "(symbol, timeframe, date, open, high, low, close, volume) "
+                "VALUES (?, 'Daily (1d)', ?, ?, ?, ?, ?, ?)",
+                [
+                    clean_sym,
+                    date_str,
+                    open_map.get(clean_sym, close_price),
+                    high_map.get(clean_sym, close_price),
+                    low_map.get(clean_sym, close_price),
+                    close_price,
+                    volume_map.get(clean_sym, 0),
+                ]
+            ))
+        # Batch insert in pages of 200 to stay within Turso limits
+        page = 200
+        for i in range(0, len(stmts), page):
+            conn.client.execute_batch(stmts[i:i + page])
+        print(f"save_today_quotes: saved {len(stmts)} symbols for {date_str}")
+    except Exception as e:
+        print(f"save_today_quotes error: {e}")
+
+
 def init_db() -> bool:
     """
     Initializes the database schema by creating the ai_chart_patterns, 
