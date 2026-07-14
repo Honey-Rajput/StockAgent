@@ -1337,10 +1337,7 @@ if run_full or run_sma:
                 # ⬇️ Download from Yahoo Finance (first scan of the day / market open)
                 status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
                 import time
-                chunk_size = 25  # Reduced to avoid memory spikes and yfinance URI length errors
-                retries = 0
-                max_retries = 5
-                backoff = 3.0
+                chunk_size = 35  # 35 tickers per chunk → ~51 chunks for 1795 symbols (was 72)
                 ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
                 
                 # Thread-safe accumulators for parallel quote downloads
@@ -1427,18 +1424,24 @@ if run_full or run_sma:
                         prog_bar.progress((i + 1) / len(ticker_chunks))
                         status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {i+1}/{len(ticker_chunks)})...")
 
-                # Save downloaded quotes to Turso DB in background so next scan skips Yahoo
-                if close_price_map:
-                    def _save_quotes_bg():
-                        try:
-                            database.save_today_quotes(
-                                today_date_str, close_price_map, open_price_map,
-                                high_price_map, low_price_map, volume_map
-                            )
-                        except Exception as _sq_err:
-                            print(f"save_today_quotes background error: {_sq_err}")
-                    import threading as _sq_thread
-                    _sq_thread.Thread(target=_save_quotes_bg, daemon=True).start()
+                        # ✅ Save this chunk to Turso DB immediately (per-chunk progressive save)
+                        # This means if the user closes the app mid-scan, all completed chunks
+                        # are already in the DB and won't need to be downloaded again!
+                        if _c:
+                            _chunk_c = dict(_c); _chunk_o = dict(_o)
+                            _chunk_h = dict(_h); _chunk_l = dict(_l); _chunk_v = dict(_v)
+                            _d_str = today_date_str
+                            def _save_chunk_now(cc, co, ch, cl, cv, ds):
+                                try:
+                                    database.save_today_quotes(ds, cc, co, ch, cl, cv)
+                                except Exception as _sce:
+                                    print(f"Chunk {i+1} save error: {_sce}")
+                            import threading as _p1_save_t
+                            _p1_save_t.Thread(
+                                target=_save_chunk_now,
+                                args=(_chunk_c, _chunk_o, _chunk_h, _chunk_l, _chunk_v, _d_str),
+                                daemon=True
+                            ).start()
 
             st.session_state[cache_key_p1] = (open_price_map, close_price_map, volume_map, high_price_map, low_price_map)
 
