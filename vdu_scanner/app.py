@@ -1408,6 +1408,11 @@ if run_full or run_sma:
                     scan_symbols.append(s)
         
         n_stocks = len(scan_symbols)
+        if n_stocks == 0:
+            status_box.error("❌ Failed to fetch live prices (Rate Limited by Yahoo Finance). Please try again in 5 minutes.")
+            prog_bar.progress(1.0)
+            st.stop()
+            
         failed_count = 0
         flagged_list = []
         gapup_list = []
@@ -1522,10 +1527,22 @@ if run_full or run_sma:
                                                 ticker_df["Date"] = pd.to_datetime(ticker_df["Date"]).dt.tz_localize(None)
 
                                                 chunk_data[sym.strip().upper()] = ticker_df
-                                                save_to_cache(sym.strip().upper(), ticker_df, scan_timeframe)
 
                                     except Exception:
                                         pass
+
+                                # Upload successfully downloaded data to Turso DB in a background thread
+                                # This prevents the 60-second database upload from blocking the next Yahoo download!
+                                valid_data = {k: v.copy() for k, v in chunk_data.items() if not v.empty}
+                                if valid_data:
+                                    def _upload_chunk(data_dict, tf):
+                                        for sym_k, df_v in data_dict.items():
+                                            try:
+                                                save_to_cache(sym_k, df_v, tf)
+                                            except Exception:
+                                                pass
+                                    import threading
+                                    threading.Thread(target=_upload_chunk, args=(valid_data, scan_timeframe), daemon=True).start()
 
                                 return chunk_data
 

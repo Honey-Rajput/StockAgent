@@ -77,14 +77,14 @@ def execute_values(cur, query, argslist, page_size=100):
 
 import threading
 
-db_lock = threading.Lock()
+_thread_local = threading.local()
 
 def get_connection():
     if not DATABASE_URL or not TURSO_AUTH_TOKEN:
         raise ValueError("TURSO_DATABASE_URL or TURSO_AUTH_TOKEN is not set.")
-    with db_lock:
-        conn = TursoConnection(DATABASE_URL, TURSO_AUTH_TOKEN)
-    return conn
+    if not hasattr(_thread_local, "conn"):
+        _thread_local.conn = TursoConnection(DATABASE_URL, TURSO_AUTH_TOKEN)
+    return _thread_local.conn
 
 def init_db() -> bool:
     """
