@@ -7,10 +7,10 @@ nsepython>=2.0
 apscheduler>=3.10.0
 requests>=2.31.0
 pytz>=2023.3
-psycopg2-binary>=2.9.9
 python-dotenv>=1.0.1
 joblib>=1.4.2
 xlsxwriter>=3.1.0
 scipy>=1.11.0
 openpyxl>=3.1.2
 pytest>=8.0.0
+libsql-client

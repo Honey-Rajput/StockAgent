@@ -10,26 +10,82 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(parent_dir, ".env")
 load_dotenv(env_path)
 
-DATABASE_URL = os.getenv("Database_URL")
+DATABASE_URL = os.getenv("TURSO_DATABASE_URL")
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
+
+import libsql_client
+
+class TursoCursor:
+    def __init__(self, client):
+        self.client = client
+        self._last_result = None
+
+    def execute(self, query, params=None):
+        query = query.replace('%s', '?')
+        self._last_result = self.client.execute(query, params or [])
+        
+    def fetchall(self):
+        if not self._last_result:
+            return []
+        cols = self._last_result.columns
+        res = []
+        for row in self._last_result.rows:
+            d = {cols[i]: val for i, val in enumerate(row)}
+            res.append(d)
+        return res
+        
+    def fetchone(self):
+        res = self.fetchall()
+        return res[0] if res else None
+        
+    def close(self):
+        pass
+
+class TursoConnection:
+    def __init__(self, url, token):
+        self.client = libsql_client.create_client_sync(url, auth_token=token)
+
+    def cursor(self):
+        return TursoCursor(self.client)
+
+    def commit(self):
+        pass
+        
+    def rollback(self):
+        pass
+
+    def close(self):
+        self.client.close()
+
+def execute_values(cur, query, argslist, page_size=100):
+    # Split query at VALUES %s
+    base_query, conflict_part = query.split('VALUES %s')
+    
+    # We will just run them in a transaction via execute_batch
+    # But since cur is TursoCursor, we can just access cur.client
+    stmts = []
+    
+    # For Turso execute_batch, we need libsql_client.Statement
+    for args in argslist:
+        placeholders = '(' + ', '.join(['?' for _ in args]) + ')'
+        full_q = base_query + ' VALUES ' + placeholders + conflict_part
+        stmts.append(libsql_client.Statement(full_q, list(args)))
+    
+    # Execute in batches of page_size
+    for i in range(0, len(stmts), page_size):
+        batch = stmts[i:i+page_size]
+        cur.client.execute_batch(batch)
+
 
 import threading
 
 db_lock = threading.Lock()
 
 def get_connection():
-    """
-    Establishes a connection to the PostgreSQL (Neon) database securely.
-    """
-    if not DATABASE_URL:
-        raise ValueError("Database_URL is not set in the environment or .env file.")
+    if not DATABASE_URL or not TURSO_AUTH_TOKEN:
+        raise ValueError("TURSO_DATABASE_URL or TURSO_AUTH_TOKEN is not set.")
     with db_lock:
-        conn = psycopg2.connect(DATABASE_URL, connect_timeout=5, gssencmode="disable")
-    try:
-        cur = conn.cursor()
-        cur.execute("SET statement_timeout = 8000;")
-        cur.close()
-    except Exception as e:
-        print(f"Warning: Could not set session statement_timeout: {e}")
+        conn = TursoConnection(DATABASE_URL, TURSO_AUTH_TOKEN)
     return conn
 
 def init_db() -> bool:
@@ -40,7 +96,7 @@ def init_db() -> bool:
     queries = [
         """
         CREATE TABLE IF NOT EXISTS ai_chart_patterns (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             pattern_name VARCHAR(50) NOT NULL,
             confidence VARCHAR(20) NOT NULL,
@@ -54,7 +110,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_breakouts (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -76,7 +132,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_squeezes (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -92,7 +148,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_gapups (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             prev_close DOUBLE PRECISION,
@@ -108,7 +164,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_trend_setups (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -128,7 +184,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_wt_cross (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -151,7 +207,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_monthly_momentum (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -178,7 +234,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_weekly_momentum (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -206,7 +262,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_vcs (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -225,7 +281,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_vpa (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -248,7 +304,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_stage2 (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -271,7 +327,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_volume_profile (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -289,7 +345,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_stage_analysis (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -306,7 +362,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_support_rsi (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -334,7 +390,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_rsi_wt_combo (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -369,7 +425,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_zanger (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -390,7 +446,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_bb_squeeze (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -414,7 +470,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_vcp_minervini (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             sector VARCHAR(200),
             close DOUBLE PRECISION,
@@ -595,7 +651,7 @@ def get_pattern_by_date(symbol: str, date_str: str) -> dict | None:
     conn = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (symbol.strip().upper(), date_str))
         row = cur.fetchone()
         cur.close()
@@ -626,7 +682,7 @@ def get_all_patterns_by_date(date_str: str) -> dict:
     results = {}
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -705,7 +761,7 @@ def get_recent_patterns(limit: int = 10) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (limit,))
         rows = cur.fetchall()
         cur.close()
@@ -729,7 +785,7 @@ def has_scanned_today(date_str: str) -> dict | None:
     conn = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         row = cur.fetchone()
         cur.close()
@@ -801,7 +857,7 @@ def get_cached_breakouts(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -833,7 +889,7 @@ def get_cached_squeezes(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -862,7 +918,7 @@ def get_cached_gapups(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -894,7 +950,7 @@ def get_cached_trend_setups(date_str: str, setup_type: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str, setup_type))
         rows = cur.fetchall()
         cur.close()
@@ -924,7 +980,7 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -961,7 +1017,7 @@ def get_cached_vcs(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -998,7 +1054,7 @@ def get_cached_vpa(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -1183,7 +1239,7 @@ def get_cached_stage2(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -1785,7 +1841,7 @@ def get_cached_monthly_momentum(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -1815,7 +1871,7 @@ def get_cached_weekly_momentum(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -1960,7 +2016,7 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
     try:
         conn = get_connection()
         from psycopg2.extras import RealDictCursor
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (days_lookback,))
         rows = cur.fetchall()
         cur.close()
@@ -2020,7 +2076,7 @@ def get_wt_vp_confluence(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str, '%Can Buy%'))
         rows = cur.fetchall()
         cur.close()
@@ -2115,7 +2171,7 @@ def get_cached_support_rsi(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -2161,7 +2217,7 @@ def get_latest_support_rsi() -> tuple[list[dict], str | None]:
     scan_date = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query)
         rows = cur.fetchall()
         cur.close()
@@ -2232,7 +2288,7 @@ def get_rsi_wt_combo(date_str: str, rsi_threshold: float = 35.0, wt_threshold: f
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str, wt_threshold, rsi_threshold))
         rows = cur.fetchall()
         cur.close()
@@ -2360,7 +2416,7 @@ def get_latest_rsi_wt_combo() -> tuple[list[dict], str | None]:
     scan_date = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query)
         rows = cur.fetchall()
         cur.close()
@@ -2442,7 +2498,7 @@ def get_cached_bb_squeeze(date_str: str) -> list:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute("SELECT * FROM scanned_bb_squeeze WHERE scan_date = %s", (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -2568,7 +2624,7 @@ def get_cached_stage_analysis(date_str: str) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(query, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -2831,7 +2887,7 @@ def get_vcp_minervini_scan_dates() -> list[str]:
         if conn:
             conn.close()
 
-from psycopg2.extras import execute_values
+
 import numpy as np
 
 def get_latest_date_ohlcv(symbol: str) -> str | None:
