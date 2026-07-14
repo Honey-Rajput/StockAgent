@@ -1234,6 +1234,17 @@ run_sma = False
 
 if run_full or run_sma:
     scan_mode_flag = "sma_only" if run_sma else "full"
+    
+    if "1wk" in scan_timeframe:
+        yf_period = "4y"
+        yf_interval = "1wk"
+    elif "1mo" in scan_timeframe:
+        yf_period = "10y"
+        yf_interval = "1mo"
+    else:
+        yf_period = "2y"
+        yf_interval = "1d"
+
     # Resolve the universe selected in the sidebar
     if "NIFTY 500" in universe_selection:
         universe_key = "NIFTY 500"
@@ -1345,7 +1356,8 @@ if run_full or run_sma:
                                         _high[clean_k] = float(high_series[k])
                                     if k in low_series.index and not pd.isna(low_series[k]):
                                         _low[clean_k] = float(low_series[k])
-                            # Successfully loaded chunk
+                            # Successfully loaded chunk, add a tiny delay to respect rate limits
+                            time.sleep(1.5)
                             return (_open, _close, _vol, _high, _low)
                         else:
                             raise ValueError("Empty DataFrame returned")
@@ -1377,7 +1389,23 @@ if run_full or run_sma:
 
                 
         # Fast filter Price > 0 (removes completely dead/invalid symbols)
-        scan_symbols = [s for s in raw_symbols if close_price_map.get(s.strip().upper(), 0.0) > 0.0]
+        from local_cache_manager import get_cached_ohlcv
+        scan_symbols = []
+        for s in raw_symbols:
+            clean_s = s.strip().upper()
+            if close_price_map.get(clean_s, 0.0) > 0.0:
+                scan_symbols.append(s)
+            else:
+                # Fallback to local cache if Phase 1 failed (e.g. rate limit)
+                cached_df = get_cached_ohlcv(clean_s, scan_timeframe, ignore_ttl=True)
+                if cached_df is not None and not cached_df.empty:
+                    last_row = cached_df.iloc[-1]
+                    close_price_map[clean_s] = float(last_row['Close'])
+                    if 'Open' in last_row: open_price_map[clean_s] = float(last_row['Open'])
+                    if 'Volume' in last_row: volume_map[clean_s] = float(last_row['Volume'])
+                    if 'High' in last_row: high_price_map[clean_s] = float(last_row['High'])
+                    if 'Low' in last_row: low_price_map[clean_s] = float(last_row['Low'])
+                    scan_symbols.append(s)
         
         n_stocks = len(scan_symbols)
         failed_count = 0
