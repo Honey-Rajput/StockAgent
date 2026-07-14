@@ -1,8 +1,6 @@
 # database.py
 import os
-import psycopg2
 import pandas as pd
-from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 # Resolve and load environment variables from the parent directory's .env file
@@ -1330,8 +1328,7 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
                 date_str
             ))
             
-        from psycopg2.extras import execute_batch
-        execute_batch(cur, insert_vp_query, vp_data)
+        for d in vp_data: cur.execute(insert_vp_query, d)
         conn.commit()
         return True
     except Exception as e:
@@ -1348,7 +1345,7 @@ def get_cached_volume_profile(date_str: str) -> list[dict]:
     conn = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur = conn.cursor()
         
         cur.execute("""
             SELECT * FROM scanned_volume_profile 
@@ -2015,7 +2012,6 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
     results = []
     try:
         conn = get_connection()
-        from psycopg2.extras import RealDictCursor
         cur = conn.cursor()
         cur.execute(query, (days_lookback,))
         rows = cur.fetchall()
@@ -2678,8 +2674,7 @@ def save_zanger_scan(scan_date: str, timeframe: str, results: list):
                 r.get('breakout_status', '')
             ))
             
-        import psycopg2.extras
-        psycopg2.extras.execute_batch(cur, insert_query, data)
+        for d in data: cur.execute(insert_query, d)
         conn.commit()
         try:
             print(f" Saved {len(data)} Dan Zanger records to DB for {scan_date} ({timeframe})")
@@ -2789,8 +2784,7 @@ def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
                 scan_date
             ))
 
-        import psycopg2.extras
-        psycopg2.extras.execute_batch(cur, insert_query, data)
+        for d in data: cur.execute(insert_query, d)
         conn.commit()
         print(f"Saved {len(data)} VCP+Minervini records to DB for {scan_date}")
         return True
