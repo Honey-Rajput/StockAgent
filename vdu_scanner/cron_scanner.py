@@ -5,7 +5,7 @@ import random
 import concurrent.futures
 import pandas as pd
 import yfinance as yf
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import joblib
 
@@ -18,8 +18,18 @@ if not os.environ.get('TURSO_DATABASE_URL') or not os.environ.get('TURSO_AUTH_TO
 import database
 from local_cache_manager import get_cached_ohlcv, save_to_cache, bulk_get_cached_ohlcv
 from config import LOOKBACK_DAYS, IST_TIMEZONE
-from data_fetcher import get_index_stocks, get_market_date
+from data_fetcher import get_index_stocks
 from scan_orchestrator import process_single_symbol
+
+def get_market_date(for_display=False):
+    today = datetime.now(IST_TIMEZONE)
+    if today.isoweekday() == 7:
+        target_date = (today - timedelta(days=2)).strftime('%Y-%m-%d')
+    elif today.isoweekday() == 6:
+        target_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
+    else:
+        target_date = today.strftime('%Y-%m-%d')
+    return target_date
 import ai_detector
 
 def run_background_ai_scan(symbols_list, date_str, force=False):
