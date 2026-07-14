@@ -1428,12 +1428,25 @@ if run_full or run_sma:
                     yf_interval = "1d"
                     yf_period = f"{LOOKBACK_DAYS}d"
 
-                status_box.text(f"Phase 2/3: Downloading {scan_timeframe} historical OHLCV data...")
+                status_box.text(f"Phase 2/3: Checking local cache for {scan_timeframe} historical data...")
                 prog_bar.progress(0)
-                chunk_size = 100
-                sym_chunks = [scan_symbols[i:i + chunk_size] for i in range(0, len(scan_symbols), chunk_size)]
                 
-                def download_chunk(chunk_idx, chunk):
+                from local_cache_manager import get_cached_ohlcv, save_to_cache
+                missing_symbols = []
+                
+                for sym in scan_symbols:
+                    cached_df = get_cached_ohlcv(sym, scan_timeframe)
+                    if cached_df is not None and not cached_df.empty:
+                        bulk_data[sym.strip().upper()] = cached_df
+                    else:
+                        missing_symbols.append(sym)
+                
+                if len(missing_symbols) > 0:
+                    status_box.text(f"Phase 2/3: Downloading {len(missing_symbols)} missing symbols...")
+                    chunk_size = 100
+                    sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
+                    
+                    def download_chunk(chunk_idx, chunk):
                     # Pre-fill with empty DataFrames so Phase 3 does not retry failed/delisted symbols individually
                     chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
                     chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
@@ -1477,6 +1490,7 @@ if run_full or run_sma:
                                             ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
                                             ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
                                             chunk_data[sym.strip().upper()] = ticker_df
+                                            save_to_cache(sym.strip().upper(), ticker_df, scan_timeframe)
                                 except Exception as sym_ex:
                                     pass
                             
@@ -1492,19 +1506,22 @@ if run_full or run_sma:
                             
                     return chunk_data
 
-                import concurrent.futures
-                import time
-                p2_workers = 1 if len(sym_chunks) > 10 else 2
-                with concurrent.futures.ThreadPoolExecutor(max_workers=p2_workers) as executor:
-                    futures = []
-                    for chunk_idx, chunk in enumerate(sym_chunks):
-                        futures.append(executor.submit(download_chunk, chunk_idx, chunk))
-                        time.sleep(1.0) # Throttle chunk dispatching
-                    
-                    for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                        bulk_data.update(future.result())
-                        prog_bar.progress((i + 1) / len(sym_chunks))
-                        status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
+                    import concurrent.futures
+                    import time
+                    # Use fewer workers to prevent aggressive yfinance rate-limiting
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                        futures = []
+                        
+                        # Dispatch chunk downloads with throttling
+                        for chunk_idx, chunk in enumerate(sym_chunks):
+                            futures.append(executor.submit(download_chunk, chunk_idx, chunk))
+                            time.sleep(2.0) # Throttle chunk dispatching
+                        
+                        for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                            bulk_data.update(future.result())
+                            prog_bar.progress((i + 1) / len(sym_chunks))
+                            status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
+                
                 if len(bulk_data) > 0:
                     st.session_state[cache_key_p2] = bulk_data
         

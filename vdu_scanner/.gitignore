@@ -3,3 +3,5 @@ streamlit_log.txt
 temp_search.txt
 __pycache__/
 .env
+local_data_cache/
+.pytest_cache/

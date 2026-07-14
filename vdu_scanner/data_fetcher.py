@@ -104,18 +104,32 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     if cached_df is not None:
         return cached_df.copy()
 
+    from local_cache_manager import get_cached_ohlcv, save_to_cache
+    
+    cached_parquet_df = get_cached_ohlcv(formatted_symbol, "1d")
+    if cached_parquet_df is not None and not cached_parquet_df.empty:
+        _ohlcv_cache.set(formatted_symbol, cached_parquet_df)
+        return cached_parquet_df.copy()
+
     import time
+    import threading
+    
+    # Global semaphore to rate limit individual fallback fetches across threads
+    if not hasattr(fetch_ohlcv, "_yf_semaphore"):
+        fetch_ohlcv._yf_semaphore = threading.Semaphore(3)
+
     retries = 0
     max_retries = 2
     backoff = 1.5
 
     while retries <= max_retries:
         try:
-            df = yf.download(
-                tickers=formatted_symbol,
-                period=f"{LOOKBACK_DAYS}d",
-                interval="1d",
-                progress=False,
+            with fetch_ohlcv._yf_semaphore:
+                df = yf.download(
+                    tickers=formatted_symbol,
+                    period=f"{LOOKBACK_DAYS}d",
+                    interval="1d",
+                    progress=False,
                 # NOTE: auto_adjust=True is the default in yfinance 1.x
                 # threads param was removed in yfinance 1.x
             )
@@ -123,6 +137,7 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             result = _flatten_yf_dataframe(df)
             if result is not None:
                 _ohlcv_cache.set(formatted_symbol, result)
+                save_to_cache(formatted_symbol, result, "1d")
                 return result.copy()
             raise ValueError("Empty or invalid DataFrame from yfinance")
 
