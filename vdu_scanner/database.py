@@ -93,6 +93,19 @@ def init_db() -> bool:
     """
     queries = [
         """
+        CREATE TABLE IF NOT EXISTS historical_ohlcv (
+            symbol VARCHAR(20) NOT NULL,
+            timeframe VARCHAR(20) NOT NULL,
+            date DATE NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume BIGINT,
+            PRIMARY KEY (symbol, timeframe, date)
+        );
+        """,
+        """
         CREATE TABLE IF NOT EXISTS ai_chart_patterns (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,

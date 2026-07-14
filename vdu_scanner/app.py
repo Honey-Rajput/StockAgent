@@ -1447,13 +1447,15 @@ if run_full or run_sma:
                 status_box.text(f"Phase 2/3: Checking local cache for {scan_timeframe} historical data...")
                 prog_bar.progress(0)
                 
-                from local_cache_manager import get_cached_ohlcv, save_to_cache
+                from local_cache_manager import get_cached_ohlcv, save_to_cache, bulk_get_cached_ohlcv
                 missing_symbols = []
                 
+                bulk_cached = bulk_get_cached_ohlcv(scan_symbols, scan_timeframe)
+                
                 for sym in scan_symbols:
-                    cached_df = get_cached_ohlcv(sym, scan_timeframe, ignore_ttl=True)
-                    if cached_df is not None and not cached_df.empty:
-                        bulk_data[sym.strip().upper()] = cached_df
+                    clean_sym = sym.strip().upper().replace(".NS", "")
+                    if clean_sym in bulk_cached and not bulk_cached[clean_sym].empty:
+                        bulk_data[sym.strip().upper()] = bulk_cached[clean_sym]
                     else:
                         missing_symbols.append(sym)
                 
