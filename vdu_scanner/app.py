@@ -1448,12 +1448,12 @@ if run_full or run_sma:
                     
                     def download_chunk(chunk_idx, chunk):
                     # Pre-fill with empty DataFrames so Phase 3 does not retry failed/delisted symbols individually
-                    chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
-                    chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
+                        chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
+                        chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
                     
-                    retries = 0
-                    max_retries = 5
-                    backoff = 3.0
+                        retries = 0
+                        max_retries = 5
+                        backoff = 3.0
                     
                     while retries <= max_retries:
                         try:
