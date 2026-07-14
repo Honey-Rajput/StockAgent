@@ -5,6 +5,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import yfinance as yf
+import requests as _requests_session_lib
+_YF_SESSION = _requests_session_lib.Session()
+_YF_SESSION.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
@@ -1299,7 +1302,10 @@ if run_full or run_sma:
             
             status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
             import time
-            chunk_size = 50  # Reduced to avoid memory spikes and yfinance URI length errors
+            chunk_size = 25  # Reduced to avoid memory spikes and yfinance URI length errors
+            retries = 0
+            max_retries = 5
+            backoff = 3.0
             ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
             
             # Thread-safe accumulators for parallel quote downloads
@@ -1443,7 +1449,7 @@ if run_full or run_sma:
                 
                 if len(missing_symbols) > 0:
                     status_box.text(f"Phase 2/3: Downloading {len(missing_symbols)} missing symbols...")
-                    chunk_size = 100
+                    chunk_size = 30
                     sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
                     
                     def download_chunk(chunk_idx, chunk):
@@ -1527,13 +1533,13 @@ if run_full or run_sma:
                     import concurrent.futures
                     import time
                     # Use fewer workers to prevent aggressive yfinance rate-limiting
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                         futures = []
 
                         # Dispatch chunk downloads with throttling
                         for chunk_idx, chunk in enumerate(sym_chunks):
                             futures.append(executor.submit(download_chunk, chunk_idx, chunk))
-                            time.sleep(2.0) # Throttle chunk dispatching
+                            time.sleep(random.uniform(1.5,3.0) # Throttle chunk dispatching
 
                         for i, future in enumerate(concurrent.futures.as_completed(futures)):
                             bulk_data.update(future.result())
@@ -1602,6 +1608,67 @@ if run_full or run_sma:
         # Clean progress assets
         prog_bar.empty()
         status_box.empty()
+        # Retry pass for symbols that failed the first time (often just rate-limited, not actually bad)
+        failed_syms_retry = [s for s in scan_symbols if bulk_data.get(s.strip().upper()) is None or bulk_data.get(s.strip().upper()).empty]
+        if failed_syms_retry and len(failed_syms_retry) < n_stocks * 0.6:
+            status_box.text(f"Retrying {len(failed_syms_retry)} failed symbols after cool-down...")
+            time.sleep(5)
+            retry_chunk_size = 15
+            retry_chunks = [failed_syms_retry[i:i+retry_chunk_size] for i in range(0, len(failed_syms_retry), retry_chunk_size)]
+            for rc_idx, rc in enumerate(retry_chunks):
+                rc_ns = [f"{s.strip().upper()}.NS" for s in rc]
+                try:
+                    df_retry = yf.download(tickers=rc_ns, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=20)
+                    if df_retry is not None and not df_retry.empty:
+                        for sym in rc:
+                            sym_ns = f"{sym.strip().upper()}.NS"
+                            try:
+                                if isinstance(df_retry.columns, pd.MultiIndex):
+                                    all_t = df_retry.columns.get_level_values(1).unique().tolist()
+                                    matched = next((t for t in all_t if t.upper() == sym_ns.upper()), None)
+                                    if matched is None:
+                                        continue
+                                    t_df = df_retry.xs(matched, axis=1, level=1).copy()
+                                else:
+                                    if len(rc_ns) == 1:
+                                        t_df = df_retry.copy()
+                                    else:
+                                        continue
+                                req = ["Open", "High", "Low", "Close", "Volume"]
+                                if all(c in t_df.columns for c in req):
+                                    t_df = t_df[req].dropna(subset=["Close"])
+                                    t_df = t_df[t_df["Volume"] > 0]
+                                    if not t_df.empty:
+                                        t_df = t_df.reset_index()
+                                        t_df.rename(columns={t_df.columns[0]: "Date"}, inplace=True)
+                                        t_df["Date"] = pd.to_datetime(t_df["Date"]).dt.tz_localize(None)
+                                        bulk_data[sym.strip().upper()] = t_df
+                                        save_to_cache(sym.strip().upper(), t_df, scan_timeframe)
+                            except Exception:
+                                pass
+                except Exception as retry_ex:
+                    print(f"Retry chunk {rc_idx+1} failed: {retry_ex}")
+                time.sleep(random.uniform(1.5, 2.5))
+            status_box.text(f"Retry complete. Re-scanning recovered symbols...")
+            # Re-run process_single_symbol only for the symbols that now have data
+            recovered = [s for s in failed_syms_retry if bulk_data.get(s.strip().upper()) is not None and not bulk_data.get(s.strip().upper()).empty]
+            for sym in recovered:
+                try:
+                    res = process_single_symbol(sym, bulk_data.get(sym.strip().upper()), nifty_benchmark_df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map, min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes, min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness, sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe_val, scan_mode_flag)
+                    if not res.get("failed"):
+                        failed_count -= 1
+                        if res.get("gapup"): gapup_list.append(res["gapup"])
+                        if res.get("above_ma"): above_ma_list.append(res["above_ma"])
+                        if res.get("support_ma"): support_ma_list.append(res["support_ma"])
+                        if res.get("crossover_ma"): crossover_ma_list.append(res["crossover_ma"])
+                        if res.get("minervini"): minervini_list.append(res["minervini"])
+                        if res.get("flagged"): flagged_list.append(res["flagged"])
+                        if res.get("wt"): wt_list.append(res["wt"])
+                        if res.get("vcs"): vcs_list.append(res["vcs"])
+                        if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
+                        if res.get("vpa"): vpa_list.append(res["vpa"])
+                except Exception:
+                    pass
         
         # Cache results in state to allow seamless widget interactions
         st.session_state.scan_results = flagged_list
@@ -6260,6 +6327,7 @@ with tab_stage_analysis:
         with st.spinner(f"Running Stage Analysis Scan on {universe_selection}..."):
             import yfinance as yf
             import concurrent.futures
+           
             from scanner import scan_stage_analysis
             from data_fetcher import get_index_stocks, get_all_nse_symbols
             
