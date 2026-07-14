@@ -1445,7 +1445,6 @@ if run_full or run_sma:
 
             st.session_state[cache_key_p1] = (open_price_map, close_price_map, volume_map, high_price_map, low_price_map)
 
-                
         # Fast filter Price > 0 (removes completely dead/invalid symbols)
         from local_cache_manager import get_cached_ohlcv
         scan_symbols = []
@@ -1512,8 +1511,12 @@ if run_full or run_sma:
                 
                 from local_cache_manager import get_cached_ohlcv, save_to_cache, bulk_get_cached_ohlcv
                 missing_symbols = []
-                
-                bulk_cached = bulk_get_cached_ohlcv(scan_symbols, scan_timeframe)
+
+                # Normalize timeframe key to short form for consistent DB storage
+                # (DB always stores '1d', '1wk', '1mo' — not full label like 'Daily (1d)')
+                _tf_db_key = yf_interval  # '1d', '1wk', or '1mo' — set above from scan_timeframe
+
+                bulk_cached = bulk_get_cached_ohlcv(scan_symbols, _tf_db_key)
                 
                 for sym in scan_symbols:
                     clean_sym = sym.strip().upper().replace(".NS", "")
@@ -1600,7 +1603,7 @@ if run_full or run_sma:
                                             except Exception:
                                                 pass
                                     import threading
-                                    threading.Thread(target=_upload_chunk, args=(valid_data, scan_timeframe), daemon=True).start()
+                                    threading.Thread(target=_upload_chunk, args=(valid_data, _tf_db_key), daemon=True).start()
 
                                 return chunk_data
 
@@ -1730,12 +1733,11 @@ if run_full or run_sma:
                                         t_df.rename(columns={t_df.columns[0]: "Date"}, inplace=True)
                                         t_df["Date"] = pd.to_datetime(t_df["Date"]).dt.tz_localize(None)
                                         bulk_data[sym.strip().upper()] = t_df
-                                        # Save to cache in background to not block the retry loop
+                                        # Save to cache in background
                                         _t_df_copy = t_df.copy()
                                         _sym_key = sym.strip().upper()
-                                        _tf_key = scan_timeframe
                                         import threading as _rt
-                                        _rt.Thread(target=save_to_cache, args=(_sym_key, _t_df_copy, _tf_key), daemon=True).start()
+                                        _rt.Thread(target=save_to_cache, args=(_sym_key, _t_df_copy, _tf_db_key), daemon=True).start()
                             except Exception:
                                 pass
                 except Exception as retry_ex:
