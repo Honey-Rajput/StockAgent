@@ -102,17 +102,16 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
             data_to_insert.append((
                 clean_sym,
                 date_str,
-                open_map.get(clean_sym, close_price),
-                high_map.get(clean_sym, close_price),
-                low_map.get(clean_sym, close_price),
+                open_map.get(sym, close_price),
+                high_map.get(sym, close_price),
+                low_map.get(sym, close_price),
                 close_price,
-                volume_map.get(clean_sym, 0)
+                volume_map.get(sym, 0)
             ))
             
         cursor.executemany(upsert_query, data_to_insert)
-        conn.commit()
+        # conn.commit() # autocommit is True, but no harm
         cursor.close()
-        release_connection(conn)
         print(f"save_today_quotes: saved {len(data_to_insert)} symbols for {date_str}")
     except Exception as e:
         print(f"save_today_quotes error: {e}")
