@@ -411,7 +411,7 @@ def run_background_momentum_scans():
                 MOMENTUM_SCAN_STATUS["status_text"] = f"Step 1/5 - Quote chunk {chunk_idx+1}/{len(ticker_chunks)}..."
                 MOMENTUM_SCAN_STATUS["progress"] = 0.05 + (chunk_idx / len(ticker_chunks)) * 0.15
                 try:
-                    q_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
+                    q_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=15)
                     if q_df is None or q_df.empty:
                         print("⚠️ Yahoo Finance Rate Limit hit. Aborting background scan chunk.")
                         break
@@ -476,7 +476,7 @@ def run_background_momentum_scans():
                     MOMENTUM_SCAN_STATUS["progress"] = 0.35 + (chunk_idx / len(mm_chunks)) * 0.30
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
-                        df_mbulk = yf.download(tickers=chunk_ns, period="10y", interval="1mo", progress=False, threads=False)
+                        df_mbulk = yf.download(tickers=chunk_ns, period="10y", interval="1mo", progress=False, threads=False, timeout=15)
                         if df_mbulk is None or df_mbulk.empty:
                             print("⚠️ Yahoo Finance Rate Limit hit. Aborting background monthly scan chunk.")
                             break
@@ -535,7 +535,7 @@ def run_background_momentum_scans():
                     MOMENTUM_SCAN_STATUS["progress"] = 0.65 + (chunk_idx / len(wm_chunks)) * 0.30
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
-                        df_wbulk = yf.download(tickers=chunk_ns, period="3y", interval="1wk", progress=False, threads=False)
+                        df_wbulk = yf.download(tickers=chunk_ns, period="3y", interval="1wk", progress=False, threads=False, timeout=15)
                         if df_wbulk is None or df_wbulk.empty:
                             print("⚠️ Yahoo Finance Rate Limit hit. Aborting background weekly scan chunk.")
                             break
@@ -653,7 +653,7 @@ def run_background_bb_squeeze_scan(force=False):
             
             for chunk in chunks:
                 try:
-                    df_daily = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
+                    df_daily = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False, timeout=15)
                     
                     for sym_ns in chunk:
                         try:
@@ -866,7 +866,7 @@ def run_background_all_tab_scans():
                     ALL_TAB_SCAN_STATUS["progress"] = 0.75 + (c_idx / len(s2_chunks)) * 0.20
                     try:
                         tkrs = [f"{s}.NS" for s in chunk]
-                        df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False)
+                        df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False, timeout=15)
                         if not df_s2.empty:
                             for sym in chunk:
                                 try:
@@ -1353,7 +1353,7 @@ if run_full or run_sma:
                     while retries <= max_retries:
                         try:
                             # yfinance 1.x: auto_adjust=True by default, threads param removed
-                            quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
+                            quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=15)
                             if not quotes_df.empty:
                                 # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
                                 if isinstance(quotes_df.columns, pd.MultiIndex):
@@ -2323,7 +2323,7 @@ with tab_watchlist:
         with st.spinner("Fetching real-time quotes for watchlisted assets..."):
             try:
                 # yfinance 1.x: auto_adjust=True is default, auto_adjust=False is deprecated
-                prices_df = yf.download(tickers=tickers_list, period="1d", progress=False, threads=False)
+                prices_df = yf.download(tickers=tickers_list, period="1d", progress=False, threads=False, timeout=15)
                 if not prices_df.empty:
                     # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
                     if isinstance(prices_df.columns, pd.MultiIndex):
@@ -3317,7 +3317,7 @@ with tab_wave:
                 chunk_ns = [s if s.endswith('.NS') else f"{s}.NS" for s in chunk]
                 try:
                     # yfinance 1.x: group_by, threads, auto_adjust=False removed
-                    df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False)
+                    df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False, timeout=15)
                     for sym in chunk:
                         sym_ns = sym if sym.endswith('.NS') else f"{sym}.NS"
                         try:
@@ -3963,7 +3963,7 @@ with tab_monthly:
         for mm_cidx, mm_chunk in enumerate(mm_ticker_chunks):
             mm_status.text(f"Step 1/3 — Quotes chunk {mm_cidx+1}/{len(mm_ticker_chunks)}...")
             try:
-                q_df = yf.download(tickers=mm_chunk, period="1d", progress=False, threads=False)
+                q_df = yf.download(tickers=mm_chunk, period="1d", progress=False, threads=False, timeout=15)
                 if q_df is None or q_df.empty:
                     mm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
                     break
@@ -4289,7 +4289,7 @@ with tab_weekly:
         for wm_cidx, wm_chunk in enumerate(wm_q_chunks):
             wm_status.text(f"Step 1/3 — Quote chunk {wm_cidx+1}/{len(wm_q_chunks)}...")
             try:
-                wq_df = yf.download(tickers=wm_chunk, period="1d", progress=False, threads=False)
+                wq_df = yf.download(tickers=wm_chunk, period="1d", progress=False, threads=False, timeout=15)
                 if wq_df is None or wq_df.empty:
                     wm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
                     break
@@ -4586,7 +4586,7 @@ with tab_vcs:
             for chunk in chunks:
                 tkrs = [f"{s}.NS" for s in chunk]
                 try:
-                    df_zanger = yf.download(tickers=tkrs, period=yf_period, interval=yf_interval, progress=False, threads=False)
+                    df_zanger = yf.download(tickers=tkrs, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
                     if not df_zanger.empty:
                         for sym in chunk:
                             try:
@@ -4722,7 +4722,7 @@ with tab_vcp:
                     text=f"Processing chunk {c_idx+1}/{len(sym_chunks)} ({len(vcp_results)} setups found)..."
                 )
                 try:
-                    bulk_df = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False)
+                    bulk_df = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False, timeout=15)
                     if bulk_df.empty:
                         continue
                     
@@ -4887,7 +4887,7 @@ with tab_stage2:
                 chunk_res = []
                 tkrs = [f"{s}.NS" for s in chunk]
                 try:
-                    df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False)
+                    df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False, timeout=15)
                     if not df_s2.empty:
                         for sym in chunk:
                             try:
@@ -5026,7 +5026,7 @@ with tab_vpa:
                     chunk_data = {}
                     chunk_filtered = []
                     try:
-                        df_bulk = yf.download(tickers=chunk, period="5y", interval="1d", progress=False, threads=False)
+                        df_bulk = yf.download(tickers=chunk, period="5y", interval="1d", progress=False, threads=False, timeout=15)
                         if isinstance(df_bulk.columns, pd.MultiIndex):
                             for sym in chunk:
                                 try:
@@ -5415,7 +5415,7 @@ with tab_volprofile:
                 def download_vp_chunk(chunk_idx, chunk):
                     chunk_data = {}
                     try:
-                        df_bulk = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False)
+                        df_bulk = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False, timeout=15)
                         if isinstance(df_bulk.columns, pd.MultiIndex):
                             for sym in chunk:
                                 try:
@@ -5921,7 +5921,7 @@ with tab_support:
                 for c_idx, chunk in enumerate(chunks):
                     progress_bar.progress((c_idx + 1) / len(chunks), text=f"Scanning chunk {c_idx+1}/{len(chunks)}... Found {len(support_results)} matches")
                     try:
-                        bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False)
+                        bulk_df = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False, timeout=15)
                         if bulk_df is not None and not bulk_df.empty:
                             for sym_ns in chunk:
                                 try:
@@ -6396,7 +6396,7 @@ with tab_stage_analysis:
             
             # Fetch NIFTY 50 return
             try:
-                nifty_df = yf.download("^NSEI", period="1y", interval="1d", progress=False)
+                nifty_df = yf.download("^NSEI", period="1y", interval="1d", progress=False, timeout=15)
                 if len(nifty_df) >= 127:
                     bC = float(nifty_df['Close'].iloc[-1].item() if hasattr(nifty_df['Close'].iloc[-1], 'item') else nifty_df['Close'].iloc[-1])
                     bCold = float(nifty_df['Close'].iloc[-127].item() if hasattr(nifty_df['Close'].iloc[-127], 'item') else nifty_df['Close'].iloc[-127])
@@ -6426,7 +6426,7 @@ with tab_stage_analysis:
             def process_sa_chunk(c_idx, chunk):
                 chunk_results = []
                 try:
-                    data = yf.download(chunk, period="2y", interval="1d", group_by="ticker", threads=True, progress=False)
+                    data = yf.download(chunk, period="2y", interval="1d", group_by="ticker", threads=True, progress=False, timeout=15)
                     for sym in chunk:
                         try:
                             df = data[sym] if len(chunk) > 1 else data
