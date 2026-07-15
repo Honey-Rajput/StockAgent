@@ -62,7 +62,7 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
         print("Background AI scan thread is already active. Skipping duplicate thread launch.")
         return
 
-    def scan_and_save(sym):
+    def scan_and_save(sym, df_hist):
         try:
             # Check if already scanned today to avoid redundant API queries
             if not force:
@@ -70,7 +70,6 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
                 if existing and existing.get('pattern_name') not in ["Error", "Pending"]:
                     return sym, True
                 
-            df_hist = fetch_ohlcv(sym)
             if df_hist is not None and not df_hist.empty:
                 ans_dict = ai_detector.detect_chart_pattern(sym, df_hist)
                 if ans_dict:
@@ -117,9 +116,17 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
             print("All symbols already analyzed by AI. Skipping background daemon.")
             return
             
+        from local_cache_manager import bulk_get_cached_ohlcv
+        bulk_cached = bulk_get_cached_ohlcv([s.strip().upper() for s in to_scan], "1d")
+        
+        def run_one(sym):
+            df_hist = bulk_cached.get(sym.strip().upper())
+            if df_hist is not None and not df_hist.empty:
+                scan_and_save(sym, df_hist)
+                
         max_workers = min(5, len(to_scan)) # Reduced from 20 to 5 for Streamlit Cloud memory limits
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            executor.map(scan_and_save, to_scan)
+            executor.map(run_one, to_scan)
         print("Background AI scan daemon thread finished successfully!")
 
     # Start the daemon thread and name it "AI_Background_Scan"
@@ -647,27 +654,25 @@ def run_background_bb_squeeze_scan(force=False):
             raw_symbols = get_index_stocks("ALL NSE")
             symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
             
-            bb_results = []
-            chunk_size = 100
-            chunks = [symbols_to_scan[i:i+chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
+            from local_cache_manager import bulk_get_cached_ohlcv
             
-            for chunk in chunks:
+            bb_results = []
+            
+            # Fetch all symbols from master cache at once
+            bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+            
+            for sym_ns in symbols_to_scan:
                 try:
-                    df_daily = yf.download(tickers=chunk, period="1y", interval="1d", progress=False, threads=False, timeout=15)
+                    sym = sym_ns.replace('.NS', '')
+                    d_df = bulk_cached.get(sym)
                     
-                    for sym_ns in chunk:
-                        try:
-                            sym = sym_ns.replace('.NS', '')
-                            # Extract daily
-                            d_df = df_daily.xs(sym_ns, axis=1, level=1).dropna(subset=['Close']) if isinstance(df_daily.columns, pd.MultiIndex) else df_daily.dropna(subset=['Close'])
-                            if d_df.empty: continue
-                            
-                            res = scan_ema_support(sym, d_df)
-                            if res:
-                                bb_results.append(res)
-                        except Exception:
-                            pass
-                except Exception as chunk_ex:
+                    if d_df is None or d_df.empty:
+                        continue
+                        
+                    res = scan_ema_support(sym, d_df)
+                    if res:
+                        bb_results.append(res)
+                except Exception:
                     pass
                     
             ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = bb_results
@@ -861,29 +866,24 @@ def run_background_all_tab_scans():
                 ALL_TAB_SCAN_STATUS["progress"] = 0.75
                 s2_cands = get_index_stocks("NIFTY 500")
                 s2_res = []
-                s2_chunks = [s2_cands[i:i+100] for i in range(0, len(s2_cands), 100)]
-                for c_idx, chunk in enumerate(s2_chunks):
-                    ALL_TAB_SCAN_STATUS["progress"] = 0.75 + (c_idx / len(s2_chunks)) * 0.20
+                
+                from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
+                s2_bulk = bulk_get_cached_ohlcv([s.strip().upper() for s in s2_cands], "1d")
+                
+                for c_idx, (sym, t_df) in enumerate(s2_bulk.items()):
+                    if c_idx % 20 == 0:
+                        ALL_TAB_SCAN_STATUS["progress"] = 0.75 + (c_idx / max(len(s2_bulk), 1)) * 0.20
+                        
+                    if t_df is None or t_df.empty:
+                        continue
+                        
                     try:
-                        tkrs = [f"{s}.NS" for s in chunk]
-                        df_s2 = yf.download(tickers=tkrs, period="5y", interval="1mo", progress=False, threads=False, timeout=15)
-                        if not df_s2.empty:
-                            for sym in chunk:
-                                try:
-                                    if isinstance(df_s2.columns, pd.MultiIndex):
-                                        all_tkrs = df_s2.columns.get_level_values(1).unique().tolist()
-                                        matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
-                                        if not matched_t: continue
-                                        t_df = df_s2.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                    else:
-                                        t_df = df_s2.dropna(subset=['Close'])
-                                    if not t_df.empty and len(t_df) >= 24:
-                                        t_df = t_df.reset_index()
-                                        t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
-                                        res = scan_monthly_early_stage2(sym, t_df, max_run_up_pct=20.0)
-                                        if res: s2_res.append(res)
-                                except Exception: pass
+                        m_df = resample_ohlcv(t_df, 'ME')
+                        if not m_df.empty and len(m_df) >= 24:
+                            res = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0)
+                            if res: s2_res.append(res)
                     except Exception: pass
+                    
                 s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
                 ALL_TAB_SCAN_STATUS["stage2_results"] = s2_res
                 try: database.save_stage2_only(today_str, s2_res)
@@ -3948,101 +3948,36 @@ with tab_monthly:
         mm_results = []
         mm_prog = st.progress(0)
         mm_status = st.empty()
-        total_mm = len(mm_universe)
 
-        # ---- Step 1: Batch fetch market caps via yf.download 1d ----
-        mm_status.text("Step 1/3 — Fetching real-time quotes & market caps...")
-        mcap_map = {}   # symbol -> market_cap in crore
-        price_map_mm = {}  # symbol -> CMP
-        CRORE = 1_00_00_000  # 1 crore INR
-
-        mm_tickers_ns = [f"{s.strip().upper()}.NS" for s in mm_universe]
-        mm_chunk_size = 200
-        mm_ticker_chunks = [mm_tickers_ns[i:i+mm_chunk_size] for i in range(0, len(mm_tickers_ns), mm_chunk_size)]
-
-        for mm_cidx, mm_chunk in enumerate(mm_ticker_chunks):
-            mm_status.text(f"Step 1/3 — Quotes chunk {mm_cidx+1}/{len(mm_ticker_chunks)}...")
-            try:
-                q_df = yf.download(tickers=mm_chunk, period="1d", progress=False, threads=False, timeout=15)
-                if q_df is None or q_df.empty:
-                    mm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
-                    break
-                if not q_df.empty and isinstance(q_df.columns, pd.MultiIndex):
-                    price_types_mm = q_df.columns.get_level_values(0).unique().tolist()
-                    cl_s = q_df['Close'].iloc[-1] if 'Close' in price_types_mm else pd.Series(dtype=float)
-                    for tk, pv in cl_s.items():
-                        sym_clean = str(tk).replace(".NS", "").upper()
-                        if not pd.isna(pv) and float(pv) >= 100.0:
-                            price_map_mm[sym_clean] = float(pv)
-            except Exception as e:
-                print(f"MM quote chunk {mm_cidx+1} failed: {e}")
-            _time.sleep(0.5)
-
-        # Filter by price >= 100 first
-        mm_price_passed = [s for s in mm_universe if s.strip().upper() in price_map_mm]
-        mm_status.text(f"Step 1/3 — {len(mm_price_passed)} stocks pass price ≥ ₹100 filter. Fetching market caps...")
-
-        mm_mcap_passed = list(mm_price_passed)
-        mcap_map = {sym: 0.0 for sym in mm_mcap_passed}  # Default to 0 since bulk fetch rate-limits
-        mm_status.text(f"Step 2/3 — Market Cap filter bypassed. Downloading monthly data for {len(mm_mcap_passed)} stocks...")
-
-        # ---- Step 3: Download monthly OHLCV in bulk and scan ----
-        mm_monthly_chunk_size = 50
-        mm_sym_chunks = [mm_mcap_passed[i:i+mm_monthly_chunk_size] for i in range(0, len(mm_mcap_passed), mm_monthly_chunk_size)]
-        total_chunks_mm = len(mm_sym_chunks)
-
-        for c_idx, c_chunk in enumerate(mm_sym_chunks):
-            mm_status.text(f"Step 3/3 — Scanning monthly data: chunk {c_idx+1}/{total_chunks_mm} ({len(mm_results)} matches so far)...")
-            mm_prog.progress((c_idx + 1) / max(total_chunks_mm, 1))
-            chunk_ns_mm = [f"{s.strip().upper()}.NS" for s in c_chunk]
-            try:
-                df_mbulk = yf.download(
-                    tickers=chunk_ns_mm,
-                    period="10y",
-                    interval="1mo",
-                    progress=False
-                )
-                if df_mbulk is None or df_mbulk.empty:
-                    mm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
-                    break
-                for sym_m in c_chunk:
-                    sym_ns_m = f"{sym_m.strip().upper()}.NS"
-                    try:
-                        if isinstance(df_mbulk.columns, pd.MultiIndex):
-                            all_t_mm = df_mbulk.columns.get_level_values(1).unique().tolist()
-                            matched_m = next((t for t in all_t_mm if t.upper() == sym_ns_m.upper()), None)
-                            if matched_m is None:
-                                continue
-                            t_df_m = df_mbulk.xs(matched_m, axis=1, level=1).copy()
-                        else:
-                            if len(chunk_ns_mm) == 1:
-                                t_df_m = df_mbulk.copy()
-                            else:
-                                continue
-
-                        req_m = ['Open', 'High', 'Low', 'Close', 'Volume']
-                        if not all(col in t_df_m.columns for col in req_m):
-                            continue
-                        t_df_m = t_df_m[req_m].dropna(subset=['Close'])
-                        t_df_m = t_df_m[t_df_m['Volume'] > 0]
-                        if len(t_df_m) < 22:
-                            continue
-                        t_df_m = t_df_m.reset_index()
-                        t_df_m.rename(columns={t_df_m.columns[0]: 'Date'}, inplace=True)
-                        t_df_m['Date'] = pd.to_datetime(t_df_m['Date']).dt.tz_localize(None)
-
-                        res_m = scan_monthly_momentum(
-                            sym_m.strip().upper(),
-                            t_df_m,
-                            market_cap_cr=mcap_map.get(sym_m.strip().upper(), 0.0)
-                        )
-                        if res_m is not None:
-                            mm_results.append(res_m)
-                    except Exception as sym_m_ex:
-                        pass
-            except Exception as c_ex:
-                print(f"Monthly momentum chunk {c_idx+1} failed: {c_ex}")
-            _time.sleep(0.3)
+        # ---- Fetch all from Master Cache & Resample ----
+        mm_status.text("Step 1/3 — Fetching data from Master Cache...")
+        from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
+        
+        symbols_to_scan = [s.strip().upper() for s in mm_universe]
+        bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+        
+        mm_status.text(f"Step 2/3 — Resampling to Monthly & Scanning {len(bulk_cached)} stocks...")
+        mm_total = len(bulk_cached)
+        
+        for idx, (sym, d_df) in enumerate(bulk_cached.items()):
+            if idx % 50 == 0:
+                mm_status.text(f"Step 3/3 — Scanning: {idx+1}/{mm_total} ({len(mm_results)} matches so far)...")
+                mm_prog.progress((idx + 1) / max(mm_total, 1))
+                
+            if d_df is None or d_df.empty:
+                continue
+                
+            cmp = d_df['Close'].iloc[-1]
+            if cmp < 100:
+                continue
+                
+            m_df = resample_ohlcv(d_df, 'ME')  # 'ME' is month-end frequency
+            if len(m_df) < 22:
+                continue
+                
+            res_m = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
+            if res_m:
+                mm_results.append(res_m)
 
         mm_prog.progress(1.0)
         st.session_state.monthly_momentum_results = mm_results
@@ -4277,95 +4212,35 @@ with tab_weekly:
         wm_prog    = st.progress(0)
         wm_status  = st.empty()
 
-        # ---- Step 1: Price filter ≥ ₹200 via 1d bulk download ----
-        wm_status.text("Step 1/3 — Fetching real-time quotes (Price ≥ ₹200 filter)...")
-        price_map_wm = {}
-        CRORE = 1_00_00_000
-
-        wm_tickers_ns = [f"{s.strip().upper()}.NS" for s in wm_universe]
-        wm_chunk_size  = 200
-        wm_q_chunks    = [wm_tickers_ns[i:i+wm_chunk_size] for i in range(0, len(wm_tickers_ns), wm_chunk_size)]
-
-        for wm_cidx, wm_chunk in enumerate(wm_q_chunks):
-            wm_status.text(f"Step 1/3 — Quote chunk {wm_cidx+1}/{len(wm_q_chunks)}...")
-            try:
-                wq_df = yf.download(tickers=wm_chunk, period="1d", progress=False, threads=False, timeout=15)
-                if wq_df is None or wq_df.empty:
-                    wm_status.error("⚠️ Yahoo Finance Rate Limit Exceeded. Scan stopped early to prevent crash. Showing partial results.")
-                    break
-                if not wq_df.empty and isinstance(wq_df.columns, pd.MultiIndex):
-                    wpt = wq_df.columns.get_level_values(0).unique().tolist()
-                    wcl = wq_df['Close'].iloc[-1] if 'Close' in wpt else pd.Series(dtype=float)
-                    for wtk, wpv in wcl.items():
-                        wsc = str(wtk).replace(".NS", "").upper()
-                        if not pd.isna(wpv) and float(wpv) >= 200.0:
-                            price_map_wm[wsc] = float(wpv)
-            except Exception as wqe:
-                print(f"WM quote chunk {wm_cidx+1} failed: {wqe}")
-            _time_wm.sleep(0.5)
-
-        wm_price_passed = [s for s in wm_universe if s.strip().upper() in price_map_wm]
-        wm_status.text(f"Step 1/3 — {len(wm_price_passed)} stocks pass Price ≥ ₹200. Checking market caps...")
-
-        # ---- Step 2: Market Cap Filter Bypassed ----
-        wm_mcap_passed = list(wm_price_passed)
-        mcap_map_wm = {sym: 0.0 for sym in wm_mcap_passed}
-        wm_status.text(f"Step 2/3 — Market Cap filter bypassed. Downloading weekly data for {len(wm_mcap_passed)} stocks...")
-
-        # ---- Step 3: Bulk weekly OHLCV download + scan ----
-        wm_monthly_chunk_size = 60
-        wm_sym_chunks  = [wm_mcap_passed[i:i+wm_monthly_chunk_size] for i in range(0, len(wm_mcap_passed), wm_monthly_chunk_size)]
-        wm_total_chunks = len(wm_sym_chunks)
-
-        for wc_idx, wc_chunk in enumerate(wm_sym_chunks):
-            wm_status.text(f"Step 3/3 — Scanning weekly data: chunk {wc_idx+1}/{wm_total_chunks} ({len(wm_results)} matches so far)...")
-            wm_prog.progress((wc_idx + 1) / max(wm_total_chunks, 1))
-            chunk_ns_wm = [f"{s.strip().upper()}.NS" for s in wc_chunk]
-            try:
-                df_wbulk = yf.download(
-                    tickers=chunk_ns_wm,
-                    period="3y",
-                    interval="1wk",
-                    progress=False
-                )
-                for sym_w in wc_chunk:
-                    sym_ns_w = f"{sym_w.strip().upper()}.NS"
-                    try:
-                        if isinstance(df_wbulk.columns, pd.MultiIndex):
-                            all_t_wm = df_wbulk.columns.get_level_values(1).unique().tolist()
-                            matched_w = next((t for t in all_t_wm if t.upper() == sym_ns_w.upper()), None)
-                            if matched_w is None:
-                                continue
-                            t_df_w = df_wbulk.xs(matched_w, axis=1, level=1).copy()
-                        else:
-                            if len(chunk_ns_wm) == 1:
-                                t_df_w = df_wbulk.copy()
-                            else:
-                                continue
-
-                        req_w = ['Open', 'High', 'Low', 'Close', 'Volume']
-                        if not all(col in t_df_w.columns for col in req_w):
-                            continue
-                        t_df_w = t_df_w[req_w].dropna(subset=['Close'])
-                        t_df_w = t_df_w[t_df_w['Volume'] > 0]
-                        if len(t_df_w) < 22:
-                            continue
-                        t_df_w = t_df_w.reset_index()
-                        t_df_w.rename(columns={t_df_w.columns[0]: 'Date'}, inplace=True)
-                        t_df_w['Date'] = pd.to_datetime(t_df_w['Date']).dt.tz_localize(None)
-
-                        res_w = scan_weekly_momentum(
-                            sym_w.strip().upper(),
-                            t_df_w,
-                            market_cap_cr=mcap_map_wm.get(sym_w.strip().upper(), 0.0)
-                        )
-                        if res_w is not None:
-                            wm_results.append(res_w)
-                    except Exception:
-                        pass
-            except Exception as wc_ex:
-                print(f"Weekly momentum chunk {wc_idx+1} failed: {wc_ex}")
-            _time_wm.sleep(0.3)
+        # ---- Fetch all from Master Cache & Resample ----
+        wm_status.text("Step 1/3 — Fetching data from Master Cache...")
+        from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
+        
+        symbols_to_scan = [s.strip().upper() for s in wm_universe]
+        bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+        
+        wm_status.text(f"Step 2/3 — Resampling to Weekly & Scanning {len(bulk_cached)} stocks...")
+        wm_total = len(bulk_cached)
+        
+        for idx, (sym, d_df) in enumerate(bulk_cached.items()):
+            if idx % 50 == 0:
+                wm_status.text(f"Step 3/3 — Scanning: {idx+1}/{wm_total} ({len(wm_results)} matches so far)...")
+                wm_prog.progress((idx + 1) / max(wm_total, 1))
+                
+            if d_df is None or d_df.empty:
+                continue
+                
+            cmp = d_df['Close'].iloc[-1]
+            if cmp < 200:
+                continue
+                
+            w_df = resample_ohlcv(d_df, 'W')
+            if len(w_df) < 22:
+                continue
+                
+            res_w = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
+            if res_w:
+                wm_results.append(res_w)
 
         wm_prog.progress(1.0)
         st.session_state.weekly_momentum_results = wm_results

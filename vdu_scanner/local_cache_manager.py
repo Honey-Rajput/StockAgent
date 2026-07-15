@@ -3,9 +3,10 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 import database
+import psycopg2.extras
 
 # We no longer use local filesystem cache
-# All cache is stored in the Turso historical_ohlcv table
+# All cache is stored in the Neon PostgreSQL historical_ohlcv table
 
 CACHE_TTL_SECONDS = 8 * 3600
 
@@ -15,7 +16,7 @@ def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = Fals
     try:
         conn = database.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT date, open, high, low, close, volume FROM historical_ohlcv WHERE symbol=? AND timeframe=? ORDER BY date ASC", (clean_sym, timeframe))
+        cur.execute("SELECT date, open, high, low, close, volume FROM historical_ohlcv WHERE symbol=%s AND timeframe=%s ORDER BY date ASC", (clean_sym, timeframe))
         rows = cur.fetchall()
         
         if not rows:
@@ -41,12 +42,12 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
         conn = database.get_connection()
         cur = conn.cursor()
         
-        # Process in chunks of 500 to avoid SQLite limits
+        # Process in chunks of 500
         chunk_size = 500
         for i in range(0, len(clean_syms), chunk_size):
             chunk = clean_syms[i:i+chunk_size]
-            placeholders = ','.join(['?' for _ in chunk])
-            query = f"SELECT symbol, date, open, high, low, close, volume FROM historical_ohlcv WHERE timeframe=? AND symbol IN ({placeholders}) ORDER BY date ASC"
+            placeholders = ','.join(['%s' for _ in chunk])
+            query = f"SELECT symbol, date, open, high, low, close, volume FROM historical_ohlcv WHERE timeframe=%s AND symbol IN ({placeholders}) ORDER BY date ASC"
             
             args = [timeframe] + chunk
             cur.execute(query, args)
@@ -66,7 +67,7 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
         return result_dict
 
 def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
-    """Saves the DataFrame to the Turso DB cache."""
+    """Saves the DataFrame to the Neon DB cache."""
     if df is None or df.empty:
         return
         
@@ -74,23 +75,33 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
     
     try:
         conn = database.get_connection()
-        client = conn.client
-        import libsql_client
+        cur = conn.cursor()
         
+        # Optimization: Only upsert the most recent day (which might update) and any new days
+        cur.execute("SELECT MAX(date) FROM historical_ohlcv WHERE symbol=%s AND timeframe=%s", (clean_sym, timeframe))
+        max_date_row = cur.fetchone()
+        if max_date_row and max_date_row['max']:
+            max_date = pd.to_datetime(max_date_row['max'])
+            # Filter df to only keep dates >= max_date
+            df = df[df['Date'] >= max_date]
+            
+        if df.empty:
+            return
+            
         query = """
         INSERT INTO historical_ohlcv (symbol, timeframe, date, open, high, low, close, volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES %s
         ON CONFLICT(symbol, timeframe, date) DO UPDATE SET
         open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close, volume=EXCLUDED.volume
         """
         
-        stmts = []
+        argslist = []
         for _, row in df.iterrows():
             date_str = str(row['Date']).split(' ')[0] if pd.notnull(row['Date']) else None
             if not date_str:
                 continue
                 
-            args = [
+            args = (
                 clean_sym,
                 timeframe,
                 date_str,
@@ -99,12 +110,10 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
                 float(row['Low']) if pd.notnull(row['Low']) else 0.0,
                 float(row['Close']) if pd.notnull(row['Close']) else 0.0,
                 int(row['Volume']) if pd.notnull(row['Volume']) else 0
-            ]
-            stmts.append(libsql_client.Statement(query, args))
+            )
+            argslist.append(args)
             
-        chunk_size = 200
-        for j in range(0, len(stmts), chunk_size):
-            client.batch(stmts[j:j+chunk_size])
+        psycopg2.extras.execute_values(cur, query, argslist, page_size=200)
             
     except Exception as e:
         print(f"Error saving DB cache for {clean_sym}: {e}")

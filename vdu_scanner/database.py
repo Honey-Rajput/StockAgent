@@ -8,83 +8,25 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(parent_dir, ".env")
 load_dotenv(env_path)
 
-DATABASE_URL = os.getenv("TURSO_DATABASE_URL")
-TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
+DATABASE_URL = os.getenv("Database_URL")
 
-import libsql_client
-
-class TursoCursor:
-    def __init__(self, client):
-        self.client = client
-        self._last_result = None
-
-    def execute(self, query, params=None):
-        query = query.replace('%s', '?')
-        self._last_result = self.client.execute(query, params or [])
-        
-    def fetchall(self):
-        if not self._last_result:
-            return []
-        cols = self._last_result.columns
-        res = []
-        for row in self._last_result.rows:
-            d = {cols[i]: val for i, val in enumerate(row)}
-            res.append(d)
-        return res
-        
-    def fetchone(self):
-        res = self.fetchall()
-        return res[0] if res else None
-        
-    def close(self):
-        pass
-
-class TursoConnection:
-    def __init__(self, url, token):
-        self.client = libsql_client.create_client_sync(url, auth_token=token)
-
-    def cursor(self):
-        return TursoCursor(self.client)
-
-    def commit(self):
-        pass
-        
-    def rollback(self):
-        pass
-
-    def close(self):
-        self.client.close()
-
-def execute_values(cur, query, argslist, page_size=100):
-    # Split query at VALUES %s
-    base_query, conflict_part = query.split('VALUES %s')
-    
-    # We will just run them in a transaction via execute_batch
-    # But since cur is TursoCursor, we can just access cur.client
-    stmts = []
-    
-    # For Turso execute_batch, we need libsql_client.Statement
-    for args in argslist:
-        placeholders = '(' + ', '.join(['?' for _ in args]) + ')'
-        full_q = base_query + ' VALUES ' + placeholders + conflict_part
-        stmts.append(libsql_client.Statement(full_q, list(args)))
-    
-    # Execute in batches of page_size
-    for i in range(0, len(stmts), page_size):
-        batch = stmts[i:i+page_size]
-        cur.client.batch(batch)
-
-
+import psycopg2
+import psycopg2.extras
+from psycopg2.extras import RealDictCursor
 import threading
 
 _thread_local = threading.local()
 
 def get_connection():
-    if not DATABASE_URL or not TURSO_AUTH_TOKEN:
-        raise ValueError("TURSO_DATABASE_URL or TURSO_AUTH_TOKEN is not set.")
-    if not hasattr(_thread_local, "conn"):
-        _thread_local.conn = TursoConnection(DATABASE_URL, TURSO_AUTH_TOKEN)
+    if not DATABASE_URL:
+        raise ValueError("Database_URL is not set in environment.")
+    if not hasattr(_thread_local, "conn") or _thread_local.conn.closed:
+        _thread_local.conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        _thread_local.conn.autocommit = True
     return _thread_local.conn
+
+def execute_values(cur, query, argslist, page_size=100):
+    psycopg2.extras.execute_values(cur, query, argslist, page_size=page_size)
 
 
 def get_today_quotes(symbols: list, date_str: str) -> dict:
@@ -184,7 +126,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS ai_chart_patterns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             pattern_name VARCHAR(50) NOT NULL,
             confidence VARCHAR(20) NOT NULL,
@@ -198,7 +140,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_breakouts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -227,7 +169,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_squeezes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -248,7 +190,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_gapups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             prev_close DOUBLE PRECISION,
@@ -269,7 +211,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_trend_setups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -298,7 +240,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_wt_cross (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -332,7 +274,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_monthly_momentum (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -359,7 +301,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_weekly_momentum (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -387,7 +329,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_vcs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -406,7 +348,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_vpa (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -429,7 +371,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_stage2 (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -452,7 +394,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_volume_profile (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -470,7 +412,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_stage_analysis (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -487,7 +429,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_support_rsi (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -515,7 +457,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_rsi_wt_combo (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -550,7 +492,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_zanger (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -571,7 +513,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_bb_squeeze (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -595,7 +537,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_vcp_minervini (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             sector VARCHAR(200),
             close DOUBLE PRECISION,

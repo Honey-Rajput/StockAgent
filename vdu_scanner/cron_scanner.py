@@ -15,8 +15,8 @@ env_path = os.path.join(parent_dir, ".env")
 load_dotenv(env_path)
 
 # Set up environment variables if not present (handled by GitHub Actions usually, but safe to check)
-if not os.environ.get('TURSO_DATABASE_URL') or not os.environ.get('TURSO_AUTH_TOKEN'):
-    print("❌ ERROR: TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set as environment variables.")
+if not os.environ.get('Database_URL'):
+    print("❌ ERROR: Database_URL must be set as an environment variable.")
     sys.exit(1)
 
 # Import local modules
