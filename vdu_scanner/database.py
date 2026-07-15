@@ -13,17 +13,73 @@ DATABASE_URL = os.getenv("Database_URL")
 import psycopg2
 import psycopg2.extras
 from psycopg2.extras import RealDictCursor
+from psycopg2.pool import ThreadedConnectionPool
 import threading
 
-_thread_local = threading.local()
+_pool = None
+_pool_lock = threading.Lock()
+
+def get_pool():
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                if not DATABASE_URL:
+                    raise ValueError("Database_URL is not set in environment.")
+                _pool = ThreadedConnectionPool(1, 40, DATABASE_URL, cursor_factory=RealDictCursor)
+    return _pool
+
+class PooledConnection:
+    def __init__(self, pool, conn):
+        self._pool = pool
+        self._conn = conn
+        self._conn.autocommit = True
+        
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+        
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+        
+    def commit(self):
+        self._conn.commit()
+        
+    def rollback(self):
+        self._conn.rollback()
+        
+    def close(self):
+        if self._conn:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                pass
+            self._conn = None
 
 def get_connection():
-    if not DATABASE_URL:
-        raise ValueError("Database_URL is not set in environment.")
-    if not hasattr(_thread_local, "conn") or _thread_local.conn.closed:
-        _thread_local.conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-        _thread_local.conn.autocommit = True
-    return _thread_local.conn
+    pool = get_pool()
+    try:
+        conn = pool.getconn()
+    except Exception as e:
+        # If pool exhausted or network error, fallback to unpooled to avoid crash
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        conn.autocommit = True
+        return conn
+        
+    try:
+        # Fast ping to ensure connection is alive
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+        # Connection is dead, discard and get a fresh one
+        try:
+            pool.putconn(conn, close=True)
+            conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+            conn.autocommit = True
+            return conn
+        except Exception:
+            pass
+            
+    return PooledConnection(pool, conn)
 
 def execute_values(cur, query, argslist, page_size=100):
     psycopg2.extras.execute_values(cur, query, argslist, page_size=page_size)
