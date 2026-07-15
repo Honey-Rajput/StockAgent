@@ -28,8 +28,7 @@ jobs:
 
       - name: Run Automated Headless Scanner
         env:
-          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          Database_URL: ${{ secrets.Database_URL }}
           EURI_API_KEY: ${{ secrets.EURI_API_KEY }}
           EURI_BASE_URL: ${{ secrets.EURI_BASE_URL }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
