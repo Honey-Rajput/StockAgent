@@ -9,6 +9,11 @@ from datetime import datetime, timedelta
 import pytz
 import joblib
 
+from dotenv import load_dotenv
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(parent_dir, ".env")
+load_dotenv(env_path)
+
 # Set up environment variables if not present (handled by GitHub Actions usually, but safe to check)
 if not os.environ.get('TURSO_DATABASE_URL') or not os.environ.get('TURSO_AUTH_TOKEN'):
     print("❌ ERROR: TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set as environment variables.")
