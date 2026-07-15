@@ -1178,7 +1178,7 @@ dry_zone_range = st.sidebar.slider(
     "Dry Zone Range (Trading Days)",
     min_value=0,
     max_value=150,
-    value=(50, 150),
+    value=(0, 50),
     step=5,
     key="vdu_dry_zone_range_v5",
     help="Configure the minimum and maximum duration of the dry zone consolidation period (up to 150 days)"

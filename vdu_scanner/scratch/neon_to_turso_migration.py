@@ -7,12 +7,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Neon DB Connection
-neon_url = "postgresql://neondb_owner:npg_EL5AOekN0YoH@ep-shiny-sound-apwx3te5-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+neon_url = os.getenv("NEON_DATABASE_URL", "postgresql://user:pass@host/db")
 neon_conn = psycopg2.connect(neon_url)
 
 # Turso DB Connection
-turso_url = "https://stockdatabase-honeyisalive.aws-ap-south-1.turso.io"
-turso_token = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODQwMzY1NDYsImlkIjoiMDE5ZjYwZGItZWMwMS03YjkyLWJhYzQtNjNlMjFiNzQyYjg3Iiwia2lkIjoiQlJuVlNHSllLc0dvRkNhcnd1UEh2bWtBZ1RJVUJ3MmlOeEw4YmJVd3gxUSIsInJpZCI6Ijg4MzZjMTA1LTQ1ZGYtNDIzMS05ZmVhLWJmMmFjZWZmMDY0YyJ9.cye9Tb-_GJZSsjF_NyZfq-ZKwZRezOzw-pC_1yOUpCvnVhECZow5wvbKG1w0eTTDyUdBAgd5w1QAoa5JUxHSDA"
+turso_url = os.getenv("TURSO_DATABASE_URL", "https://...")
+turso_token = os.getenv("TURSO_AUTH_TOKEN", "eyJ...")
 
 os.environ["TURSO_DATABASE_URL"] = turso_url
 os.environ["TURSO_AUTH_TOKEN"] = turso_token
