@@ -334,6 +334,7 @@ def run_headless_scan():
                 return {"failed": True, "error": "No historical data available"}
             return process_single_symbol(sym, df, benchmark_df, *args)
         except Exception as e:
+            print(f"process_and_fetch_if_needed failed for {sym}: {e}")
             return {"failed": True, "error": str(e)}
 
     # Scanner Settings (Same as Streamlit Defaults)

@@ -408,7 +408,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 
         if df is not None:
             res["vcs"] = scan_vcs(sym, df, indicators=ind)
-            res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df, benchmark_df).run()
+            res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df=df, benchmark_df=benchmark_df).run()
             res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
         
     return res

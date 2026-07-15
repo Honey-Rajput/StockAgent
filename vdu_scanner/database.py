@@ -47,10 +47,10 @@ def get_today_quotes(symbols: list, date_str: str) -> dict:
         clean_symbols = [s.strip().upper().replace(".NS", "") for s in symbols]
         for i in range(0, len(clean_symbols), chunk_size):
             chunk = clean_symbols[i:i + chunk_size]
-            placeholders = ",".join(["?" for _ in chunk])
+            placeholders = ",".join(["%s" for _ in chunk])
             cur.execute(
                 f"SELECT symbol, open, high, low, close, volume FROM historical_ohlcv "
-                f"WHERE timeframe='Daily (1d)' AND date=? AND symbol IN ({placeholders})",
+                f"WHERE timeframe='Daily (1d)' AND date=%s AND symbol IN ({placeholders})",
                 [date_str] + chunk
             )
             for row in cur.fetchall():

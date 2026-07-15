@@ -70,16 +70,19 @@ class MinerviniVCPAnalyzer:
         df = analyzer.df  # full dataframe with all computed columns
     """
 
-    def __init__(self, symbol: str, config: VCPConfig = None, period: str = "2y", interval: str = "1d"):
+    def __init__(self, symbol: str, df: pd.DataFrame = None, benchmark_df: pd.DataFrame = None, config: VCPConfig = None, period: str = "2y", interval: str = "1d"):
         self.symbol = symbol
-        self.cfg = config or VCPConfig()
+        self.cfg = config if config is not None else VCPConfig()
         self.period = period
         self.interval = interval
-        self.df: pd.DataFrame = None
+        self.df: pd.DataFrame = df
+        self.benchmark_df: pd.DataFrame = benchmark_df
 
     # ---- calculations -------------------------------------------------
 
     def _load_data(self):
+        if self.df is not None and not self.df.empty:
+            return
         df = _fetch_history(self.symbol, self.period, self.interval)
         if df.empty:
             raise ValueError(f"No data returned for {self.symbol}")
@@ -144,17 +147,26 @@ class MinerviniVCPAnalyzer:
     def _rpr(self):
         """Relative Price Strength proxy vs benchmark, weighted ROC blend."""
         df = self.df
+        c = self.cfg
+        if self.benchmark_df is not None and not self.benchmark_df.empty:
+            bm = self.benchmark_df
+        else:
+            bm = _fetch_history(c.benchmark, self.period, self.interval)
+        
+        if bm.empty:
+            df["rpr_proxy"] = 50.0  # fallback
+            return
+            
+        if isinstance(bm.columns, pd.MultiIndex):
+            bm.columns = bm.columns.get_level_values(0)
+        bm_close = bm["Close"].reindex(df.index).ffill()
+
         close = df["Close"]
 
         sym_roc3 = _roc(close, 63)
         sym_roc6 = _roc(close, 126)
         sym_roc9 = _roc(close, 189)
         sym_roc12 = _roc(close, 252)
-
-        bm = _fetch_history(self.cfg.benchmark, self.period, self.interval)
-        if isinstance(bm.columns, pd.MultiIndex):
-            bm.columns = bm.columns.get_level_values(0)
-        bm_close = bm["Close"].reindex(df.index).ffill()
 
         bm_roc3 = _roc(bm_close, 63)
         bm_roc6 = _roc(bm_close, 126)
