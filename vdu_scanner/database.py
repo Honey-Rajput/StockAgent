@@ -15,6 +15,7 @@ import psycopg2.extras
 from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 import threading
+import time
 
 _pool = None
 _pool_lock = threading.Lock()
@@ -74,7 +75,7 @@ def get_connection():
         # Connection is dead, discard and get a fresh one
         try:
             pool.putconn(conn, close=True)
-            time.sleep(retry_delay)
+            time.sleep(1)
             conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
             conn.autocommit = True
             return conn
