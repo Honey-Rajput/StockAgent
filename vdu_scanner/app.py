@@ -1167,7 +1167,7 @@ min_vol_ratio = st.sidebar.slider(
 min_price_chg = st.sidebar.slider(
     "Min Price Change %",
     min_value=1.5,
-    max_value=10.0,
+    max_value=30.0,
     value=7.0,
     step=0.5,
     key="vdu_min_price_chg_v8",
@@ -1178,7 +1178,7 @@ dry_zone_range = st.sidebar.slider(
     "Dry Zone Range (Trading Days)",
     min_value=0,
     max_value=150,
-    value=(15, 150),
+    value=(50, 150),
     step=5,
     key="vdu_dry_zone_range_v5",
     help="Configure the minimum and maximum duration of the dry zone consolidation period (up to 150 days)"

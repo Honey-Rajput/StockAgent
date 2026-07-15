@@ -79,28 +79,41 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
         return
     try:
         conn = get_connection()
-        stmts = []
+        if not conn:
+            return
+        
+        cursor = conn.cursor()
+        
+        upsert_query = """
+            INSERT INTO historical_ohlcv (symbol, timeframe, date, open, high, low, close, volume)
+            VALUES (%s, 'Daily (1d)', %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, timeframe, date) 
+            DO UPDATE SET 
+                open = EXCLUDED.open,
+                high = EXCLUDED.high,
+                low = EXCLUDED.low,
+                close = EXCLUDED.close,
+                volume = EXCLUDED.volume
+        """
+        
+        data_to_insert = []
         for sym, close_price in close_map.items():
             clean_sym = sym.strip().upper().replace(".NS", "")
-            stmts.append(libsql_client.Statement(
-                "INSERT OR REPLACE INTO historical_ohlcv "
-                "(symbol, timeframe, date, open, high, low, close, volume) "
-                "VALUES (?, 'Daily (1d)', ?, ?, ?, ?, ?, ?)",
-                [
-                    clean_sym,
-                    date_str,
-                    open_map.get(clean_sym, close_price),
-                    high_map.get(clean_sym, close_price),
-                    low_map.get(clean_sym, close_price),
-                    close_price,
-                    volume_map.get(clean_sym, 0),
-                ]
+            data_to_insert.append((
+                clean_sym,
+                date_str,
+                open_map.get(clean_sym, close_price),
+                high_map.get(clean_sym, close_price),
+                low_map.get(clean_sym, close_price),
+                close_price,
+                volume_map.get(clean_sym, 0)
             ))
-        # Batch insert in pages of 200 to stay within Turso limits
-        page = 200
-        for i in range(0, len(stmts), page):
-            conn.client.batch(stmts[i:i + page])
-        print(f"save_today_quotes: saved {len(stmts)} symbols for {date_str}")
+            
+        cursor.executemany(upsert_query, data_to_insert)
+        conn.commit()
+        cursor.close()
+        release_connection(conn)
+        print(f"save_today_quotes: saved {len(data_to_insert)} symbols for {date_str}")
     except Exception as e:
         print(f"save_today_quotes error: {e}")
 
