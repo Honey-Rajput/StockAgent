@@ -211,9 +211,16 @@ def init_db() -> bool:
             market_cap_cr DOUBLE PRECISION,
             signal_strength DOUBLE PRECISION,
             above_50dma BOOLEAN,
+            above_200dma BOOLEAN,
             dry_start_date DATE,
             dry_end_date DATE,
             scan_date DATE NOT NULL,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
+            setup_type VARCHAR(50),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
@@ -230,6 +237,11 @@ def init_db() -> bool:
             squeeze_score DOUBLE PRECISION,
             market_cap_cr DOUBLE PRECISION,
             scan_date DATE NOT NULL,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
@@ -246,6 +258,11 @@ def init_db() -> bool:
             volume BIGINT,
             day_change_pct DOUBLE PRECISION,
             scan_date DATE NOT NULL,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
@@ -267,6 +284,15 @@ def init_db() -> bool:
             dist_50sma_pct DOUBLE PRECISION,
             dist_65sma_pct DOUBLE PRECISION,
             dist_200sma_pct DOUBLE PRECISION,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
+            passes_daily BOOLEAN,
+            passes_weekly BOOLEAN,
+            passes_monthly BOOLEAN,
+            near_breakout BOOLEAN,
             UNIQUE(symbol, setup_type, scan_date)
         );
         """,
@@ -280,6 +306,17 @@ def init_db() -> bool:
             wt_value DOUBLE PRECISION,
             scan_date DATE NOT NULL,
             volume BIGINT,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
+            wt2_value DOUBLE PRECISION,
+            buy_signal BOOLEAN,
+            wt_diff DOUBLE PRECISION,
+            above_20sma BOOLEAN,
+            above_50sma BOOLEAN,
+            above_200sma BOOLEAN,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );

@@ -1536,8 +1536,8 @@ if run_full or run_sma:
                         chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
 
                         retries = 0
-                        max_retries = 5
-                        backoff = 3.0
+                        max_retries = 2
+                        backoff = 2.0
 
                         while retries <= max_retries:
                             try:
@@ -1620,21 +1620,19 @@ if run_full or run_sma:
 
                         return chunk_data
 
-                    import concurrent.futures
                     import time
-                    import random
-                    # Use fewer workers to prevent aggressive yfinance rate-limiting
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                        futures = []
-
-                        # Dispatch all chunk downloads immediately (rate limiting is inside download_chunk)
-                        for chunk_idx, chunk in enumerate(sym_chunks):
-                            futures.append(executor.submit(download_chunk, chunk_idx, chunk))
-
-                        for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                            bulk_data.update(future.result())
-                            prog_bar.progress((i + 1) / len(sym_chunks))
-                            status_box.text(f"Phase 2/3: Downloading historical data (Chunk {i+1}/{len(sym_chunks)})...")
+                    # Process sequentially and add a tiny sleep to be polite to the Yahoo Finance API.
+                    # This prevents Streamlit from dropping the WebSocket connection (blank screen) due to excessive rate-limit backoff blocking.
+                    for chunk_idx, chunk in enumerate(sym_chunks):
+                        res = download_chunk(chunk_idx, chunk)
+                        bulk_data.update(res)
+                        
+                        prog_bar.progress((chunk_idx + 1) / len(sym_chunks))
+                        status_box.text(f"Phase 2/3: Downloading historical data (Chunk {chunk_idx+1}/{len(sym_chunks)})...")
+                        
+                        # Add a proactive sleep between chunks to avoid Yahoo rate limits
+                        if chunk_idx < len(sym_chunks) - 1:
+                            time.sleep(1)
 
                 if len(bulk_data) > 0:
                     st.session_state[cache_key_p2] = bulk_data
@@ -1747,12 +1745,14 @@ if run_full or run_sma:
                                         # Save to cache in background
                                         _t_df_copy = t_df.copy()
                                         _sym_key = sym.strip().upper()
+                                        from local_cache_manager import save_to_cache
                                         import threading as _rt
                                         _rt.Thread(target=save_to_cache, args=(_sym_key, _t_df_copy, _tf_db_key), daemon=True).start()
                             except Exception:
                                 pass
                 except Exception as retry_ex:
                     print(f"Retry chunk {rc_idx+1} failed: {retry_ex}")
+                import random
                 time.sleep(random.uniform(1.5, 2.5))
             status_box.text(f"Retry complete. Re-scanning recovered symbols...")
             # Re-run process_single_symbol only for the symbols that now have data

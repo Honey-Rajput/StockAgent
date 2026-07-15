@@ -42,7 +42,7 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
                     return sym, True
             
             # Simple fallback fetch since cron_scanner already downloaded data, but we can hit Yahoo here too
-            df_hist = yf.download(f"{sym}.NS", period="2y", progress=False, threads=False)
+            df_hist = yf.download(f"{sym}.NS", period="2y", progress=False, threads=False, timeout=20)
             if df_hist is not None and not df_hist.empty:
                 if isinstance(df_hist.columns, pd.MultiIndex):
                     df_hist = df_hist.xs(df_hist.columns.get_level_values(1)[0], axis=1, level=1)
@@ -155,11 +155,11 @@ def run_headless_scan():
             idx, chunk = idx_chunk_pair
             _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
             retries = 0
-            max_retries = 5
-            backoff = 3.0
+            max_retries = 2
+            backoff = 2.0
             while retries <= max_retries:
                 try:
-                    quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False)
+                    quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=20)
                     if not quotes_df.empty:
                         if isinstance(quotes_df.columns, pd.MultiIndex):
                             price_types = quotes_df.columns.get_level_values(0).unique().tolist()
@@ -253,8 +253,8 @@ def run_headless_scan():
             chunk_data = {s.strip().upper(): pd.DataFrame() for s in chunk}
             chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
             retries = 0
-            max_retries = 5
-            backoff = 3.0
+            max_retries = 2
+            backoff = 2.0
             while retries <= max_retries:
                 try:
                     df = yf.download(tickers=chunk_ns, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=20)
