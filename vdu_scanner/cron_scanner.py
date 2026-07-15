@@ -423,6 +423,13 @@ def run_headless_scan():
     except Exception as db_err:
         print(f"❌ Failed to cache daily scan results to database: {db_err}")
 
+    # Aggressively prune the historical database to keep size down (default 380 days)
+    print("Pruning old historical data to maintain database size...")
+    try:
+        database.prune_old_data_ohlcv()
+    except Exception as e:
+        print(f"❌ Pruning failed: {e}")
+
     print("🎉 Automated Headless Scan Complete!")
 
 if __name__ == "__main__":

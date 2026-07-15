@@ -66,10 +66,11 @@ def get_connection():
         return conn
         
     try:
+        conn.autocommit = True
         # Fast ping to ensure connection is alive
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
-    except (psycopg2.OperationalError, psycopg2.InterfaceError):
+    except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.ProgrammingError):
         # Connection is dead, discard and get a fresh one
         try:
             pool.putconn(conn, close=True)
@@ -3093,7 +3094,7 @@ def save_data_ohlcv(symbol: str, df: pd.DataFrame):
         if conn:
             conn.close()
 
-def prune_old_data_ohlcv(days: int = 1200):
+def prune_old_data_ohlcv(days: int = 380):
     conn = get_connection()
     try:
         cur = conn.cursor()
