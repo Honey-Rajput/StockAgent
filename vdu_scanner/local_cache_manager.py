@@ -10,6 +10,31 @@ import psycopg2.extras
 
 CACHE_TTL_SECONDS = 8 * 3600
 
+def resample_ohlcv(df: pd.DataFrame, freq: str) -> pd.DataFrame:
+    """Resamples a daily OHLCV DataFrame to a higher timeframe."""
+    if df is None or df.empty:
+        return df
+    
+    reset_index = False
+    if 'Date' in df.columns:
+        df = df.set_index('Date')
+        reset_index = True
+        
+    agg_dict = {
+        'Open': 'first',
+        'High': 'max',
+        'Low': 'min',
+        'Close': 'last',
+        'Volume': 'sum'
+    }
+    agg_cols = {col: agg_dict[col] for col in df.columns if col in agg_dict}
+    
+    resampled = df.resample(freq).agg(agg_cols).dropna()
+    
+    if reset_index:
+        resampled = resampled.reset_index()
+    return resampled
+
 def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = False) -> pd.DataFrame | None:
     """Returns the cached DataFrame if it exists and is not stale (unless ignore_ttl=True)."""
     clean_sym = symbol.strip().upper().replace(".NS", "")

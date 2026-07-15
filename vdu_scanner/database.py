@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv("Database_URL")
 
 import psycopg2
 import psycopg2.extras
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 import threading
 
@@ -26,7 +26,7 @@ def get_pool():
             if _pool is None:
                 if not DATABASE_URL:
                     raise ValueError("Database_URL is not set in environment.")
-                _pool = ThreadedConnectionPool(1, 40, DATABASE_URL, cursor_factory=RealDictCursor)
+                _pool = ThreadedConnectionPool(1, 40, DATABASE_URL, cursor_factory=DictCursor)
     return _pool
 
 class PooledConnection:
@@ -59,9 +59,9 @@ def get_connection():
     pool = get_pool()
     try:
         conn = pool.getconn()
-    except Exception as e:
-        # If pool exhausted or network error, fallback to unpooled to avoid crash
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    except Exception:
+        # Fallback to direct connection if pool fails
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
         conn.autocommit = True
         return conn
         
@@ -74,7 +74,8 @@ def get_connection():
         # Connection is dead, discard and get a fresh one
         try:
             pool.putconn(conn, close=True)
-            conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+            time.sleep(retry_delay)
+            conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
             conn.autocommit = True
             return conn
         except Exception:

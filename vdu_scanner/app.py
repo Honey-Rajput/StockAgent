@@ -1056,6 +1056,32 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                         st.session_state.vcp_minervini_results = []
                 except Exception:
                     st.session_state.vcp_minervini_results = []
+                
+                # Fetch missing cache fields for new scanners
+                try:
+                    st.session_state.stage2_results = database.get_cached_stage2(latest_date_str)
+                except Exception:
+                    st.session_state.stage2_results = []
+                
+                try:
+                    st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
+                except Exception:
+                    st.session_state.stage_analysis_results = []
+                
+                try:
+                    st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str)
+                except Exception:
+                    st.session_state.support_rsi_results = []
+                
+                try:
+                    st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(latest_date_str)
+                except Exception:
+                    st.session_state.monthly_momentum_results = []
+                    
+                try:
+                    st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(latest_date_str)
+                except Exception:
+                    st.session_state.weekly_momentum_results = []
 
                 st.session_state.total_scanned = cached_log.get('total_scanned', 0)
                 st.session_state.failed_count = 0
@@ -4540,7 +4566,9 @@ with tab_vcs:
                     cols.insert(risk_idx + 1, cols.pop(cols.index('target_price')))
                 z_df = z_df[cols]
                 
+            z_df['symbol'] = z_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
             st.dataframe(z_df, use_container_width=True, column_config={
+                "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
                 "date": st.column_config.TextColumn("Date"),
                 "score": st.column_config.NumberColumn("Score (Out of 100)", format="%.1f"),
                 "confidence_level": st.column_config.TextColumn("Confidence Level"),
@@ -4693,7 +4721,9 @@ with tab_vcp:
         available_cols = [c for c in display_cols if c in v_df.columns]
         v_df = v_df[available_cols]
         
+        v_df['symbol'] = v_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.dataframe(v_df, use_container_width=True, column_config={
+            "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
             "date": st.column_config.TextColumn("Date"),
             "close": st.column_config.NumberColumn("CMP", format="%.2f"),
             "RS Rating": st.column_config.NumberColumn("RS Rating", format="%.1f"),
@@ -5464,7 +5494,10 @@ with tab_volprofile:
         tab_all, tab_daily, tab_weekly, tab_monthly = st.tabs(["📊 All Stocks", "📅 Daily", "📅 Weekly", "📅 Monthly"])
         
         with tab_all:
-            st.dataframe(df_vp, width="stretch", hide_index=True)
+            disp_vp = df_vp.copy()
+            if 'symbol' in disp_vp.columns:
+                disp_vp['symbol'] = disp_vp['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_vp, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
             csv_all = df_vp.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download All Stocks (CSV)",
@@ -5482,7 +5515,10 @@ with tab_volprofile:
             buy_daily = df_daily[df_daily['D Zone'] == '✅ Can Buy (Near Support)']
             st.markdown(f"**{len(buy_daily)}** stocks in Daily Buy Zone | **{len(df_daily)}** total with daily data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
-            st.dataframe(df_daily, width="stretch", hide_index=True)
+            disp_daily = df_daily.copy()
+            if 'symbol' in disp_daily.columns:
+                disp_daily['symbol'] = disp_daily['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_daily, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
             csv_daily = df_daily.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Daily Timeframe (CSV)",
@@ -5500,7 +5536,10 @@ with tab_volprofile:
             buy_weekly = df_weekly[df_weekly['W Zone'] == '✅ Can Buy (Near Support)']
             st.markdown(f"**{len(buy_weekly)}** stocks in Weekly Buy Zone | **{len(df_weekly)}** total with weekly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
-            st.dataframe(df_weekly, width="stretch", hide_index=True)
+            disp_weekly = df_weekly.copy()
+            if 'symbol' in disp_weekly.columns:
+                disp_weekly['symbol'] = disp_weekly['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_weekly, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
             csv_weekly = df_weekly.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Weekly Timeframe (CSV)",
@@ -5518,7 +5557,10 @@ with tab_volprofile:
             buy_monthly = df_monthly[df_monthly['M Zone'] == '✅ Can Buy (Near Support)']
             st.markdown(f"**{len(buy_monthly)}** stocks in Monthly Buy Zone | **{len(df_monthly)}** total with monthly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
-            st.dataframe(df_monthly, width="stretch", hide_index=True)
+            disp_monthly = df_monthly.copy()
+            if 'symbol' in disp_monthly.columns:
+                disp_monthly['symbol'] = disp_monthly['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_monthly, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
             csv_monthly = df_monthly.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Monthly Timeframe (CSV)",

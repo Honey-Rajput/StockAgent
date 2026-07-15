@@ -34,6 +34,15 @@ def render():
     new_today_df = df[df.get('is_new_today', pd.Series([False]*len(df))) == True]
     repeated_df = df[df.get('is_new_today', pd.Series([True]*len(df))) != True]
     
+    # Define a helper function to add TV links
+    def apply_tv_links(disp_df):
+        disp_df['Symbol'] = disp_df['Symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+        return disp_df
+        
+    tv_col_config = {
+        "Symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")
+    }
+    
     # --- NEW TODAY SECTION ---
     if len(new_today_df) > 0:
         st.subheader(f"🆕 New Today — First Day Alerts ({len(new_today_df)} stocks)")
@@ -47,10 +56,13 @@ def render():
         new_display['Strategies'] = new_today_df['strategies'].astype(str)
         new_display['Total Hits'] = pd.to_numeric(new_today_df['total_appearances'], errors='coerce').fillna(0).astype(int)
         
+        new_display = apply_tv_links(new_display)
+        
         st.dataframe(
             new_display,
             width="stretch",
             hide_index=True,
+            column_config=tv_col_config,
             height=min(400, 35 + len(new_display) * 35)
         )
         
@@ -71,12 +83,15 @@ def render():
         rep_display['Most Recent'] = repeated_df['last_seen_date'].astype(str)
         rep_display['Triggered Strategies'] = repeated_df['strategies'].astype(str)
         
+        rep_display = apply_tv_links(rep_display)
+        
         st.subheader(f"🔁 Repeated Alerts (Last {lookback_days} Scans) — {len(repeated_df)} stocks")
         
         st.dataframe(
             rep_display,
             width="stretch",
             hide_index=True,
+            column_config=tv_col_config,
             height=600
         )
     

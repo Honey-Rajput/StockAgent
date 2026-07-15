@@ -13,9 +13,17 @@ from scanner import (
     scan_vcs,
     scan_vpa_trend,
     scan_wt_cross,
+    scan_monthly_early_stage2,
+    scan_stage_analysis,
+    scan_volume_profile,
+    scan_bb_squeeze,
+    scan_support_rsi,
+    scan_monthly_momentum,
+    scan_weekly_momentum
 )
-from vcp_minervini import MinerviniVCPAnalyzer
-
+from vcp_minervini import MinerviniVCPAnalyzer, VCPConfig
+from zanger_scanner import scan_zanger, ZangerConfig
+from local_cache_manager import resample_ohlcv
 
 def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
                           min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
@@ -33,7 +41,18 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         "wt": None,
         "vcs": None,
         "structural_vcp": None,
-        "vpa": None
+        "vpa": None,
+        
+        "zanger": None,
+        "stage2": None,
+        "minervini_vcp": None,
+        "stage_analysis": None,
+        "volume_profile": None,
+        "bb_squeeze": None,
+        "support_rsi": None,
+        "rsi_wt_combo": None, # Wait, is there a scan_rsi_wt_combo?
+        "monthly_momentum": None,
+        "weekly_momentum": None
     }
     if df is None or len(df) < 5:
         res["failed"] = True
@@ -410,5 +429,50 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
             res["vcs"] = scan_vcs(sym, df, indicators=ind)
             res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df=df, benchmark_df=benchmark_df).run()
             res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
-        
+            
+            # --- New Scanners ---
+            try:
+                # Dan Zanger
+                cfg_zanger = ZangerConfig(yf_interval="1d", yf_period="1100d")
+                z_df = scan_zanger(df, cfg_zanger)
+                if not z_df.empty:
+                    last_zanger = z_df.iloc[-1].to_dict()
+                    if last_zanger.get("zanger_signal", False):
+                        res["zanger"] = last_zanger
+                        
+                # Volume Profile
+                res["volume_profile"] = scan_volume_profile(sym, df, market_cap=0.0)
+                
+                # Support RSI
+                res["support_rsi"] = scan_support_rsi(sym, df, market_cap=0.0, rsi_threshold=35.0, indicators=ind)
+                
+                # Weekly & Monthly Resampled Data
+                m_df = resample_ohlcv(df, '1ME')
+                w_df = resample_ohlcv(df, '1W-MON')
+                
+                if m_df is not None and not m_df.empty and w_df is not None and not w_df.empty:
+                    # BB Squeeze
+                    res["bb_squeeze"] = scan_bb_squeeze(sym, df, w_df, m_df, market_cap=0.0)
+                    
+                    # Stage Analysis
+                    bRet = 0.0
+                    if benchmark_df is not None and len(benchmark_df) > 250:
+                        bC = float(benchmark_df['Close'].iloc[-1])
+                        bCold = float(benchmark_df['Close'].iloc[-250])
+                        if bCold > 0:
+                            bRet = (bC - bCold) / bCold
+                    res["stage_analysis"] = scan_stage_analysis(sym, df, bench_ret=bRet)
+                    
+                    # Monthly Early Stage 2
+                    res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
+                    
+                    # Monthly Momentum
+                    res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
+                    
+                    # Weekly Momentum
+                    res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
+            except Exception as e:
+                # print(f"Error running extended background scans for {sym}: {e}")
+                pass
+                
     return res

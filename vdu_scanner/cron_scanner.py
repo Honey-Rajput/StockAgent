@@ -370,6 +370,11 @@ def run_headless_scan():
     gapup_list, above_ma_list, support_ma_list, crossover_ma_list = [], [], [], []
     minervini_list, flagged_list, wt_list, vcs_list, structural_vcp_list, vpa_list = [], [], [], [], [], []
     
+    # New Scanners
+    zanger_list, stage2_list, stage_analysis_list = [], [], []
+    vp_list, bb_squeeze_list, support_rsi_list = [], [], []
+    monthly_mom_list, weekly_mom_list = [], []
+    
     for i, res in enumerate(generator):
         try:
             if res.get("failed"):
@@ -385,6 +390,17 @@ def run_headless_scan():
             if res.get("vcs"): vcs_list.append(res["vcs"])
             if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
             if res.get("vpa"): vpa_list.append(res["vpa"])
+            
+            # New Scanners Collection
+            if res.get("zanger"): zanger_list.append(res["zanger"])
+            if res.get("stage2"): stage2_list.append(res["stage2"])
+            if res.get("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
+            if res.get("volume_profile"): vp_list.append(res["volume_profile"])
+            if res.get("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+            if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
+            if res.get("monthly_momentum"): monthly_mom_list.append(res["monthly_momentum"])
+            if res.get("weekly_momentum"): weekly_mom_list.append(res["weekly_momentum"])
+            
         except Exception:
             failed_count += 1
             
@@ -398,13 +414,15 @@ def run_headless_scan():
     print(f"Breakouts Found: {len(flagged_list)}")
     print(f"Trend Setups: {len(trend_setups_list)}")
     print(f"Gap-Ups: {len(gapup_list)}")
+    print(f"Zanger: {len(zanger_list)} | Stage2: {len(stage2_list)} | VCP: {len(structural_vcp_list)}")
     print(f"Failed Count: {failed_count}")
     
     try:
+        # Base Scans
         database.save_scan_results(
             date_str=today_ist_str,
             breakouts=flagged_list,
-            squeezes=[],
+            squeezes=[], # BB Squeeze is saved separately now
             gapups=gapup_list,
             trend_setups=trend_setups_list,
             wt_cross=wt_list,
@@ -412,6 +430,18 @@ def run_headless_scan():
             vcs_results=vcs_list,
             vpa_results=vpa_list
         )
+        
+        # Extended Scans
+        if zanger_list: database.save_zanger_scan(today_ist_str, "Daily", zanger_list)
+        if structural_vcp_list: database.save_vcp_minervini_scan(today_ist_str, structural_vcp_list)
+        if stage2_list: database.save_stage2_only(today_ist_str, stage2_list)
+        if stage_analysis_list: database.save_stage_analysis_only(today_ist_str, stage_analysis_list)
+        if vp_list: database.save_volume_profile_only(today_ist_str, vp_list)
+        if bb_squeeze_list: database.save_bb_squeeze_only(today_ist_str, bb_squeeze_list)
+        if support_rsi_list: database.save_support_rsi_only(today_ist_str, support_rsi_list)
+        if monthly_mom_list: database.save_monthly_momentum_results(today_ist_str, monthly_mom_list)
+        if weekly_mom_list: database.save_weekly_momentum_results(today_ist_str, weekly_mom_list)
+        
         print("✅ Scan results successfully cached in Turso PostgreSQL!")
         
         # Trigger background AI scans automatically
