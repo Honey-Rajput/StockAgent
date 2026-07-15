@@ -236,9 +236,13 @@ class MinerviniVCPAnalyzer:
         self._entry_signals()
 
         last = self.df.iloc[-1]
+        # Determine date string safely (handle both RangeIndex and DatetimeIndex)
+        last_date_val = self.df["Date"].iloc[-1] if "Date" in self.df.columns else self.df.index[-1]
+        date_str = last_date_val.strftime("%Y-%m-%d") if hasattr(last_date_val, "strftime") else str(last_date_val)
+
         return {
             "symbol": self.symbol,
-            "date": self.df.index[-1].strftime("%Y-%m-%d"),
+            "date": date_str,
             "close": round(float(last["Close"]), 2),
             "Pressure": last["pressure_txt"],
             "Risk (50d)": last["risk_status"],
