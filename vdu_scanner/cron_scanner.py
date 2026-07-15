@@ -89,7 +89,7 @@ def run_headless_scan():
     print("🚀 Starting Automated Headless Volume Surge Scan")
     print("=" * 50)
     
-    universe_key = "NIFTY 500"
+    universe_key = "ALL NSE"
     scan_timeframe = "Daily (1d)"
     yf_period = f"{LOOKBACK_DAYS}d"
     yf_interval = "1d"
