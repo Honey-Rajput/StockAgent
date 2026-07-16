@@ -159,7 +159,25 @@ class MinerviniVCPAnalyzer:
             
         if isinstance(bm.columns, pd.MultiIndex):
             bm.columns = bm.columns.get_level_values(0)
-        bm_close = bm["Close"].reindex(df.index).ffill()
+            
+        if "Date" in df.columns:
+            if "Date" in bm.columns:
+                bm_temp = bm.set_index("Date")
+            else:
+                bm_temp = bm
+            try:
+                # Align using Date column
+                df_dates = pd.to_datetime(df["Date"]).dt.normalize()
+                bm_dates = pd.to_datetime(bm_temp.index).normalize()
+                bm_temp.index = bm_dates
+                
+                # Fetch aligned close prices
+                bm_close_vals = bm_temp["Close"].reindex(df_dates).values
+                bm_close = pd.Series(bm_close_vals, index=df.index).ffill()
+            except Exception:
+                bm_close = bm["Close"].reindex(df.index).ffill()
+        else:
+            bm_close = bm["Close"].reindex(df.index).ffill()
 
         close = df["Close"]
 
@@ -182,13 +200,28 @@ class MinerviniVCPAnalyzer:
     def _vcp(self):
         df = self.df
         c = self.cfg
+        
+        # 5d VCP
         vcp_high = df["Close"].rolling(c.vcp_lookback).max()
         vcp_low = df["Close"].rolling(c.vcp_lookback).min()
         vcp_range_pct = (vcp_high - vcp_low) / df["Close"] * 100
-
         df["vcp_range_pct"] = vcp_range_pct
         df["vcp_trigger"] = vcp_range_pct < c.vcp_thresh
         df["vcp_txt"] = np.where(df["vcp_trigger"], "SQUEEZE", "Normal")
+
+        # 10d VCP
+        vcp10_high = df["Close"].rolling(10).max()
+        vcp10_low = df["Close"].rolling(10).min()
+        df["vcp10_range_pct"] = (vcp10_high - vcp10_low) / df["Close"] * 100
+        df["vcp10_trigger"] = df["vcp10_range_pct"] < c.vcp_thresh
+        df["vcp10_txt"] = np.where(df["vcp10_trigger"], "SQUEEZE", "Normal")
+
+        # 15d VCP
+        vcp15_high = df["Close"].rolling(15).max()
+        vcp15_low = df["Close"].rolling(15).min()
+        df["vcp15_range_pct"] = (vcp15_high - vcp15_low) / df["Close"] * 100
+        df["vcp15_trigger"] = df["vcp15_range_pct"] < c.vcp_thresh
+        df["vcp15_txt"] = np.where(df["vcp15_trigger"], "SQUEEZE", "Normal")
 
     def _entry_signals(self):
         """
@@ -247,9 +280,13 @@ class MinerviniVCPAnalyzer:
             "Pressure": last["pressure_txt"],
             "Risk (50d)": last["risk_status"],
             "Trend (TPR)": last["tpr_txt"],
-            "RS Rating": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
+            "RS Rating": round(float(last["rpr_proxy"]), 1) if pd.notna(last.get("rpr_proxy")) else None,
             "VCP (5d)": last["vcp_txt"],
-            "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last["vcp_range_pct"]) else None,
+            "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last.get("vcp_range_pct")) else None,
+            "VCP (10d)": last.get("vcp10_txt", "Normal"),
+            "VCP 10d range %": round(float(last["vcp10_range_pct"]), 2) if pd.notna(last.get("vcp10_range_pct")) else None,
+            "VCP (15d)": last.get("vcp15_txt", "Normal"),
+            "VCP 15d range %": round(float(last["vcp15_range_pct"]), 2) if pd.notna(last.get("vcp15_range_pct")) else None,
             "Entry Signal": last["entry_signal"],
         }
 

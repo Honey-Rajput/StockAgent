@@ -433,7 +433,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
             # --- New Scanners ---
             try:
                 # Dan Zanger
-                cfg_zanger = ZangerConfig(yf_interval="1d", yf_period="1100d")
+                cfg_zanger = ZangerConfig()
                 z_df = scan_zanger(df, cfg_zanger)
                 if not z_df.empty:
                     last_zanger = z_df.iloc[-1].to_dict()
@@ -444,7 +444,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 res["volume_profile"] = scan_volume_profile(sym, df, market_cap=0.0)
                 
                 # Support RSI
-                res["support_rsi"] = scan_support_rsi(sym, df, market_cap=0.0, rsi_threshold=35.0, indicators=ind)
+                res["support_rsi"] = scan_support_rsi(sym, df, market_cap=0.0, rsi_threshold=35.0)
                 
                 # Weekly & Monthly Resampled Data
                 m_df = resample_ohlcv(df, '1ME')

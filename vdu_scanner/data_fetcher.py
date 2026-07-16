@@ -223,14 +223,14 @@ def get_index_stocks(index_name: str) -> list[str]:
     return NIFTY50_SYMBOLS
 
 
-MAX_NSE_SYMBOLS = 1800  # Limit to top 1800 NSE stocks by prominence to reduce scan time
+MAX_NSE_SYMBOLS = 1000  # Limit to top 1000 NSE stocks by prominence to reduce scan time
 
 def get_all_nse_symbols() -> list[str]:
     """
     Downloads the official constituent list of all listed equity shares on the
     National Stock Exchange of India (NSE) directly from the nsearchives.
     Filters to keep mainboard active equities (SERIES == 'EQ').
-    Returns at most MAX_NSE_SYMBOLS (1800) stocks for faster scanning.
+    Returns at most MAX_NSE_SYMBOLS (1000) stocks for faster scanning.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -292,21 +292,7 @@ def fetch_nifty500_constituent_symbols() -> list[str]:
     Gracefully falls back to downloading the official constituent CSV directly
     from the NSE website archives.
     """
-    # Step A: Try nsepython
-    try:
-        from nsepython import nse_get_index_list, get_indices_stocks
-        stocks_df = get_indices_stocks("NIFTY500")
-        if isinstance(stocks_df, pd.DataFrame) and not stocks_df.empty:
-            for col in stocks_df.columns:
-                if col.lower() in ['symbol', 'ticker', 'code']:
-                    symbols = stocks_df[col].dropna().astype(str).tolist()
-                    clean_symbols = [s.strip() for s in symbols if s.strip() and s.strip() != 'Symbol']
-                    if len(clean_symbols) > 50:
-                        return clean_symbols
-    except Exception as e:
-        print(f"nsepython failed to fetch NIFTY 500 list: {e}. Attempting direct download from NSE archives...")
-
-    # Step B: Direct official NSE URL download
+    # Step A: Direct official NSE URL download
     try:
         url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
         headers = {

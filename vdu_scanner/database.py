@@ -919,7 +919,7 @@ def has_scanned_today(date_str: str) -> dict | None:
     """
     Checks if a full market scan was logged on a specific day.
     """
-    query = "SELECT scan_date, total_scanned, breakouts_found, squeezes_found FROM scan_logs WHERE scan_date = %s;"
+    query = "SELECT scan_date, total_scanned, breakouts_found, squeezes_found FROM scan_logs WHERE scan_date = %s AND total_scanned > 0;"
     conn = None
     try:
         conn = get_connection()
@@ -2891,9 +2891,11 @@ def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
         INSERT INTO scanned_vcp_minervini (
             symbol, sector, close, pressure, risk_50d,
             trend_tpr, rs_rating, vcp_status, vcp_range_pct,
+            vcp10_status, vcp10_range_pct, vcp15_status, vcp15_range_pct,
             entry_signal, scan_date
         ) VALUES (
             %s, %s, %s, %s, %s,
+            %s, %s, %s, %s,
             %s, %s, %s, %s,
             %s, %s
         ) ON CONFLICT (symbol, scan_date) DO UPDATE SET
@@ -2905,6 +2907,10 @@ def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
             rs_rating = EXCLUDED.rs_rating,
             vcp_status = EXCLUDED.vcp_status,
             vcp_range_pct = EXCLUDED.vcp_range_pct,
+            vcp10_status = EXCLUDED.vcp10_status,
+            vcp10_range_pct = EXCLUDED.vcp10_range_pct,
+            vcp15_status = EXCLUDED.vcp15_status,
+            vcp15_range_pct = EXCLUDED.vcp15_range_pct,
             entry_signal = EXCLUDED.entry_signal
         """
 
@@ -2920,6 +2926,10 @@ def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
                 r.get('RS Rating', r.get('rs_rating', 0)),
                 r.get('VCP (5d)', r.get('vcp_status', '')),
                 r.get('VCP range %', r.get('vcp_range_pct', 0)),
+                r.get('VCP (10d)', ''),
+                r.get('VCP 10d range %', 0),
+                r.get('VCP (15d)', ''),
+                r.get('VCP 15d range %', 0),
                 r.get('Entry Signal', r.get('entry_signal', '')),
                 scan_date
             ))
@@ -2945,6 +2955,7 @@ def get_cached_vcp_minervini(scan_date: str) -> list:
         cur.execute("""
             SELECT symbol, sector, close, pressure, risk_50d,
                    trend_tpr, rs_rating, vcp_status, vcp_range_pct,
+                   vcp10_status, vcp10_range_pct, vcp15_status, vcp15_range_pct,
                    entry_signal
             FROM scanned_vcp_minervini
             WHERE scan_date = %s
@@ -3096,13 +3107,44 @@ def save_data_ohlcv(symbol: str, df: pd.DataFrame):
         if conn:
             conn.close()
 
-def prune_old_data_ohlcv(days: int = 380):
+def prune_old_data_ohlcv(days: int = 5):
     conn = get_connection()
     try:
         cur = conn.cursor()
+        
+        # Prune main historical data table which takes the most space
+        cur.execute(f"DELETE FROM historical_ohlcv WHERE date < CURRENT_DATE - INTERVAL '{days} days';")
+        
+        # Prune daily OHLCV just in case
         cur.execute(f"DELETE FROM ohlcv_daily WHERE date < CURRENT_DATE - INTERVAL '{days} days';")
+        
+        # Prune all scan tables
+        scan_tables = [
+            "scanned_breakouts", "scanned_squeezes", "scanned_gapups", "scanned_trend_setups",
+            "scanned_wt_cross", "scanned_monthly_momentum", "scanned_weekly_momentum",
+            "scanned_vcs", "scanned_vpa", "scanned_stage2", "scanned_volume_profile",
+            "scanned_stage_analysis", "scanned_support_rsi", "scanned_rsi_wt_combo",
+            "scanned_zanger", "scanned_bb_squeeze", "scanned_vcp_minervini",
+            "scan_logs"
+        ]
+        
+        for table in scan_tables:
+            try:
+                cur.execute(f"DELETE FROM {table} WHERE scan_date < CURRENT_DATE - INTERVAL '{days} days';")
+            except Exception as e:
+                print(f"Error pruning {table}: {e}")
+                conn.rollback() # Rollback if table doesn't have scan_date or doesn't exist
+                continue
+
+        # Prune AI chart patterns
+        try:
+            cur.execute(f"DELETE FROM ai_chart_patterns WHERE analyzed_date < CURRENT_DATE - INTERVAL '{days} days';")
+        except Exception as e:
+            conn.rollback()
+            pass
+            
         conn.commit()
-        print(f"Pruned OHLCV data older than {days} days.")
+        print(f"Pruned historical_ohlcv and scan tables older than {days} days.")
     except Exception as e:
         print(f"Error pruning OHLCV data: {e}")
     finally:
