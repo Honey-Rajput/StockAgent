@@ -1507,6 +1507,14 @@ if run_full or run_sma:
         wt_list = []
         vcs_list = []
         vpa_list = []
+        zanger_list = []
+        vp_list = []
+        support_rsi_list = []
+        bb_squeeze_list = []
+        stage_analysis_list = []
+        stage2_list = []
+        monthly_momentum_list = []
+        weekly_momentum_list = []
         
         # Unpack manual dry constraints from the sidebar range slider
         min_dry = dry_zone_range[0]
@@ -1714,6 +1722,14 @@ if run_full or run_sma:
                 if res.get("vcs"): vcs_list.append(res["vcs"])
                 if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
                 if res.get("vpa"): vpa_list.append(res["vpa"])
+                if res.get("zanger"): zanger_list.append(res["zanger"])
+                if res.get("volume_profile"): vp_list.append(res["volume_profile"])
+                if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
+                if res.get("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+                if res.get("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
+                if res.get("stage2"): stage2_list.append(res["stage2"])
+                if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
+                if res.get("weekly_momentum"): weekly_momentum_list.append(res["weekly_momentum"])
             except Exception as exc:
                 print(f"Error processing result: {exc}")
                 failed_count += 1
@@ -1798,6 +1814,14 @@ if run_full or run_sma:
                         if res.get("vcs"): vcs_list.append(res["vcs"])
                         if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
                         if res.get("vpa"): vpa_list.append(res["vpa"])
+                        if res.get("zanger"): zanger_list.append(res["zanger"])
+                        if res.get("volume_profile"): vp_list.append(res["volume_profile"])
+                        if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
+                        if res.get("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+                        if res.get("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
+                        if res.get("stage2"): stage2_list.append(res["stage2"])
+                        if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
+                        if res.get("weekly_momentum"): weekly_momentum_list.append(res["weekly_momentum"])
                 except Exception:
                     pass
         
@@ -1813,6 +1837,15 @@ if run_full or run_sma:
         st.session_state.vpa_results = vpa_list
         st.session_state.wt_results = wt_list
         st.session_state.wt_results_by_tf = {"Daily_-40.0": wt_list, "Daily": wt_list}
+        st.session_state.zanger_results = zanger_list
+        st.session_state.volume_profile_results = vp_list
+        st.session_state.support_rsi_results = support_rsi_list
+        st.session_state.bb_squeeze_results = bb_squeeze_list
+        st.session_state.stage_analysis_results = stage_analysis_list
+        st.session_state.stage2_results = stage2_list
+        st.session_state.monthly_momentum_results = monthly_momentum_list
+        st.session_state.weekly_momentum_results = weekly_momentum_list
+        
         st.session_state.total_scanned = n_stocks
         st.session_state.failed_count = failed_count
         st.session_state.last_scanned = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p")
@@ -1841,6 +1874,23 @@ if run_full or run_sma:
                     vcs_results=vcs_list,
                     vpa_results=vpa_list
                 )
+                try: database.save_zanger_scan(today_ist_str, "Daily", zanger_list)
+                except Exception: pass
+                try: database.save_volume_profile_only(today_ist_str, vp_list)
+                except Exception: pass
+                try: database.save_support_rsi_only(today_ist_str, support_rsi_list)
+                except Exception: pass
+                try: database.save_bb_squeeze_only(today_ist_str, bb_squeeze_list)
+                except Exception: pass
+                try: database.save_stage_analysis_only(today_ist_str, stage_analysis_list)
+                except Exception: pass
+                try: database.save_stage2_only(today_ist_str, stage2_list)
+                except Exception: pass
+                try: database.save_monthly_momentum_results(today_ist_str, monthly_momentum_list)
+                except Exception: pass
+                try: database.save_weekly_momentum_results(today_ist_str, weekly_momentum_list)
+                except Exception: pass
+                
                 st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
             
             # Trigger background AI scans automatically in the backend!
@@ -1924,14 +1974,14 @@ st.markdown("---")
 # Get scan cache (used by multiple tabs)
 scan_data = st.session_state.scan_results
 
-(tab_results, tab_detail, tab_watchlist, tab_ai, tab_gapup, tab_sma, tab_sma65,
+(tab_results, tab_detail, tab_watchlist, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_confluence, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_stage_analysis) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_stage_analysis) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
-    "🚀 Gap-Up", "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
+    "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "💎 Confluence", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis"
 ])
 
 # ==============================================================================
@@ -2185,6 +2235,9 @@ with tab_detail:
                     ),
                     row=2, col=1
                 )
+
+                # Prevent extreme volume outliers from squishing the volume bars
+                fig.update_yaxes(range=[0, df['Volume'].quantile(0.99) * 1.5], row=2, col=1)
 
                 # Shade the dry zone region on the candlestick subplot
                 fig.add_vrect(
@@ -3038,7 +3091,7 @@ with tab_ai:
 # ==============================================================================
 # TAB 6: GAP-UP SETUPS
 # ==============================================================================
-with tab_gapup:
+if False: # Removed tab_gapup
     st.markdown("### 🚀 Daily Gap-Up Momentum Setups")
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for momentum setups opening higher than yesterday's close — price breaking out of overhead levels immediately upon market open.</p>", unsafe_allow_html=True)
     st.markdown("---")
@@ -4715,11 +4768,21 @@ with tab_vcp:
                 use_container_width=True
             )
         
+        show_buyable = st.checkbox("Show Buyable Only (Buying Pressure, Low Risk, PASSED Trend)", value=False)
+
         # Reorder columns for display
         display_cols = ['symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 
-                       'Pressure', 'Risk (50d)', 'RS Rating', 'VCP (5d)', 'VCP range %', 'date']
+                       'Pressure', 'Risk (50d)', 'RS Rating', 'VCP (5d)', 'VCP (10d)', 'VCP (15d)', 'VCP range %', 'date']
         available_cols = [c for c in display_cols if c in v_df.columns]
         v_df = v_df[available_cols]
+        
+        if show_buyable:
+            if 'Pressure' in v_df.columns:
+                v_df = v_df[v_df['Pressure'].str.contains('Buying', case=False, na=False)]
+            if 'Risk (50d)' in v_df.columns:
+                v_df = v_df[v_df['Risk (50d)'].str.contains('Low Risk', case=False, na=False)]
+            if 'Trend (TPR)' in v_df.columns:
+                v_df = v_df[v_df['Trend (TPR)'].str.contains('PASSED', case=False, na=False)]
         
         v_df['symbol'] = v_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.dataframe(v_df, use_container_width=True, column_config={
@@ -5601,7 +5664,7 @@ with tab_volprofile:
 # ==============================================================================
 # TAB 20: CONFLUENCE — WaveTrend Buy Signal + Volume Profile Daily Support
 # ==============================================================================
-with tab_confluence:
+if False: # Removed tab_confluence
     try:
         st.markdown("### 💎 Confluence Scanner — WaveTrend Buy + Volume Profile Support")
         st.markdown(
