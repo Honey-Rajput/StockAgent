@@ -196,8 +196,8 @@ def rank_signals(hits: pd.DataFrame, cfg: ZangerConfig = ZangerConfig()) -> pd.D
     if df.empty:
         return df
 
-    max_vol_ratio = df["breakout_volume_ratio"].max() or 1
-    df["volume_score"] = (df["breakout_volume_ratio"] / max_vol_ratio * 100).clip(0, 100)
+    max_vol_ratio = min(df["breakout_volume_ratio"].max(), 3.0) or 1
+    df["volume_score"] = (df["breakout_volume_ratio"].clip(upper=3.0) / max_vol_ratio * 100).clip(0, 100)
 
     def risk_score(risk_pct):
         if pd.isna(risk_pct):
