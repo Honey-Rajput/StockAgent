@@ -978,12 +978,12 @@ if enable_background_scans:
         run_background_bb_squeeze_scan()
 
 # --- Automatic Daily Database Cache Loader ---
-# CRITICAL: Only hit the database when results are not yet in session state.
-# This prevents DB calls (and potential hangs) on every Streamlit re-render.
-if st.session_state.scan_results is None and not st.session_state.get('db_cache_checked', False):
+# Runs ONCE per browser session (db_cache_checked stays False until first load).
+# Each scanner loads independently from its own DB table/date — NOT gated behind scan_logs.
+if not st.session_state.get('db_cache_checked', False):
     st.session_state['db_cache_checked'] = True
     try:
-        # Load the absolute latest scan session date from the database
+        # ── Core scan results (from scan_logs + related tables) ─────────────────
         available_dates = database.get_available_scan_dates()
         if available_dates:
             latest_date_str = available_dates[0]
@@ -1035,49 +1035,22 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                     st.session_state.bb_squeeze_results = database.get_cached_bb_squeeze(latest_date_str)
                 except Exception:
                     st.session_state.bb_squeeze_results = []
-                
-                # Fetch Zanger results using its own date list
-                zanger_dates = database.get_zanger_scan_dates()
-                if zanger_dates:
-                    try:
-                        tf_to_load = st.session_state.get('zanger_tf', 'Daily')
-                        st.session_state.zanger_results = database.get_cached_zanger(zanger_dates[0], timeframe=tf_to_load)
-                    except Exception:
-                        st.session_state.zanger_results = []
-                else:
-                    st.session_state.zanger_results = []
-
-                # Fetch VCP+Minervini results using its own date list
-                try:
-                    vcp_dates = database.get_vcp_minervini_scan_dates()
-                    if vcp_dates:
-                        st.session_state.vcp_minervini_results = database.get_cached_vcp_minervini(vcp_dates[0])
-                    else:
-                        st.session_state.vcp_minervini_results = []
-                except Exception:
-                    st.session_state.vcp_minervini_results = []
-                
-                # Fetch missing cache fields for new scanners
                 try:
                     st.session_state.stage2_results = database.get_cached_stage2(latest_date_str)
                 except Exception:
                     st.session_state.stage2_results = []
-                
                 try:
                     st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
                 except Exception:
                     st.session_state.stage_analysis_results = []
-                
                 try:
                     st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str)
                 except Exception:
                     st.session_state.support_rsi_results = []
-                
                 try:
                     st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(latest_date_str)
                 except Exception:
                     st.session_state.monthly_momentum_results = []
-                    
                 try:
                     st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(latest_date_str)
                 except Exception:
@@ -1086,18 +1059,64 @@ if st.session_state.scan_results is None and not st.session_state.get('db_cache_
                 st.session_state.total_scanned = cached_log.get('total_scanned', 0)
                 st.session_state.failed_count = 0
                 st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
-                
-                # Auto-resume background AI scanning if there are unscanned candidates in session state
-                all_syms = []
-                if st.session_state.scan_results:
-                    all_syms.extend([r['symbol'] for r in st.session_state.scan_results])
 
-                all_syms = list(set(all_syms))
-                if all_syms and enable_background_scans:
-                    try:
-                        run_background_ai_scan(all_syms, latest_date_str)
-                    except Exception as auto_scan_err:
-                        print(f"Failed to auto-resume background AI scan on boot: {auto_scan_err}")
+        # ── Independent loaders: each scanner uses its OWN latest date ───────────
+        # These load even if scan_logs has no entry (e.g. ran from individual tab buttons)
+
+        # Zanger
+        try:
+            zanger_dates = database.get_zanger_scan_dates()
+            if zanger_dates:
+                tf_to_load = st.session_state.get('zanger_tf', 'Daily')
+                loaded = database.get_cached_zanger(zanger_dates[0], timeframe=tf_to_load)
+                if loaded:
+                    st.session_state.zanger_results = loaded
+        except Exception:
+            pass
+
+        # VCP + Minervini
+        try:
+            vcp_dates = database.get_vcp_minervini_scan_dates()
+            if vcp_dates:
+                loaded = database.get_cached_vcp_minervini(vcp_dates[0])
+                if loaded:
+                    st.session_state.vcp_minervini_results = loaded
+        except Exception:
+            pass
+
+        # Monthly Momentum (independent date)
+        try:
+            if not st.session_state.get('monthly_momentum_results'):
+                mm_dates = database.get_available_scan_dates()  # same table, reuse
+                if mm_dates:
+                    loaded = database.get_cached_monthly_momentum(mm_dates[0])
+                    if loaded:
+                        st.session_state.monthly_momentum_results = loaded
+        except Exception:
+            pass
+
+        # Weekly Momentum (independent date)
+        try:
+            if not st.session_state.get('weekly_momentum_results'):
+                wm_dates = database.get_available_scan_dates()
+                if wm_dates:
+                    loaded = database.get_cached_weekly_momentum(wm_dates[0])
+                    if loaded:
+                        st.session_state.weekly_momentum_results = loaded
+        except Exception:
+            pass
+
+        # Auto-resume background AI scan for flagged symbols
+        all_syms = []
+        if st.session_state.scan_results:
+            all_syms.extend([r['symbol'] for r in st.session_state.scan_results])
+        all_syms = list(set(all_syms))
+        if all_syms and enable_background_scans:
+            try:
+                run_background_ai_scan(all_syms, latest_date_str if available_dates else get_market_date())
+            except Exception as auto_scan_err:
+                print(f"Failed to auto-resume background AI scan on boot: {auto_scan_err}")
+
     except Exception as cache_err:
         print(f"Error loading daily database scan cache on boot: {cache_err}")
 
