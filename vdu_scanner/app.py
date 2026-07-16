@@ -1860,16 +1860,12 @@ if run_full or run_sma:
             vcp_df = pd.DataFrame(structural_vcp_list)
             # Filter for true setups (SQUEEZE or Entry Signal)
             if 'Entry Signal' in vcp_df.columns:
-                mask = vcp_df['Entry Signal'].isin(["BREAKOUT", "EARLY ENTRY"])
-                if 'VCP (5d)' in vcp_df.columns: mask = mask | (vcp_df['VCP (5d)'] == 'SQUEEZE')
-                if 'VCP (10d)' in vcp_df.columns: mask = mask | (vcp_df['VCP (10d)'] == 'SQUEEZE')
-                if 'VCP (15d)' in vcp_df.columns: mask = mask | (vcp_df['VCP (15d)'] == 'SQUEEZE')
-                vcp_df = vcp_df[mask]
-                
                 # Add score for ranking: Higher RS Proxy is better, lower VCP Range % is better
                 rs_proxy = pd.to_numeric(vcp_df.get('RS Proxy', 50), errors='coerce').fillna(50)
                 vcp_range = pd.to_numeric(vcp_df.get('VCP range %', 100), errors='coerce').fillna(100)
                 vcp_df['Score'] = rs_proxy - (vcp_range * 5)
+                
+                # Sort everything by Score
                 vcp_df = vcp_df.sort_values(by='Score', ascending=False)
                 
                 # Insert Rank column
@@ -4804,13 +4800,15 @@ with tab_vcp:
                                 "RS Proxy": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
                                 "VCP (5d)": last["vcp_txt"],
                                 "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last["vcp_range_pct"]) else None,
+                                "VCP (10d)": last.get("vcp10_txt", "Normal"),
+                                "VCP 10d range %": round(float(last["vcp10_range_pct"]), 2) if "vcp10_range_pct" in last and pd.notna(last["vcp10_range_pct"]) else None,
+                                "VCP (15d)": last.get("vcp15_txt", "Normal"),
+                                "VCP 15d range %": round(float(last["vcp15_range_pct"]), 2) if "vcp15_range_pct" in last and pd.notna(last["vcp15_range_pct"]) else None,
                                 "Entry Signal": last["entry_signal"],
                             }
                             
-                            # Only keep stocks with genuine Breakout or Early Entry signals
-                            if result["Entry Signal"] in ["BREAKOUT", "EARLY ENTRY"]:
-                                result["Sector"] = get_stock_sector(sym)
-                                vcp_results.append(result)
+                            result["Sector"] = get_stock_sector(sym)
+                            vcp_results.append(result)
                         except Exception:
                             pass
                 except Exception:
@@ -4859,7 +4857,11 @@ with tab_vcp:
                 use_container_width=True
             )
         
-        show_buyable = st.checkbox("Show Buyable Only (Buying Pressure, Low Risk, PASSED Trend)", value=False)
+        col1, col2 = st.columns(2)
+        with col1:
+            show_buyable = st.checkbox("Show Buyable Only (Buying Pressure, Low Risk, PASSED Trend)", value=False)
+        with col2:
+            show_squeeze = st.checkbox("Show 'Squeeze' / Entry Signals Only", value=True)
 
         # Reorder columns for display
         display_cols = ['Rank', 'Score', 'symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 
@@ -4874,6 +4876,14 @@ with tab_vcp:
                 v_df = v_df[v_df['Risk (50d)'].str.contains('Low Risk', case=False, na=False)]
             if 'Trend (TPR)' in v_df.columns:
                 v_df = v_df[v_df['Trend (TPR)'].str.contains('PASSED', case=False, na=False)]
+                
+        if show_squeeze:
+            if 'Entry Signal' in v_df.columns:
+                mask = v_df['Entry Signal'].isin(["BREAKOUT", "EARLY ENTRY"])
+                if 'VCP (5d)' in v_df.columns: mask = mask | (v_df['VCP (5d)'] == 'SQUEEZE')
+                if 'VCP (10d)' in v_df.columns: mask = mask | (v_df['VCP (10d)'] == 'SQUEEZE')
+                if 'VCP (15d)' in v_df.columns: mask = mask | (v_df['VCP (15d)'] == 'SQUEEZE')
+                v_df = v_df[mask]
         
         if 'symbol' in v_df.columns:
             v_df['symbol'] = v_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
