@@ -2248,6 +2248,9 @@ with tab_detail:
                 except Exception:
                     dry_zone_return = 0.0
 
+                # Limit chart data to max ~7 months (150 trading days) for better visibility
+                df = df.tail(150)
+
                 # A. Dual subplot layout
                 fig = make_subplots(
                     rows=2, cols=1,

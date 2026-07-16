@@ -437,10 +437,11 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
             # --- New Scanners ---
             try:
                 # Dan Zanger
+                from zanger_scanner import scan_zanger, ZangerConfig, get_latest_signal
                 cfg_zanger = ZangerConfig()
                 z_df = scan_zanger(df, cfg_zanger)
                 if not z_df.empty:
-                    last_zanger = z_df.iloc[-1].to_dict()
+                    last_zanger = get_latest_signal(z_df)
                     if last_zanger.get("zanger_signal", False):
                         from data_fetcher import get_stock_sector
                         last_zanger["symbol"] = sym
@@ -458,8 +459,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 w_df = resample_ohlcv(df, '1W-MON')
                 
                 if m_df is not None and not m_df.empty and w_df is not None and not w_df.empty:
-                    # BB Squeeze
-                    res["bb_squeeze"] = scan_bb_squeeze(sym, df, w_df, m_df, market_cap=0.0)
+                    # EMA Support (repurposed from bb_squeeze)
+                    from scanner import scan_ema_support
+                    res["bb_squeeze"] = scan_ema_support(sym, df)
                     
                     # Stage Analysis
                     bRet = 0.0
