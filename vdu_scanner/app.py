@@ -1853,6 +1853,33 @@ if run_full or run_sma:
         st.session_state.minervini_results = minervini_list
         st.session_state.vcs_results = vcs_list
         st.session_state.structural_vcp_results = structural_vcp_list
+        
+        # Populate VCP+Minervini tab results and filter them
+        if len(structural_vcp_list) > 0:
+            import pandas as pd
+            vcp_df = pd.DataFrame(structural_vcp_list)
+            # Filter for true setups (SQUEEZE or Entry Signal)
+            if 'Entry Signal' in vcp_df.columns:
+                mask = vcp_df['Entry Signal'].isin(["BREAKOUT", "EARLY ENTRY"])
+                if 'VCP (5d)' in vcp_df.columns: mask = mask | (vcp_df['VCP (5d)'] == 'SQUEEZE')
+                if 'VCP (10d)' in vcp_df.columns: mask = mask | (vcp_df['VCP (10d)'] == 'SQUEEZE')
+                if 'VCP (15d)' in vcp_df.columns: mask = mask | (vcp_df['VCP (15d)'] == 'SQUEEZE')
+                vcp_df = vcp_df[mask]
+                
+                # Add score for ranking: Higher RS Proxy is better, lower VCP Range % is better
+                rs_proxy = pd.to_numeric(vcp_df.get('RS Proxy', 50), errors='coerce').fillna(50)
+                vcp_range = pd.to_numeric(vcp_df.get('VCP range %', 100), errors='coerce').fillna(100)
+                vcp_df['Score'] = rs_proxy - (vcp_range * 5)
+                vcp_df = vcp_df.sort_values(by='Score', ascending=False)
+                
+                # Insert Rank column
+                vcp_df.insert(0, 'Rank', range(1, len(vcp_df) + 1))
+                st.session_state.vcp_minervini_results = vcp_df.to_dict('records')
+            else:
+                st.session_state.vcp_minervini_results = structural_vcp_list
+        else:
+            st.session_state.vcp_minervini_results = []
+
         st.session_state.vpa_results = vpa_list
         st.session_state.wt_results = wt_list
         st.session_state.wt_results_by_tf = {"Daily_-40.0": wt_list, "Daily": wt_list}
@@ -1919,6 +1946,10 @@ if run_full or run_sma:
                 except Exception: pass
                 try: database.save_weekly_momentum_results(today_ist_str, weekly_momentum_list)
                 except Exception: pass
+                
+                # Save VCP
+                try: database.save_vcp_minervini_scan(today_ist_str, st.session_state.get('vcp_minervini_results', []))
+                except Exception as e: print(f"Error saving VCP DB: {e}")
                 
                 st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
             
@@ -4714,6 +4745,12 @@ with tab_vcp:
                 risk_low=risk_low
             )
             
+            # Download benchmark for RS Proxy calculation
+            try:
+                benchmark_df = yf.download("^NSEI", period="2y", interval="1d", progress=False, threads=False, timeout=15)
+            except Exception:
+                benchmark_df = None
+                
             # Batch download data for speed, then run analyzer per-stock
             vcp_results = []
             chunk_size = 100
@@ -4746,15 +4783,13 @@ with tab_vcp:
                                 continue
                             
                             # Run the Minervini analyzer with pre-fetched data
-                            analyzer = MinerviniVCPAnalyzer(sym, cfg)
+                            analyzer = MinerviniVCPAnalyzer(sym, cfg, benchmark_df=benchmark_df)
                             analyzer.df = t_df.copy()
                             analyzer._moving_averages()
                             analyzer._trend_template()
                             analyzer._buy_risk()
                             analyzer._pressure()
-                            # RPR needs benchmark download, skip for batch speed
-                            # Use a simple RS proxy instead
-                            analyzer.df["rpr_proxy"] = 50.0  # placeholder
+                            analyzer._relative_price_strength()
                             analyzer._vcp()
                             analyzer._entry_signals()
                             
@@ -4784,11 +4819,19 @@ with tab_vcp:
             progress_bar.empty()
             
             if vcp_results:
-                st.session_state.vcp_minervini_results = vcp_results
+                # Add score and rank
+                vcp_df = pd.DataFrame(vcp_results)
+                rs_proxy = pd.to_numeric(vcp_df.get('RS Proxy', 50), errors='coerce').fillna(50)
+                vcp_range = pd.to_numeric(vcp_df.get('VCP range %', 100), errors='coerce').fillna(100)
+                vcp_df['Score'] = rs_proxy - (vcp_range * 5)
+                vcp_df = vcp_df.sort_values(by='Score', ascending=False)
+                vcp_df.insert(0, 'Rank', range(1, len(vcp_df) + 1))
+                st.session_state.vcp_minervini_results = vcp_df.to_dict('records')
+                
                 # Save to database
                 try:
                     today_str = get_market_date()
-                    database.save_vcp_minervini_scan(today_str, vcp_results)
+                    database.save_vcp_minervini_scan(today_str, st.session_state.vcp_minervini_results)
                 except Exception as e:
                     print(f"Error saving VCP+Minervini scan: {e}")
             else:
@@ -4819,8 +4862,8 @@ with tab_vcp:
         show_buyable = st.checkbox("Show Buyable Only (Buying Pressure, Low Risk, PASSED Trend)", value=False)
 
         # Reorder columns for display
-        display_cols = ['symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 
-                       'Pressure', 'Risk (50d)', 'RS Proxy', 'VCP (5d)', 'VCP (10d)', 'VCP (15d)', 'VCP range %', 'date']
+        display_cols = ['Rank', 'Score', 'symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 
+                       'Pressure', 'Risk (50d)', 'RS Proxy', 'VCP (5d)', 'VCP range %', 'VCP (10d)', 'VCP 10d range %', 'VCP (15d)', 'VCP 15d range %', 'date']
         available_cols = [c for c in display_cols if c in v_df.columns]
         v_df = v_df[available_cols]
         
@@ -4832,13 +4875,18 @@ with tab_vcp:
             if 'Trend (TPR)' in v_df.columns:
                 v_df = v_df[v_df['Trend (TPR)'].str.contains('PASSED', case=False, na=False)]
         
-        v_df['symbol'] = v_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+        if 'symbol' in v_df.columns:
+            v_df['symbol'] = v_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            
         st.dataframe(v_df, use_container_width=True, column_config={
             "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
             "date": st.column_config.TextColumn("Date"),
             "close": st.column_config.NumberColumn("CMP", format="%.2f"),
+            "Score": st.column_config.NumberColumn("Score", format="%.1f"),
             "RS Proxy": st.column_config.NumberColumn("RS Proxy (vs Nifty)", format="%.1f"),
-            "VCP range %": st.column_config.NumberColumn("VCP Range %", format="%.2f"),
+            "VCP range %": st.column_config.NumberColumn("VCP Range 5d %", format="%.2f"),
+            "VCP 10d range %": st.column_config.NumberColumn("VCP Range 10d %", format="%.2f"),
+            "VCP 15d range %": st.column_config.NumberColumn("VCP Range 15d %", format="%.2f"),
             "Entry Signal": st.column_config.TextColumn("Entry Signal"),
             "Trend (TPR)": st.column_config.TextColumn("Trend Template"),
         })

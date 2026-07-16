@@ -2974,10 +2974,14 @@ def get_cached_vcp_minervini(scan_date: str) -> list:
                 'Pressure': r[3] or '',
                 'Risk (50d)': r[4] or '',
                 'Trend (TPR)': r[5] or '',
-                'RS Rating': float(r[6]) if r[6] is not None else None,
+                'RS Proxy': float(r[6]) if r[6] is not None else None,
                 'VCP (5d)': r[7] or '',
                 'VCP range %': float(r[8]) if r[8] is not None else None,
-                'Entry Signal': r[9] or '',
+                'VCP (10d)': r[9] or '',
+                'VCP 10d range %': float(r[10]) if r[10] is not None else None,
+                'VCP (15d)': r[11] or '',
+                'VCP 15d range %': float(r[12]) if r[12] is not None else None,
+                'Entry Signal': r[13] or '',
                 'date': scan_date,
             })
         return results
