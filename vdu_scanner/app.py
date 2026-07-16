@@ -1856,7 +1856,17 @@ if run_full or run_sma:
         st.session_state.vpa_results = vpa_list
         st.session_state.wt_results = wt_list
         st.session_state.wt_results_by_tf = {"Daily_-40.0": wt_list, "Daily": wt_list}
-        st.session_state.zanger_results = zanger_list
+        
+        # Rank Dan Zanger signals
+        if len(zanger_list) > 0:
+            import pandas as pd
+            from zanger_scanner import rank_signals, ZangerConfig
+            hits_df = pd.DataFrame(zanger_list)
+            ranked_df = rank_signals(hits_df, ZangerConfig())
+            st.session_state.zanger_results = ranked_df.to_dict('records')
+        else:
+            st.session_state.zanger_results = zanger_list
+            
         st.session_state.volume_profile_results = vp_list
         st.session_state.support_rsi_results = support_rsi_list
         st.session_state.bb_squeeze_results = bb_squeeze_list
@@ -2197,6 +2207,20 @@ with tab_detail:
                 above_50dma = detail_data.get('above_50dma', False)
                 today_volume = detail_data.get('today_volume', int(df['Volume'].iloc[-1]) if len(df) > 0 else 0)
 
+                # Calculate dry zone return
+                try:
+                    dry_start_mask = df['Date'] >= pd.to_datetime(dry_start_date)
+                    dry_end_mask = df['Date'] <= pd.to_datetime(dry_end_date)
+                    dry_df = df[dry_start_mask & dry_end_mask]
+                    if not dry_df.empty:
+                        dry_start_price = dry_df.iloc[0]['Close']
+                        dry_end_price = dry_df.iloc[-1]['Close']
+                        dry_zone_return = ((dry_end_price - dry_start_price) / dry_start_price) * 100
+                    else:
+                        dry_zone_return = 0.0
+                except Exception:
+                    dry_zone_return = 0.0
+
                 # A. Dual subplot layout
                 fig = make_subplots(
                     rows=2, cols=1,
@@ -2301,7 +2325,8 @@ with tab_detail:
                     margin=dict(l=40, r=40, t=40, b=40),
                     xaxis=dict(
                         rangeslider=dict(visible=False),
-                        gridcolor="rgba(255,255,255,0.04)"
+                        gridcolor="rgba(255,255,255,0.04)",
+                        rangebreaks=[dict(bounds=["sat", "mon"])]
                     ),
                     xaxis2=dict(
                         gridcolor="rgba(255,255,255,0.04)"
@@ -2348,6 +2373,7 @@ with tab_detail:
                     <h4 style="margin-top:0; color:#00e676; font-size:1.1rem; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:8px;">📭 Dry Zone Volume Metrics</h4>
                     <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Volume Ratio:</span><br><b style="font-size:1.3rem; color:#00e676;">{volume_ratio:.2f}x</b> (vs Dry Average)</div>
                     <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry zone Duration:</span><br><b>{dry_days_count}</b> trading days</div>
+                    <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry zone Return:</span><br><b style="color:{'#00e676' if dry_zone_return >= 0 else '#ef4444'};">{dry_zone_return:+.2f}%</b></div>
                     <div style="margin: 12px 0;"><span style="color:#94a3b8; font-size:0.9rem;">Dry average / today's volume:</span><br><b>{int(dry_avg_vol):,}</b> / <b>{today_volume:,}</b></div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -2822,7 +2848,8 @@ with tab_ai:
                             margin=dict(l=30, r=30, t=30, b=30),
                             xaxis=dict(
                                 rangeslider=dict(visible=False),
-                                gridcolor="rgba(255,255,255,0.04)"
+                                gridcolor="rgba(255,255,255,0.04)",
+                                rangebreaks=[dict(bounds=["sat", "mon"])]
                             ),
                             yaxis=dict(
                                 gridcolor="rgba(255,255,255,0.04)",
@@ -4638,7 +4665,9 @@ with tab_vcs:
                     cols.insert(risk_idx + 1, cols.pop(cols.index('target_price')))
                 z_df = z_df[cols]
                 
-            z_df['symbol'] = z_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            if 'symbol' in z_df.columns:
+                z_df['symbol'] = z_df['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            
             st.dataframe(z_df, use_container_width=True, column_config={
                 "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
                 "date": st.column_config.TextColumn("Date"),

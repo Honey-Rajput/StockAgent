@@ -442,6 +442,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 if not z_df.empty:
                     last_zanger = z_df.iloc[-1].to_dict()
                     if last_zanger.get("zanger_signal", False):
+                        from data_fetcher import get_stock_sector
+                        last_zanger["symbol"] = sym
+                        last_zanger["sector"] = get_stock_sector(sym)
                         res["zanger"] = last_zanger
                         
                 # Volume Profile
