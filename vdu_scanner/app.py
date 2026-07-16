@@ -4737,7 +4737,7 @@ with tab_vcp:
                                 "Pressure": last["pressure_txt"],
                                 "Risk (50d)": last["risk_status"],
                                 "Trend (TPR)": last["tpr_txt"],
-                                "RS Rating": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
+                                "RS Proxy": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
                                 "VCP (5d)": last["vcp_txt"],
                                 "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last["vcp_range_pct"]) else None,
                                 "Entry Signal": last["entry_signal"],
@@ -4791,7 +4791,7 @@ with tab_vcp:
 
         # Reorder columns for display
         display_cols = ['symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 
-                       'Pressure', 'Risk (50d)', 'RS Rating', 'VCP (5d)', 'VCP (10d)', 'VCP (15d)', 'VCP range %', 'date']
+                       'Pressure', 'Risk (50d)', 'RS Proxy', 'VCP (5d)', 'VCP (10d)', 'VCP (15d)', 'VCP range %', 'date']
         available_cols = [c for c in display_cols if c in v_df.columns]
         v_df = v_df[available_cols]
         
@@ -4808,7 +4808,7 @@ with tab_vcp:
             "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
             "date": st.column_config.TextColumn("Date"),
             "close": st.column_config.NumberColumn("CMP", format="%.2f"),
-            "RS Rating": st.column_config.NumberColumn("RS Rating", format="%.1f"),
+            "RS Proxy": st.column_config.NumberColumn("RS Proxy (vs Nifty)", format="%.1f"),
             "VCP range %": st.column_config.NumberColumn("VCP Range %", format="%.2f"),
             "Entry Signal": st.column_config.TextColumn("Entry Signal"),
             "Trend (TPR)": st.column_config.TextColumn("Trend Template"),

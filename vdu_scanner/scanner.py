@@ -199,24 +199,57 @@ def scan_stock(
     if not pd.isna(today_ma200):
         above_200dma = today['Close'] > today_ma200
         
-    # Calculate score weights
+    # --- STEP 4b: Relative Volume (RVOL) vs 50-day avg ---
+    # RVOL > 2.0 = institutional-grade breakout conviction
+    vol_50d_baseline = df['Volume'].iloc[-50:].mean() if len(df) >= 50 else baseline_avg_vol
+    rvol = round(today['Volume'] / vol_50d_baseline, 2) if vol_50d_baseline > 0 else 1.0
+
+    # --- STEP 4c: ATR-based Stop Loss (1.5x ATR) ---
+    # More adaptive than fixed % stops — matches each stock's actual volatility
+    atr_14 = None
+    try:
+        if indicators is not None and 'df' in indicators and 'TR' in indicators['df'].columns:
+            atr_14 = float(indicators['df']['TR'].rolling(14).mean().iloc[-1])
+        else:
+            tr = pd.concat([
+                df['High'] - df['Low'],
+                (df['High'] - df['Close'].shift(1)).abs(),
+                (df['Low']  - df['Close'].shift(1)).abs()
+            ], axis=1).max(axis=1)
+            atr_14 = float(tr.rolling(14).mean().iloc[-1])
+    except Exception:
+        atr_14 = None
+
+    # --- STEP 4d: Signal Strength Score (0-100) — balanced volume + price ---
+    # Expert fix: volume and price must BOTH be strong for high score
     score = 0.0
-    # 1. Volume ratio: Up to 40 points
-    score += min(volume_ratio / 10.0 * 40.0, 40.0)
-    # 2. Price move: Up to 30 points
-    score += min(max(pct_change_intraday, pct_change_close) / 5.0 * 30.0, 30.0)
-    # 3. Dry zone TIGHTNESS quality score (replaces flat duration score):
+    # 1. Volume ratio: Up to 25 points (was 40 — reduced to avoid volume-only high scores)
+    score += min(volume_ratio / 5.0 * 25.0, 25.0)
+    # 2. Price move: Up to 25 points (raised from 30 to match volume weight)
+    best_pct = max(pct_change_intraday, pct_change_close)
+    score += min(best_pct / 3.0 * 25.0, 25.0)
+    # 3. COMBO BONUS: Both volume >= 3x AND price move >= 2% → institutional quality
+    if volume_ratio >= 3.0 and best_pct >= 2.0:
+        score += 10.0
+    # 4. Dry zone TIGHTNESS quality score:
     #    Reward how "dry" the consolidation was relative to baseline.
-    #    The drier the zone, the higher the quality of accumulation.
-    dryness_ratio = dry_avg_vol / baseline_avg_vol  # e.g. 0.30 means 30% of baseline
+    dryness_ratio = dry_avg_vol / baseline_avg_vol
     dryness_score = max(0.0, (0.90 - dryness_ratio) / 0.90 * 20.0)  # up to 20 pts
     score += dryness_score
-    # 4. Moving Average filter: 10 points
+    # 5. Moving Average filter: above 50 SMA = uptrend confirmed
     if above_50dma:
-        score += 10.0
-    # 5. MACD cross-up bonus: +5 pts when histogram just turned positive (momentum shift)
+        score += 8.0
+    # 5b. Above 200 SMA bonus (Stage-2 context)
+    if above_200dma:
+        score += 5.0
+    # 6. MACD cross-up bonus: momentum shift confirmation
     if indicators and indicators.get('macd_cross_up', False):
         score += 5.0
+    # 7. RVOL bonus: institutional participation vs 50-day baseline
+    if rvol >= 3.0:
+        score += 7.0
+    elif rvol >= 2.0:
+        score += 4.0
 
     # Calculate day-over-day price change (standard Close-to-Close change)
     day_change_pct = pct_change_close
@@ -226,7 +259,7 @@ def scan_stock(
     high_52w = float(history_252['High'].max())
     low_52w  = float(history_252['Low'].min())
 
-    # 6. 52-week high proximity bonus: stocks approaching 52W highs attract institutions
+    # 8. 52-week high proximity bonus: stocks approaching 52W highs attract institutions
     cmp = float(today['Close'])
     dist_from_52w_high_pct = (high_52w - cmp) / high_52w * 100 if high_52w > 0 else 100.0
     if dist_from_52w_high_pct <= 5.0:
@@ -239,10 +272,29 @@ def scan_stock(
     # Advanced Trading Setup Calculations based on Support & Resistance:
     buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(history_df, cmp, indicators)
 
-    # Risk:Reward filter
+    # ATR-based alternative stop (tighter, more professional)
+    if atr_14 and atr_14 > 0:
+        atr_stop = round(cmp - 1.5 * atr_14, 2)
+        # Use ATR stop if it's tighter (less risk) than support-based stop
+        if atr_stop > exit_price:
+            exit_price = atr_stop
+
+    # Risk:Reward ratio
     risk   = buy_price - exit_price
     reward = target_price - buy_price
     rr_ratio = round(reward / risk, 2) if risk > 0 else 0.0
+
+    # Expert filter: require minimum 1.5:1 R:R for a tradeable setup
+    # (below 1.5 the math doesn't work in your favour over a series of trades)
+    if rr_ratio < 1.5 and is_breakout:
+        # Widen target to nearest resistance if R:R is too low
+        history_60 = df.iloc[-60:] if len(df) >= 60 else df
+        alt_target = round(float(history_60['High'].max()) * 0.98, 2)
+        alt_reward = alt_target - buy_price
+        alt_rr = round(alt_reward / risk, 2) if risk > 0 else 0.0
+        if alt_rr >= 1.5:
+            target_price = alt_target
+            rr_ratio = alt_rr
 
     # Confidence text based on algorithmic signal strength
     if score >= 75:
@@ -283,6 +335,7 @@ def scan_stock(
         "today_volume":     int(today['Volume']),
         "dry_avg_vol":      round(dry_avg_vol, 1),
         "volume_ratio":     round(volume_ratio, 2),
+        "rvol":             rvol,
         "dry_days_count":   int(dry_days_count),
         "dry_spikes":       dry_spikes,
         "dry_start_date":   pd.to_datetime(history_df['Date'].iloc[start_idx]),
@@ -298,6 +351,7 @@ def scan_stock(
         "buy_price":        buy_price,
         "exit_price":       exit_price,
         "target_price":     target_price,
+        "atr_14":           round(atr_14, 2) if atr_14 else None,
         "rr_ratio":         rr_ratio,
         "confidence":       confidence,
         "recommendation":   recommendation,
@@ -357,11 +411,13 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     if today_wt1 > wt_oversold_threshold:
         return None
     
-    # Issue #5: Trend filter — skip falling knives (price 10%+ below 200 SMA)
+    # EXPERT FIX: WaveTrend oversold bounce only valid in UPTRENDS (above 200 SMA).
+    # An oversold reading in a downtrend = dead cat bounce = losing trade.
+    # Minervini, O'Neil, and Zanger all filter oversold signals by trend first.
     if len(df) >= 200:
         sma200_val = float(df['Close'].rolling(200).mean().iloc[-1])
-        if not pd.isna(sma200_val) and last_close < sma200_val * 0.90:
-            return None  # Skip falling knives
+        if not pd.isna(sma200_val) and last_close < sma200_val:
+            return None  # Must be ABOVE 200 SMA — no bounces in downtrends
     
     today = df_copy.iloc[-1]
     yesterday = df_copy.iloc[-2] if len(df_copy) >= 2 else today
@@ -741,11 +797,13 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
             return None
         roc6 = (cmp - close_6m_ago) / close_6m_ago * 100.0
 
-        # Condition 4: ROC > 20
-        if not (roc6 > 20.0):
+        # Condition 4: ROC > 25% (raised from 20 — need meaningful momentum)
+        # Stocks with < 25% 6-month momentum are drifters, not leaders
+        if not (roc6 >= 25.0):
             return None
-        # Condition 5: ROC <= 80
-        if not (roc6 <= 80.0):
+        # Condition 5: ROC <= 60% (tightened from 80 — avoid overextended stocks)
+        # Stocks > 60% in 6 months attract heavy profit-taking from early buyers
+        if not (roc6 <= 60.0):
             return None
 
         # ---- RSI (14 monthly bars) ----

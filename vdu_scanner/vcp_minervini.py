@@ -14,22 +14,31 @@ class VCPConfig:
         ma150_len: int = 150,
         ma200_len: int = 200,
         vcp_lookback: int = 5,
-        vcp_thresh: float = 2.5,   # % range considered a "squeeze"
-        benchmark: str = "^NSEI",  # swap SPY -> Nifty 50 by default for NSE use
+        # EXPERT FIX: Different thresholds per lookback window
+        # NSE stocks are more volatile than US stocks — 2.5% was too loose
+        # (nearly every stock showed SQUEEZE with 2.5%, generating false signals)
+        vcp_thresh_5d: float = 3.5,    # 5d VCP: tight squeeze threshold
+        vcp_thresh_10d: float = 5.0,   # 10d VCP: medium base threshold  
+        vcp_thresh_15d: float = 6.5,   # 15d VCP: wider base allowed
+        vcp_thresh: float = 3.5,       # backward compat alias (= 5d threshold)
+        benchmark: str = "^NSEI",
         pressure_window: int = 20,
-        risk_low: float = 15.0,    # <=15% above 50MA -> Low Risk
-        risk_caution: float = 25.0,  # <=25% -> Caution, else Extended
+        risk_low: float = 15.0,
+        risk_caution: float = 25.0,
         rpr_good: float = 80.0,
         rpr_warn: float = 70.0,
-        contraction_lookback: int = 3,   # bars to confirm range is tightening
-        vol_dryup_ratio: float = 0.75,   # volume must fall below 75% of its 20d avg
-        breakout_vol_mult: float = 1.5,  # volume must expand to 1.5x 20d avg on breakout
+        contraction_lookback: int = 3,
+        vol_dryup_ratio: float = 0.75,
+        breakout_vol_mult: float = 1.5,
     ):
         self.ma50_len = ma50_len
         self.ma150_len = ma150_len
         self.ma200_len = ma200_len
         self.vcp_lookback = vcp_lookback
-        self.vcp_thresh = vcp_thresh
+        self.vcp_thresh_5d = vcp_thresh_5d
+        self.vcp_thresh_10d = vcp_thresh_10d
+        self.vcp_thresh_15d = vcp_thresh_15d
+        self.vcp_thresh = vcp_thresh  # backward compat
         self.benchmark = benchmark
         self.pressure_window = pressure_window
         self.risk_low = risk_low
@@ -200,27 +209,30 @@ class MinerviniVCPAnalyzer:
     def _vcp(self):
         df = self.df
         c = self.cfg
+
+        # EXPERT FIX: Use different thresholds per lookback window
+        # Longer lookbacks naturally produce wider ranges — threshold must scale accordingly
         
-        # 5d VCP
+        # 5d VCP (tightest — catches the final coiling before breakout)
         vcp_high = df["Close"].rolling(c.vcp_lookback).max()
         vcp_low = df["Close"].rolling(c.vcp_lookback).min()
         vcp_range_pct = (vcp_high - vcp_low) / df["Close"] * 100
         df["vcp_range_pct"] = vcp_range_pct
-        df["vcp_trigger"] = vcp_range_pct < c.vcp_thresh
+        df["vcp_trigger"] = vcp_range_pct < c.vcp_thresh_5d   # 3.5% threshold
         df["vcp_txt"] = np.where(df["vcp_trigger"], "SQUEEZE", "Normal")
 
-        # 10d VCP
+        # 10d VCP (medium base — stock coiling for 2 weeks)
         vcp10_high = df["Close"].rolling(10).max()
         vcp10_low = df["Close"].rolling(10).min()
         df["vcp10_range_pct"] = (vcp10_high - vcp10_low) / df["Close"] * 100
-        df["vcp10_trigger"] = df["vcp10_range_pct"] < c.vcp_thresh
+        df["vcp10_trigger"] = df["vcp10_range_pct"] < c.vcp_thresh_10d   # 5.0% threshold
         df["vcp10_txt"] = np.where(df["vcp10_trigger"], "SQUEEZE", "Normal")
 
-        # 15d VCP
+        # 15d VCP (wider base — 3 weeks of consolidation, more relaxed range)
         vcp15_high = df["Close"].rolling(15).max()
         vcp15_low = df["Close"].rolling(15).min()
         df["vcp15_range_pct"] = (vcp15_high - vcp15_low) / df["Close"] * 100
-        df["vcp15_trigger"] = df["vcp15_range_pct"] < c.vcp_thresh
+        df["vcp15_trigger"] = df["vcp15_range_pct"] < c.vcp_thresh_15d   # 6.5% threshold
         df["vcp15_txt"] = np.where(df["vcp15_trigger"], "SQUEEZE", "Normal")
 
     def _entry_signals(self):
@@ -280,7 +292,10 @@ class MinerviniVCPAnalyzer:
             "Pressure": last["pressure_txt"],
             "Risk (50d)": last["risk_status"],
             "Trend (TPR)": last["tpr_txt"],
-            "RS Rating": round(float(last["rpr_proxy"]), 1) if pd.notna(last.get("rpr_proxy")) else None,
+            # EXPERT FIX: Renamed from 'RS Rating' to 'RS Proxy'
+            # True RS Rating = percentile rank vs ALL scanned stocks (IBD-style)
+            # This is a momentum score vs Nifty benchmark, not a cross-sectional percentile
+            "RS Proxy": round(float(last["rpr_proxy"]), 1) if pd.notna(last.get("rpr_proxy")) else None,
             "VCP (5d)": last["vcp_txt"],
             "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last.get("vcp_range_pct")) else None,
             "VCP (10d)": last.get("vcp10_txt", "Normal"),

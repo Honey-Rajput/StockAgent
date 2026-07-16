@@ -13,23 +13,25 @@ class ZangerConfig:
     ma_slow: int = 150
     ma_slowest: int = 200
 
-    lookback_run: int = 40          # bars to look back for the "prior move"
-    min_run_pct: float = 25.0       # min % move off the low to qualify as a run
-    hft_run_pct: float = 90.0       # high-tight-flag threshold (Zanger's favorite)
+    # EXPERT FIX: Zanger's actual methodology looks for stocks that ran 30-45%
+    # in 3-6 months before forming a base. 40 bars (8 weeks) was too short.
+    lookback_run: int = 60          # 3 months of trading days (was 40)
+    min_run_pct: float = 30.0       # Zanger's minimum prior move: 30%+ (was 25%)
+    hft_run_pct: float = 100.0      # High Tight Flag: stock doubled in ~8 weeks (was 90%)
 
     base_lookback: int = 15         # bars considered for the base/consolidation
-    max_base_depth_pct: float = 25.0   # base shouldn't retrace more than this
-    hft_max_base_depth_pct: float = 25.0  # HTF bases are shallow (10-25%)
+    max_base_depth_pct: float = 25.0
+    hft_max_base_depth_pct: float = 25.0
 
     breakout_vol_mult: float = 2.0  # breakout volume vs avg volume
     avg_vol_window: int = 50
 
-    min_close_above_base_pct: float = 0.0  # 0 = just needs to close above resistance
-    require_uptrend: bool = True # Toggle to turn off the strict 50>150>200 MA filter
+    min_close_above_base_pct: float = 0.0
+    require_uptrend: bool = True
 
-    # --- ranking weights (used by rank_signals / bulk scan) ---
-    max_acceptable_risk_pct: float = 15.0  # stop distances above this get penalized hard
-    volume_weight: float = 0.6             # how much conviction (volume) matters vs risk
+    # --- ranking weights ---
+    max_acceptable_risk_pct: float = 15.0
+    volume_weight: float = 0.6
     risk_weight: float = 0.4
 
 

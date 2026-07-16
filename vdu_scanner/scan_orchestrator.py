@@ -106,12 +106,14 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
     if scan_mode == "all":
         if today_open_val > yesterday_close_val and today_close_val > yesterday_close_val and today_close_val >= (today_open_val * 0.97):
             gap_pct = (today_open_val - yesterday_close_val) / yesterday_close_val * 100
+            # EXPERT FIX: Larger gaps have GREATER continuation potential (High Tight Flag logic)
+            # Original logic was inverted - a big 8%+ gap deserves a bigger target, not smaller
             if gap_pct >= 8.0:
-                target_multiplier = 1.04; target_pct_str = "+4.0%"
+                target_multiplier = 1.15; target_pct_str = "+15%"   # HTF - massive continuation
             elif gap_pct >= 5.0:
-                target_multiplier = 1.06; target_pct_str = "+6.0%"
+                target_multiplier = 1.10; target_pct_str = "+10%"   # Strong gap
             else:
-                target_multiplier = 1.10; target_pct_str = "+10.0%"
+                target_multiplier = 1.06; target_pct_str = "+6%"    # Modest gap, modest target
                 
             gap_buy_price = round(min(today_open_val, yesterday_close_val) * 0.99, 2)  # Support = gap base (previous close)
             gap_exit_price = round(yesterday_close_val * 0.97, 2)  # Stop below gap fill level
@@ -385,10 +387,12 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         if len(df_ma) >= 250:
             today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]; c_val = float(today_row['Close'])
             sma50 = float(today_row['SMA50']); sma150 = float(today_row['SMA150']); sma200 = float(today_row['SMA200'])
-            sma200_10d_ago = float(df_ma['SMA200'].iloc[-11]) if len(df_ma) >= 210 else sma200
+            # EXPERT FIX: Use 20-bar lookback for 200 SMA trend (Minervini uses ~1 month, not 10 days)
+            # 10 bars = 2 weeks = too short, causes whipsaw on minor corrections
+            sma200_20d_ago = float(df_ma['SMA200'].iloc[-21]) if len(df_ma) >= 220 else sma200
             high_52w = float(df_ma['High'].iloc[-250:].max()); low_52w = float(df_ma['Low'].iloc[-250:].min())
             
-            if c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_10d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.30 * low_52w and c_val >= 0.75 * high_52w:
+            if c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_20d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.25 * low_52w and c_val >= 0.75 * high_52w:
                 run_up_200 = round(((c_val - sma200) / sma200 * 100), 2)
                 run_up_52w = round(((c_val - low_52w) / low_52w * 100), 2)
                 is_early = bool(c_val <= 1.20 * sma200)
