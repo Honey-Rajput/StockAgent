@@ -1832,7 +1832,12 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         # 4. Insert execution log
         cur.execute("""
         INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
-        VALUES (%s, %s, %s, %s);
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (scan_date) DO UPDATE SET
+            total_scanned = EXCLUDED.total_scanned,
+            breakouts_found = EXCLUDED.breakouts_found,
+            squeezes_found = EXCLUDED.squeezes_found,
+            completed_at = CURRENT_TIMESTAMP;
         """, (date_str, total_scanned, len(breakouts), len(squeezes)))
         
         conn.commit()
@@ -2677,8 +2682,11 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
         
         # 3. Update scan log
         cur.execute("""
-            INSERT INTO scan_logs (scan_date, total_scanned) 
-            VALUES (%s, %s);
+            INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found) 
+            VALUES (%s, %s, 0, 0)
+            ON CONFLICT (scan_date) DO UPDATE SET
+                total_scanned = GREATEST(scan_logs.total_scanned, EXCLUDED.total_scanned),
+                completed_at = CURRENT_TIMESTAMP;
         """, (date_str, int(total_scanned)))
         
         conn.commit()
