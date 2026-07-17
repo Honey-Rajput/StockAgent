@@ -277,9 +277,13 @@ def get_day_change_badge_html(pct: float) -> str:
     """
     Generates an HTML badge for price percentage change.
     """
+    if pct is None:
+        pct = 0.0
+    pct = float(pct)
     if pct > 0:
         return f'<span class="custom-badge badge-green">▲ +{pct:.2f}%</span>'
     elif pct < 0:
         return f'<span class="custom-badge badge-red">▼ {pct:.2f}%</span>'
     else:
         return f'<span class="custom-badge badge-grey">0.00%</span>'
+

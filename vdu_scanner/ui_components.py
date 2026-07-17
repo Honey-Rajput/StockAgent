@@ -33,9 +33,9 @@ def render_trading_setup_card(r: dict, key_prefix: str, idx: int):
     """
     Renders a premium, glassmorphic expandable sub-row card for trading guidance.
     """
-    buy = r.get('buy_price') or r.get('cmp') or 0.0
-    sl = r.get('exit_price') or 0.0
-    target = r.get('target_price') or 0.0
+    buy = float(r.get('buy_price') or r.get('cmp') or 0.0)
+    sl = float(r.get('exit_price') or 0.0)
+    target = float(r.get('target_price') or 0.0)
     conf = r.get('confidence') or 'Medium'
     rec = r.get('recommendation') or 'No recommendation generated.'
     
@@ -327,6 +327,10 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         "Extension %": lambda x: float(x.get('extension') or 0.0),
         "7M SMA": lambda x: float(x.get('sma7') or 0.0),
         "Squeeze Score": lambda x: float(x.get('squeeze_score') or 0.0),
+        "Dist to 9 EMA": lambda x: float(x.get('dist_9ema') or 0.0),
+        "Dist to 21 EMA": lambda x: float(x.get('dist_21ema') or 0.0),
+        "Crossover": lambda x: 1 if x.get('crossover') else 0,
+        "Setup": lambda x: (x.get('setup') or "").upper(),
         "VCS Score": lambda x: float(x.get('vcs_score') or 0.0),
         "Contractions": lambda x: int(x.get('contractions') or 0),
         "VPA Score": lambda x: float(x.get('trend_score') or x.get('score') or 0.0),
@@ -382,9 +386,9 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
     
     rows_html = []
     for idx, r in enumerate(sorted_list):
-        buy = r.get('buy_price') or r.get('cmp') or 0.0
-        sl = r.get('exit_price') or 0.0
-        target = r.get('target_price') or 0.0
+        buy = float(r.get('buy_price') or r.get('cmp') or 0.0)
+        sl = float(r.get('exit_price') or 0.0)
+        target = float(r.get('target_price') or 0.0)
         conf = r.get('confidence') or 'Medium'
         clean_conf = conf.split(" (")[0] if " (" in conf else conf
         rec = r.get('recommendation') or 'No recommendation generated.'
@@ -425,7 +429,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         sector = get_stock_sector(r["symbol"])
         cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1; font-size: 0.8rem; font-style: italic;">{sector}</td>')
         
-        cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r.get("cmp", 0.0):,.2f}</td>')
+        cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{float(r.get("cmp") or 0.0):,.2f}</td>')
         
         if strategy_type == "vdu_breakout":
             setup_val = r.get('setup_type') or 'VDU Breakout'
@@ -632,9 +636,9 @@ def render_quick_trade_board(results_list: list, key_prefix: str):
         
     rows_html = []
     for r in results_list:
-        buy = r.get('buy_price') or r.get('cmp') or 0.0
-        sl = r.get('exit_price') or 0.0
-        target = r.get('target_price') or 0.0
+        buy = float(r.get('buy_price') or r.get('cmp') or 0.0)
+        sl = float(r.get('exit_price') or 0.0)
+        target = float(r.get('target_price') or 0.0)
         conf = r.get('confidence') or 'Medium'
         clean_conf = conf.split(" (")[0] if " (" in conf else conf
         rec = r.get('recommendation') or 'No recommendation generated.'
