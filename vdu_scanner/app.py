@@ -6450,6 +6450,35 @@ with tab_bb_squeeze:
                 
         if len(ema_list) > 0:
             st.markdown("### 📊 9/21 EMA Support Setups")
+            
+            # --- Download Button Logic ---
+            import pandas as pd
+            from datetime import datetime
+            today_str = datetime.now().strftime('%Y-%m-%d')
+            df_ema = pd.DataFrame([{
+                'Symbol': r.get('symbol', ''),
+                'CMP': r.get('cmp', 0.0),
+                'Change %': round(float(r.get('day_change_pct') or 0.0), 2),
+                'Dist to 9 EMA %': round(float(r.get('dist_9ema') or 0.0), 2),
+                'Dist to 21 EMA %': round(float(r.get('dist_21ema') or 0.0), 2),
+                'Crossover': r.get('crossover', False),
+                'Setup': r.get('setup', ''),
+                'Buy Price': r.get('buy_price', 0.0),
+                'Exit Price': r.get('exit_price', 0.0),
+                'Target Price': r.get('target_price', 0.0),
+                'Confidence': r.get('confidence', ''),
+                'Recommendation': r.get('recommendation', '')
+            } for r in ema_list])
+            
+            csv_ema = df_ema.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 Download EMA Support Results (CSV)",
+                data=csv_ema,
+                file_name=f"EMA_Support_{today_str}.csv",
+                mime="text/csv",
+                key="dl_ema_support_csv"
+            )
+            
             render_unified_strategy_table(ema_list, "bb_squeeze", "ema_support_tab")
         else:
             if st.session_state.get("bb_squeeze_running", False) or ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
