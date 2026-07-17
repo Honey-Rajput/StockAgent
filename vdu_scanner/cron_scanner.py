@@ -15,9 +15,9 @@ env_path = os.path.join(parent_dir, ".env")
 load_dotenv(env_path)
 
 # Set up environment variables if not present (handled by GitHub Actions usually, but safe to check)
-if not os.environ.get('Database_URL'):
-    print("❌ ERROR: Database_URL must be set as an environment variable.")
-    sys.exit(1)
+if not (os.environ.get('DATA_URL') or os.environ.get('Database_URL') or os.environ.get('Database_Url')):
+    print("❌ ERROR: Database_URL (or DATA_URL) must be set as an environment variable.")
+    exit(1)
 
 # Import local modules
 import database

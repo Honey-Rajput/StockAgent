@@ -346,7 +346,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         "Actionable Guidance & Reasoning": lambda x: (extract_clean_recommendation(x.get('recommendation') or "")).upper(),
         "Run Up 200 SMA": lambda x: float(x.get('run_up_200') or 0.0),
         "Run Up 52w Low": lambda x: float(x.get('run_up_52w') or 0.0),
-        "Remaining Target %": lambda x: float(((x.get('target_price', 0.0) - x.get('cmp', 1.0)) / x.get('cmp', 1.0) * 100) if x.get('cmp', 0.0) > 0 else 0.0)
+        "Remaining Target %": lambda x: float((((x.get('target_price') or 0.0) - (x.get('cmp') or 1.0)) / (x.get('cmp') or 1.0) * 100) if (x.get('cmp') or 0.0) > 0 else 0.0)
     }
     
     # 2. Determine active sort column and direction from session state

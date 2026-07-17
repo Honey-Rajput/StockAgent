@@ -4672,7 +4672,7 @@ with tab_vcs:
             cols = list(z_df.columns)
             if 'date' in cols:
                 # keep as string, Streamlit will be told it's text
-                z_df['date'] = pd.to_datetime(z_df['date']).dt.strftime('%Y-%m-%d')
+                z_df['date'] = z_df['date'].astype(str).str[:10]
             
             # Clean up unwanted columns (like company_name if sector is there)
             if 'company_name' in cols and 'sector' in cols:

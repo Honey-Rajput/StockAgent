@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 # Resolve and load environment variables from the parent directory's .env file
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(parent_dir, ".env")
-load_dotenv(env_path)
+load_dotenv(dotenv_path=env_path)
 
-DATABASE_URL = os.getenv("Database_URL")
+DATABASE_URL = os.getenv("DATA_URL") or os.getenv("Database_URL") or os.getenv("Database_Url")
 
 import psycopg2
 import psycopg2.extras
@@ -16,6 +16,21 @@ from psycopg2.extras import DictCursor
 from psycopg2.pool import ThreadedConnectionPool
 import threading
 import time
+
+def safe_date_str(val):
+    if val is None:
+        return None
+    if pd.isna(val):
+        return None
+    if hasattr(val, 'strftime'):
+        try:
+            return val.strftime("%Y-%m-%d")
+        except Exception:
+            return None
+    s = str(val)
+    if s.lower() in ('nat', 'none', 'nan', ''):
+        return None
+    return s
 
 _pool = None
 _pool_lock = threading.Lock()
@@ -1627,8 +1642,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 float(r['signal_strength']), 
                 bool(r.get('above_50dma', False)),
                 bool(r.get('above_200dma', False)),
-                r['dry_start_date'].strftime("%Y-%m-%d") if hasattr(r['dry_start_date'], 'strftime') else str(r['dry_start_date']), 
-                r['dry_end_date'].strftime("%Y-%m-%d") if hasattr(r['dry_end_date'], 'strftime') else str(r['dry_end_date']),
+                safe_date_str(r.get('dry_start_date')), 
+                safe_date_str(r.get('dry_end_date')),
                 date_str,
                 float(r['buy_price']) if r.get('buy_price') is not None else None,
                 float(r['exit_price']) if r.get('exit_price') is not None else None,
