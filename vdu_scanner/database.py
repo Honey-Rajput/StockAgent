@@ -771,7 +771,17 @@ def init_db() -> bool:
             # BB Squeeze: score, confidence, score_breakdown columns
             "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS squeeze_score INTEGER;",
             "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS score_breakdown TEXT;"
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS score_breakdown TEXT;",
+            # EMA Support alias columns
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS setup VARCHAR(100);",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS dist_9ema DOUBLE PRECISION;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS dist_21ema DOUBLE PRECISION;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS crossover BOOLEAN;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS recommendation TEXT;"
         ]
         for m in migrations:
             try:
@@ -2591,8 +2601,10 @@ def save_bb_squeeze_only(date_str: str, bb_results: list) -> bool:
                  daily_squeeze, weekly_squeeze, monthly_squeeze,
                  daily_bb_width, weekly_bb_width, monthly_bb_width,
                  above_50dma, market_cap_cr, scan_date,
-                 squeeze_score, confidence, score_breakdown)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 squeeze_score, confidence, score_breakdown,
+                 setup, dist_9ema, dist_21ema, crossover, score,
+                 buy_price, exit_price, target_price, recommendation)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (symbol, scan_date) DO UPDATE SET
                     cmp = EXCLUDED.cmp,
                     day_change_pct = EXCLUDED.day_change_pct,
@@ -2605,13 +2617,25 @@ def save_bb_squeeze_only(date_str: str, bb_results: list) -> bool:
                     above_50dma = EXCLUDED.above_50dma,
                     squeeze_score = EXCLUDED.squeeze_score,
                     confidence = EXCLUDED.confidence,
-                    score_breakdown = EXCLUDED.score_breakdown
+                    score_breakdown = EXCLUDED.score_breakdown,
+                    setup = EXCLUDED.setup,
+                    dist_9ema = EXCLUDED.dist_9ema,
+                    dist_21ema = EXCLUDED.dist_21ema,
+                    crossover = EXCLUDED.crossover,
+                    score = EXCLUDED.score,
+                    buy_price = EXCLUDED.buy_price,
+                    exit_price = EXCLUDED.exit_price,
+                    target_price = EXCLUDED.target_price,
+                    recommendation = EXCLUDED.recommendation
             """, (
-                r['symbol'], r.get('company_name', ''), float(r['cmp']), float(r['day_change_pct']),
+                r['symbol'], r.get('company_name', ''), float(r['cmp']), float(r.get('day_change_pct', 0.0)),
                 bool(r.get('daily_squeeze', False)), bool(r.get('weekly_squeeze', False)), bool(r.get('monthly_squeeze', False)),
                 float(r.get('daily_bb_width', 0.0) or 0.0), float(r.get('weekly_bb_width', 0.0) or 0.0), float(r.get('monthly_bb_width', 0.0) or 0.0),
                 bool(r.get('above_50dma', False)), float(r.get('market_cap_cr', 0.0)), date_str,
-                int(r.get('squeeze_score', 0) or 0), r.get('confidence', ''), r.get('score_breakdown', '')
+                int(r.get('squeeze_score', 0) or 0), r.get('confidence', ''), r.get('score_breakdown', ''),
+                r.get('setup', ''), float(r.get('dist_9ema', 0.0)), float(r.get('dist_21ema', 0.0)), bool(r.get('crossover', False)),
+                float(r.get('score', 0.0)), float(r.get('buy_price', 0.0)), float(r.get('exit_price', 0.0)), float(r.get('target_price', 0.0)),
+                r.get('recommendation', '')
             ))
         conn.commit()
         cur.close()
