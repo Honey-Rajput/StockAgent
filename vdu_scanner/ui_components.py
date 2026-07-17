@@ -521,8 +521,10 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cells.append(f'<td style="padding: 10px 12px; font-weight: 600;">{setup_badge}</td>')
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
             cells.append(f'<td style="padding: 10px 12px;">{chg_badge}</td>')
-            d9 = r.get("dist_9ema", 0.0)
-            d21 = r.get("dist_21ema", 0.0)
+            d9 = r.get("dist_9ema")
+            d9 = 0.0 if d9 is None else float(d9)
+            d21 = r.get("dist_21ema")
+            d21 = 0.0 if d21 is None else float(d21)
             d9_col = "#00e676" if d9 >= 0 else "#ef4444"
             d21_col = "#00e676" if d21 >= 0 else "#ef4444"
             cells.append(f'<td style="padding: 10px 12px; color: {d9_col}; font-weight: 600;">{d9:+.2f}%</td>')
