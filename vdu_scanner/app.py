@@ -511,7 +511,7 @@ def run_background_momentum_scans():
                                     continue
                                 t_df_m = t_df_m.reset_index()
                                 t_df_m.rename(columns={t_df_m.columns[0]: 'Date'}, inplace=True)
-                                t_df_m['Date'] = pd.to_datetime(t_df_m['Date']).dt.tz_localize(None)
+                                t_df_m['Date'] = pd.to_datetime(t_df_m['Date'], utc=True).dt.tz_localize(None)
 
                                 res_m = scan_monthly_momentum(sym, t_df_m, market_cap_cr=mcap_map.get(sym, 0.0))
                                 if res_m is not None:
@@ -570,7 +570,7 @@ def run_background_momentum_scans():
                                     continue
                                 t_df_w = t_df_w.reset_index()
                                 t_df_w.rename(columns={t_df_w.columns[0]: 'Date'}, inplace=True)
-                                t_df_w['Date'] = pd.to_datetime(t_df_w['Date']).dt.tz_localize(None)
+                                t_df_w['Date'] = pd.to_datetime(t_df_w['Date'], utc=True).dt.tz_localize(None)
 
                                 res_w = scan_weekly_momentum(sym, t_df_w, market_cap_cr=mcap_map.get(sym, 0.0))
                                 if res_w is not None:
@@ -1638,7 +1638,7 @@ if run_full or run_sma:
                                             if not ticker_df.empty:
                                                 ticker_df = ticker_df.reset_index()
                                                 ticker_df.rename(columns={ticker_df.columns[0]: "Date"}, inplace=True)
-                                                ticker_df["Date"] = pd.to_datetime(ticker_df["Date"]).dt.tz_localize(None)
+                                                ticker_df["Date"] = pd.to_datetime(ticker_df["Date"], utc=True).dt.tz_localize(None)
 
                                                 chunk_data[sym.strip().upper()] = ticker_df
 
@@ -1801,7 +1801,7 @@ if run_full or run_sma:
                                     if not t_df.empty:
                                         t_df = t_df.reset_index()
                                         t_df.rename(columns={t_df.columns[0]: "Date"}, inplace=True)
-                                        t_df["Date"] = pd.to_datetime(t_df["Date"]).dt.tz_localize(None)
+                                        t_df["Date"] = pd.to_datetime(t_df["Date"], utc=True).dt.tz_localize(None)
                                         bulk_data[sym.strip().upper()] = t_df
                                         # Save to cache in background
                                         _t_df_copy = t_df.copy()
@@ -3497,7 +3497,7 @@ with tab_wave:
                                 if len(ticker_df) >= 40:
                                     ticker_df = ticker_df.reset_index()
                                     ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date'], utc=True).dt.tz_localize(None)
 
                                     wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=wt_oversold_threshold)
                                     if wt_res is not None:
@@ -5113,7 +5113,7 @@ with tab_vpa:
                                         if len(ticker_df) >= 45 and ticker_df['Close'].iloc[-1] > 100.0:
                                             ticker_df = ticker_df.reset_index()
                                             ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                            ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                            ticker_df['Date'] = pd.to_datetime(ticker_df['Date'], utc=True).dt.tz_localize(None)
                                             chunk_data[sym] = ticker_df
                                             chunk_filtered.append(sym)
                                 except Exception:
@@ -5124,7 +5124,7 @@ with tab_vpa:
                                 if len(ticker_df) >= 45 and ticker_df['Close'].iloc[-1] > 100.0:
                                     ticker_df = ticker_df.reset_index()
                                     ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date'], utc=True).dt.tz_localize(None)
                                     chunk_data[chunk[0]] = ticker_df
                                     chunk_filtered.append(chunk[0])
                     except Exception:
@@ -5502,7 +5502,7 @@ with tab_volprofile:
                                         if len(ticker_df) >= 100:
                                             ticker_df = ticker_df.reset_index()
                                             ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                            ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                            ticker_df['Date'] = pd.to_datetime(ticker_df['Date'], utc=True).dt.tz_localize(None)
                                             chunk_data[sym] = ticker_df
                                 except Exception:
                                     pass
@@ -5512,7 +5512,7 @@ with tab_volprofile:
                                 if len(ticker_df) >= 100:
                                     ticker_df = ticker_df.reset_index()
                                     ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date']).dt.tz_localize(None)
+                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date'], utc=True).dt.tz_localize(None)
                                     chunk_data[chunk[0]] = ticker_df
                     except Exception:
                         pass
