@@ -1076,9 +1076,9 @@ st.markdown('<p class="gradient-subtitle">Scan NSE-listed stocks for institution
 st.sidebar.markdown('### ⚙️ Scan Universe')
 universe_selection = st.sidebar.selectbox(
     "Select Universe to Scan",
-    options=["NIFTY 100 (Recommended)", "NIFTY 50 (Ultra Fast)", "All NSE Listed Equities (Full Scan)"],
-    index=2,
-    help="Select the universe of stocks to scan. NIFTY 100/50 are extremely fast and completely bypass Yahoo Finance rate limits."
+    options=["All NSE Listed Equities (Full Scan)", "NIFTY 500 (Top 500 Stocks)"],
+    index=0,
+    help="Select the universe of stocks to scan."
 )
 
 # =============================================================================
