@@ -844,7 +844,7 @@ def run_background_all_tab_scans():
                 # Save results
                 if run_wt:
                     ALL_TAB_SCAN_STATUS["wt_results"] = wt_tf_results
-                    try: database.save_scan_results(today_str, [], [], [], [], wt_tf_results, 0, [], []) 
+                    try: database.save_wt_cross_only(today_str, wt_tf_results)
                     except: pass
                 if run_vcs:
                     ALL_TAB_SCAN_STATUS["vcs_results"] = custom_vcs_results
@@ -4110,6 +4110,41 @@ with tab_monthly:
         
         symbols_to_scan = [s.strip().upper() for s in mm_universe]
         bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+        
+        # --- Fallback to yfinance for missing symbols ---
+        missing_syms = [s for s in symbols_to_scan if s.replace(".NS", "") not in bulk_cached]
+        if missing_syms:
+            mm_status.text(f"Step 1.5/3 — Fetching {len(missing_syms)} missing stocks from yfinance...")
+            import yfinance as yf
+            import pandas as pd
+            chunk_size = 100
+            missing_chunks = [missing_syms[i:i+chunk_size] for i in range(0, len(missing_syms), chunk_size)]
+            for c_idx, chunk in enumerate(missing_chunks):
+                tkrs = [f"{s}.NS" if not s.endswith(".NS") else s for s in chunk]
+                try:
+                    df_yf = yf.download(tickers=tkrs, period="5y", interval="1d", progress=False, threads=False, timeout=15)
+                    if not df_yf.empty:
+                        for sym in chunk:
+                            try:
+                                if isinstance(df_yf.columns, pd.MultiIndex):
+                                    all_tkrs = df_yf.columns.get_level_values(1).unique().tolist()
+                                    matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
+                                    if not matched_t:
+                                        continue
+                                    t_df = df_yf.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                else:
+                                    t_df = df_yf.dropna(subset=['Close'])
+                                    
+                                if not t_df.empty:
+                                    t_df = t_df.reset_index()
+                                    if 'Date' not in t_df.columns:
+                                        t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                    t_df['Date'] = pd.to_datetime(t_df['Date'])
+                                    bulk_cached[sym.replace(".NS", "")] = t_df
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
         
         mm_status.text(f"Step 2/3 — Resampling to Monthly & Scanning {len(bulk_cached)} stocks...")
         mm_total = len(bulk_cached)
