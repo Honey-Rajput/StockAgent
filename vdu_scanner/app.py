@@ -1089,6 +1089,11 @@ if not st.session_state.get('db_cache_checked', False):
         except Exception:
             pass
 
+        try:
+            st.session_state.stage_analysis_results = database.get_cached_stage_analysis(today_str_bg)
+        except Exception:
+            pass
+
         # ── Independent loaders: each scanner uses its OWN latest date ───────────
         # These load even if scan_logs has no entry (e.g. ran from individual tab buttons)
 
@@ -1919,7 +1924,7 @@ if run_full or run_sma:
         else:
             st.session_state.zanger_results = zanger_list
             
-        st.session_state.volume_profile_results = vp_list
+        st.session_state.vp_results = vp_list
         st.session_state.support_rsi_results = support_rsi_list
         st.session_state.bb_squeeze_results = bb_squeeze_list
         st.session_state.stage_analysis_results = stage_analysis_list
