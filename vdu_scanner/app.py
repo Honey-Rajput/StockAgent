@@ -5476,10 +5476,10 @@ with tab_vpa_squeeze:
         df_res = pd.DataFrame(results)
         df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.write(f"### Found {len(results)} stocks")
-        # Sort by Compression Score ascending so tightest squeezes appear first
-        if 'compression_score' in df_res.columns:
-            df_res = df_res.sort_values('compression_score', ascending=True)
-        display_cols = ['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'compression_score', 'dist_to_200_pct']
+        # Sort by Compression Score (Gap %) ascending so tightest squeezes appear first
+        if 'ma_gap_pct' in df_res.columns:
+            df_res = df_res.sort_values('ma_gap_pct', ascending=True)
+        display_cols = ['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'dist_to_200_pct']
         # Keep only columns that actually exist (handles older cached results without the new field)
         display_cols = [c for c in display_cols if c in df_res.columns]
         st.dataframe(
