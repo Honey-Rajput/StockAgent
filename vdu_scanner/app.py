@@ -2032,12 +2032,12 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_stage_analysis) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_stage_analysis, tab_vpa_squeeze) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze"
 ])
 
 # ==============================================================================
@@ -5463,6 +5463,72 @@ with tab_vpa:
 </table>
 </div>"""
         st.markdown(table_html, unsafe_allow_html=True)
+
+# TAB: VPA SQUEEZE
+with tab_vpa_squeeze:
+    st.markdown("### 📉 VPA Green + MA Squeeze")
+    st.info("Finds stocks where VPA is Green (Minor, Mid, Major), the 10/21/50 SMA are tightly clustered (<3% gap), and the 200 SMA is just above (<10%).")
+    
+    if "vpa_squeeze_results" not in st.session_state:
+        st.session_state.vpa_squeeze_results = []
+        
+    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch")
+    if run_vpa_squeeze_btn:
+        st.session_state.vpa_squeeze_results = []
+        with st.spinner("Running VPA Squeeze Scan..."):
+            try:
+                from data_fetcher import get_all_nse_symbols
+                from scanner import scan_vpa_ma_squeeze
+                from local_cache_manager import bulk_get_cached_ohlcv
+                import pandas as pd
+                
+                raw_symbols = get_all_nse_symbols()
+                symbols_to_scan = [s.strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]
+                
+                st.info(f"Step 1/2 — Fetching history from Master Cache...")
+                prog = st.progress(0)
+                status = st.empty()
+                
+                # Fetch all cached data at once
+                bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+                
+                st.info("Step 2/2 — Calculating MA Squeeze (Instant)...")
+                status.empty()
+                prog.progress(1.0)
+                
+                results = []
+                for sym, df in bulk_cached.items():
+                    res = scan_vpa_ma_squeeze(sym, df)
+                    if res is not None:
+                        results.append(res)
+                            
+                prog.empty()
+                status.empty()
+                st.session_state.vpa_squeeze_results = results
+                st.success(f"Scan complete! Found {len(results)} matches.")
+                
+            except Exception as e:
+                st.error(f"Error running scan: {e}")
+
+    if st.session_state.get('vpa_squeeze_results'):
+        results = st.session_state.vpa_squeeze_results
+        df_res = pd.DataFrame(results)
+        st.write(f"### Found {len(results)} stocks")
+        st.dataframe(
+            df_res[['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'sma200', 'ma_gap_pct', 'dist_to_200_pct']],
+            use_container_width=True,
+            column_config={
+                "symbol": "Symbol",
+                "cmp": "CMP (₹)",
+                "day_change_pct": "Chg %",
+                "sma10": "10 SMA",
+                "sma21": "21 SMA",
+                "sma50": "50 SMA",
+                "sma200": "200 SMA",
+                "ma_gap_pct": "MA Gap %",
+                "dist_to_200_pct": "200 Dist %"
+            }
+        )
 
 # TAB: FREQUENT FLYERS (CONSISTENT ALERTS)
 with tab_alerts:

@@ -1696,6 +1696,73 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
         print(f"Error in VPA scan for {symbol}: {e}")
         return None
 
+def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) -> dict | None:
+    """
+    Scans for stocks where Daily VPA Major, Mid, and Minor are green,
+    the 10, 21, and 50 SMA are tightly clustered (< 3% gap),
+    and the 200 SMA is just above the cluster (< 10% distance).
+    """
+    if df is None or len(df) < 200:
+        return None
+        
+    try:
+        # Check Daily VPA
+        daily_trends = calc_vpa_trends(df)
+        if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] != 1:
+            return None # Must be fully green
+            
+        # Calculate SMAs
+        close_series = df['Close']
+        sma10 = float(close_series.rolling(window=10).mean().iloc[-1])
+        sma21 = float(close_series.rolling(window=21).mean().iloc[-1])
+        sma50 = float(close_series.rolling(window=50).mean().iloc[-1])
+        sma200 = float(close_series.rolling(window=200).mean().iloc[-1])
+        cmp = float(close_series.iloc[-1])
+        
+        if pd.isna(sma10) or pd.isna(sma21) or pd.isna(sma50) or pd.isna(sma200):
+            return None
+            
+        # Squeeze logic
+        ma_list = [sma10, sma21, sma50]
+        max_ma = max(ma_list)
+        min_ma = min(ma_list)
+        
+        # Squeeze: (max - min) / min < 0.03
+        if (max_ma - min_ma) / min_ma > 0.03:
+            return None
+            
+        # 200 SMA logic: must be above max_ma, but not more than 10% above
+        if sma200 <= max_ma or sma200 > max_ma * 1.10:
+            return None
+            
+        prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
+        day_change_pct = ((cmp - prev_close) / prev_close) * 100
+        
+        buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df, cmp, indicators)
+        
+        from config import get_company_name
+        company_name = get_company_name(symbol)
+        
+        return {
+            "symbol": symbol.strip().upper(),
+            "company_name": company_name,
+            "cmp": round(cmp, 2),
+            "day_change_pct": round(day_change_pct, 2),
+            "volume": int(df['Volume'].iloc[-1]),
+            "sma10": round(sma10, 2),
+            "sma21": round(sma21, 2),
+            "sma50": round(sma50, 2),
+            "sma200": round(sma200, 2),
+            "ma_gap_pct": round(((max_ma - min_ma) / min_ma) * 100, 2),
+            "dist_to_200_pct": round(((sma200 - max_ma) / max_ma) * 100, 2),
+            "buy_price": buy_price,
+            "exit_price": exit_price,
+            "target_price": target_price
+        }
+    except Exception as e:
+        print(f"Error in VPA Squeeze scan for {symbol}: {e}")
+        return None
+
 def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivot_tolerance: float = 0.05, max_dist_to_pivot: float = 0.10, indicators: dict = None) -> dict | None:
     """
     Scans for a structural Volatility Contraction Pattern (VCP).
