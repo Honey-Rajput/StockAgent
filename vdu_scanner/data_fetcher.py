@@ -308,6 +308,21 @@ def fetch_nifty500_constituent_symbols() -> list[str]:
                     return clean_symbols
     except Exception as ex:
         print(f"NSE direct constituent list download failed: {ex}")
+        
+    # Step B: Fallback to niftyindices.com (more reliable alternative)
+    try:
+        url2 = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
+        headers2 = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        res2 = requests.get(url2, headers=headers2, timeout=10)
+        if res2.status_code == 200:
+            df = pd.read_csv(io.StringIO(res2.text))
+            if 'Symbol' in df.columns:
+                symbols = df['Symbol'].dropna().astype(str).tolist()
+                clean_symbols = [s.strip() for s in symbols if s.strip() and s.strip() != 'Symbol']
+                if len(clean_symbols) > 50:
+                    return clean_symbols
+    except Exception as ex:
+        print(f"Niftyindices fallback download failed: {ex}")
 
     # Step C: Fallback to static NIFTY 100 lists if everything fails
     print("WARNING: Returning static NIFTY 100 constituent list as backup.")
