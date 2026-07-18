@@ -1035,110 +1035,35 @@ if not st.session_state.get('db_cache_checked', False):
             st.session_state.failed_count = 0
             st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
 
-        # ── Independent loaders for background scanners ───────────
-        today_str_bg = latest_date_str if 'latest_date_str' in locals() and latest_date_str else get_market_date()
+        # ── Independent loaders: each scanner uses its OWN table's latest date ──────
+        # This guarantees each tab reloads its latest data regardless of what date
+        # other scanners saved on. Uses get_latest_date_for_table() per table.
 
-        try:
-            st.session_state.wt_results = database.get_cached_wt_cross(today_str_bg)
+        def _load_latest(table, getter_fn, state_key, post_fn=None):
+            """Helper: find own latest date for a table, then load and set session state."""
+            try:
+                d = database.get_latest_date_for_table(table)
+                if d:
+                    data = getter_fn(d)
+                    if data:
+                        st.session_state[state_key] = post_fn(data) if post_fn else data
+            except Exception as _e:
+                print(f"Error loading {state_key} from {table}: {_e}")
+
+        _load_latest("scanned_wt_cross", database.get_cached_wt_cross, "wt_results")
+        if st.session_state.get("wt_results"):
             st.session_state.wt_results_by_tf = {"Daily_-40.0": st.session_state.wt_results, "Daily": st.session_state.wt_results}
-        except Exception:
-            pass
 
-        try:
-            st.session_state.vcs_results = database.get_cached_vcs(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.vpa_results = database.get_cached_vpa(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.vp_results = database.get_cached_volume_profile(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.bb_squeeze_results = database.get_cached_bb_squeeze(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.stage2_results = database.get_cached_stage2(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.support_rsi_results = database.get_cached_support_rsi(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(today_str_bg)
-        except Exception:
-            pass
-
-        try:
-            st.session_state.stage_analysis_results = database.get_cached_stage_analysis(today_str_bg)
-        except Exception:
-            pass
-
-        # ── Independent loaders: each scanner uses its OWN latest date ───────────
-        # These load even if scan_logs has no entry (e.g. ran from individual tab buttons)
-
-        # Zanger
-        try:
-            zanger_dates = database.get_zanger_scan_dates()
-            if zanger_dates:
-                tf_to_load = st.session_state.get('zanger_tf', 'Daily')
-                loaded = database.get_cached_zanger(zanger_dates[0], timeframe=tf_to_load)
-                if loaded:
-                    st.session_state.zanger_results = loaded
-        except Exception:
-            pass
-
-        # VCP + Minervini
-        try:
-            vcp_dates = database.get_vcp_minervini_scan_dates()
-            if vcp_dates:
-                loaded = database.get_cached_vcp_minervini(vcp_dates[0])
-                if loaded:
-                    st.session_state.vcp_minervini_results = loaded
-        except Exception:
-            pass
-
-        # Monthly Momentum (independent date)
-        try:
-            if not st.session_state.get('monthly_momentum_results'):
-                mm_dates = database.get_available_scan_dates()  # same table, reuse
-                if mm_dates:
-                    loaded = database.get_cached_monthly_momentum(mm_dates[0])
-                    if loaded:
-                        st.session_state.monthly_momentum_results = loaded
-        except Exception:
-            pass
-
-        # Weekly Momentum (independent date)
-        try:
-            if not st.session_state.get('weekly_momentum_results'):
-                wm_dates = database.get_available_scan_dates()
-                if wm_dates:
-                    loaded = database.get_cached_weekly_momentum(wm_dates[0])
-                    if loaded:
-                        st.session_state.weekly_momentum_results = loaded
-        except Exception:
-            pass
+        _load_latest("scanned_vcs", database.get_cached_vcs, "vcs_results")
+        _load_latest("scanned_vpa", database.get_cached_vpa, "vpa_results")
+        _load_latest("scanned_volume_profile", database.get_cached_volume_profile, "vp_results")
+        _load_latest("scanned_bb_squeeze", database.get_cached_bb_squeeze, "bb_squeeze_results")
+        _load_latest("scanned_vpa_squeeze", database.get_cached_vpa_squeeze, "vpa_squeeze_results")
+        _load_latest("scanned_stage2", database.get_cached_stage2, "stage2_results")
+        _load_latest("scanned_support_rsi", database.get_cached_support_rsi, "support_rsi_results")
+        _load_latest("scanned_monthly_momentum", database.get_cached_monthly_momentum, "monthly_momentum_results")
+        _load_latest("scanned_weekly_momentum", database.get_cached_weekly_momentum, "weekly_momentum_results")
+        _load_latest("scanned_stage_analysis", database.get_cached_stage_analysis, "stage_analysis_results")
 
         # Auto-resume background AI scan for flagged symbols
         all_syms = []

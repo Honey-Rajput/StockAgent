@@ -1047,6 +1047,29 @@ def get_zanger_scan_dates() -> list[str]:
     return dates
 
 
+def get_latest_date_for_table(table_name: str) -> str | None:
+    """
+    Returns the most recent scan_date stored in any given scan results table.
+    Used so each tab can independently load its own latest results regardless
+    of whether other tables have data for the same date.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(f"SELECT MAX(scan_date) FROM {table_name};")
+        row = cur.fetchone()
+        cur.close()
+        if row and row[0]:
+            return row[0].strftime("%Y-%m-%d") if hasattr(row[0], 'strftime') else str(row[0])
+    except Exception as e:
+        print(f"Error getting latest date for {table_name}: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return None
+
+
 def get_cached_breakouts(date_str: str) -> list[dict]:
     """
     Retrieves the cached VDU breakouts scanned on a specific date.
