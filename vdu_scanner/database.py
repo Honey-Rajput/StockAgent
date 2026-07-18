@@ -989,9 +989,26 @@ def has_scanned_today(date_str: str) -> dict | None:
 def get_available_scan_dates() -> list[str]:
     """
     Retrieves all dates that have completed daily scan logs, sorted descending.
-    Ignores empty or aborted scans (total_scanned = 0).
+    Ignores empty or aborted scans. Now unions across multiple tables to ensure
+    dates are found even if the master scan_logs table is empty.
     """
-    query = "SELECT scan_date FROM scan_logs WHERE total_scanned > 0 ORDER BY scan_date DESC;"
+    query = """
+    SELECT scan_date FROM (
+        SELECT scan_date FROM scan_logs WHERE total_scanned > 0
+        UNION
+        SELECT scan_date FROM scanned_vpa
+        UNION
+        SELECT scan_date FROM scanned_vcs
+        UNION
+        SELECT scan_date FROM scanned_trend_setups
+        UNION
+        SELECT scan_date FROM scanned_zanger
+        UNION
+        SELECT scan_date FROM scanned_volume_profile
+    ) AS all_dates
+    GROUP BY scan_date
+    ORDER BY scan_date DESC;
+    """
     conn = None
     dates = []
     try:

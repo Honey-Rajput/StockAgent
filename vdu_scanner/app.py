@@ -1001,40 +1001,39 @@ if not st.session_state.get('db_cache_checked', False):
         available_dates = database.get_available_scan_dates()
         if available_dates:
             latest_date_str = available_dates[0]
-            cached_log = database.has_scanned_today(latest_date_str)
-            if cached_log:
-                try:
-                    st.session_state.scan_results = database.get_cached_breakouts(latest_date_str)
-                except Exception:
-                    st.session_state.scan_results = []
-                try:
-                    st.session_state.gapup_results = database.get_cached_gapups(latest_date_str)
-                except Exception:
-                    st.session_state.gapup_results = []
-                try:
-                    st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str, 'above_ma')
-                except Exception:
-                    st.session_state.above_ma_results = []
-                try:
-                    st.session_state.support_ma_results = database.get_cached_trend_setups(latest_date_str, 'support_ma')
-                except Exception:
-                    st.session_state.support_ma_results = []
-                try:
-                    st.session_state.crossover_ma_results = database.get_cached_trend_setups(latest_date_str, 'crossover_ma')
-                except Exception:
-                    st.session_state.crossover_ma_results = []
-                try:
-                    st.session_state.minervini_results = ensure_minervini_fields(database.get_cached_trend_setups(latest_date_str, 'minervini'))
-                except Exception:
-                    st.session_state.minervini_results = []
-                try:
-                    st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
-                except Exception:
-                    st.session_state.stage_analysis_results = []
+            cached_log = database.has_scanned_today(latest_date_str) or {}
+            try:
+                st.session_state.scan_results = database.get_cached_breakouts(latest_date_str)
+            except Exception:
+                st.session_state.scan_results = []
+            try:
+                st.session_state.gapup_results = database.get_cached_gapups(latest_date_str)
+            except Exception:
+                st.session_state.gapup_results = []
+            try:
+                st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str, 'above_ma')
+            except Exception:
+                st.session_state.above_ma_results = []
+            try:
+                st.session_state.support_ma_results = database.get_cached_trend_setups(latest_date_str, 'support_ma')
+            except Exception:
+                st.session_state.support_ma_results = []
+            try:
+                st.session_state.crossover_ma_results = database.get_cached_trend_setups(latest_date_str, 'crossover_ma')
+            except Exception:
+                st.session_state.crossover_ma_results = []
+            try:
+                st.session_state.minervini_results = ensure_minervini_fields(database.get_cached_trend_setups(latest_date_str, 'minervini'))
+            except Exception:
+                st.session_state.minervini_results = []
+            try:
+                st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
+            except Exception:
+                st.session_state.stage_analysis_results = []
 
-                st.session_state.total_scanned = cached_log.get('total_scanned', 0)
-                st.session_state.failed_count = 0
-                st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
+            st.session_state.total_scanned = cached_log.get('total_scanned', 0)
+            st.session_state.failed_count = 0
+            st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
 
         # ── Independent loaders for background scanners ───────────
         today_str_bg = latest_date_str if 'latest_date_str' in locals() and latest_date_str else get_market_date()
