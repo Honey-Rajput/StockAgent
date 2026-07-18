@@ -1592,14 +1592,14 @@ def calc_vpa_trends(df: pd.DataFrame) -> dict:
     latest_j2 = j2.iloc[-1]
     latest_k2 = k2.iloc[-1]
     
-    # Evaluate Mid trend
-    mid_trend = 1 if latest_ground > 1 else (-1 if latest_sky > 1 else 0)
+    # Evaluate Minor trend (Short-term RWI: 2 to 8)
+    minor_trend = 1 if latest_ground > 1 else (-1 if latest_sky > 1 else 0)
     
-    # Evaluate Major trend
+    # Evaluate Major trend (Difference of Long-term RWI)
     major_trend = 1 if latest_j > 1 else (-1 if latest_j < -1 else 0)
 
-    # Evaluate Minor trend
-    minor_trend = 1 if latest_j2 > 1 else (-1 if latest_k2 > 1 else 0)
+    # Evaluate Mid trend (Long-term RWI: 10 to 40)
+    mid_trend = 1 if latest_j2 > 1 else (-1 if latest_k2 > 1 else 0)
     
     # Calculate RSI (14)
     close_series = df['Close']
