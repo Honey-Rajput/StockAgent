@@ -997,48 +997,7 @@ if enable_background_scans:
 if not st.session_state.get('db_cache_checked', False):
     st.session_state['db_cache_checked'] = True
     try:
-        # ── Core scan results (from scan_logs + related tables) ─────────────────
-        available_dates = database.get_available_scan_dates()
-        if available_dates:
-            latest_date_str = available_dates[0]
-            cached_log = database.has_scanned_today(latest_date_str) or {}
-            try:
-                st.session_state.scan_results = database.get_cached_breakouts(latest_date_str)
-            except Exception:
-                st.session_state.scan_results = []
-            try:
-                st.session_state.gapup_results = database.get_cached_gapups(latest_date_str)
-            except Exception:
-                st.session_state.gapup_results = []
-            try:
-                st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str, 'above_ma')
-            except Exception:
-                st.session_state.above_ma_results = []
-            try:
-                st.session_state.support_ma_results = database.get_cached_trend_setups(latest_date_str, 'support_ma')
-            except Exception:
-                st.session_state.support_ma_results = []
-            try:
-                st.session_state.crossover_ma_results = database.get_cached_trend_setups(latest_date_str, 'crossover_ma')
-            except Exception:
-                st.session_state.crossover_ma_results = []
-            try:
-                st.session_state.minervini_results = ensure_minervini_fields(database.get_cached_trend_setups(latest_date_str, 'minervini'))
-            except Exception:
-                st.session_state.minervini_results = []
-            try:
-                st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
-            except Exception:
-                st.session_state.stage_analysis_results = []
-
-            st.session_state.total_scanned = cached_log.get('total_scanned', 0)
-            st.session_state.failed_count = 0
-            st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
-
-        # ── Independent loaders: each scanner uses its OWN table's latest date ──────
-        # This guarantees each tab reloads its latest data regardless of what date
-        # other scanners saved on. Uses get_all_latest_scan_dates() to avoid timeouts.
-        
+        # Fetch the max dates for ALL tables at once
         all_latest_dates = database.get_all_latest_scan_dates()
 
         def _load_latest(table, getter_fn, state_key, post_fn=None):
@@ -1057,6 +1016,15 @@ if not st.session_state.get('db_cache_checked', False):
                 print(f"Error loading {state_key} from {table}: {_e}")
                 st.session_state[state_key] = []
 
+        # ── Independent loaders: each scanner uses its OWN table's latest date ──────
+        _load_latest("scanned_breakouts", database.get_cached_breakouts, "scan_results")
+        _load_latest("scanned_gapups", database.get_cached_gapups, "gapup_results")
+        _load_latest("scanned_trend_setups", lambda d: database.get_cached_trend_setups(d, 'above_ma'), "above_ma_results")
+        _load_latest("scanned_trend_setups", lambda d: database.get_cached_trend_setups(d, 'support_ma'), "support_ma_results")
+        _load_latest("scanned_trend_setups", lambda d: database.get_cached_trend_setups(d, 'crossover_ma'), "crossover_ma_results")
+        _load_latest("scanned_trend_setups", lambda d: database.get_cached_trend_setups(d, 'minervini'), "minervini_results", ensure_minervini_fields)
+        _load_latest("scanned_stage_analysis", database.get_cached_stage_analysis, "stage_analysis_results")
+
         _load_latest("scanned_wt_cross", database.get_cached_wt_cross, "wt_results")
         if st.session_state.get("wt_results"):
             st.session_state.wt_results_by_tf = {"Daily_-40.0": st.session_state.wt_results, "Daily": st.session_state.wt_results}
@@ -1070,7 +1038,20 @@ if not st.session_state.get('db_cache_checked', False):
         _load_latest("scanned_support_rsi", database.get_cached_support_rsi, "support_rsi_results")
         _load_latest("scanned_monthly_momentum", database.get_cached_monthly_momentum, "monthly_momentum_results")
         _load_latest("scanned_weekly_momentum", database.get_cached_weekly_momentum, "weekly_momentum_results")
-        _load_latest("scanned_stage_analysis", database.get_cached_stage_analysis, "stage_analysis_results")
+
+        # Load scan_logs for UI metadata
+        available_dates = database.get_available_scan_dates()
+        if available_dates:
+            latest_date_str = available_dates[0]
+            cached_log = database.has_scanned_today(latest_date_str) or {}
+            st.session_state.total_scanned = cached_log.get('total_scanned', 0)
+            st.session_state.failed_count = 0
+            st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
+        else:
+            st.session_state.total_scanned = 0
+            st.session_state.failed_count = 0
+            st.session_state.last_scanned = "Never"
+            latest_date_str = None
 
         # Auto-resume background AI scan for flagged symbols
         all_syms = []
@@ -1937,6 +1918,13 @@ if run_full or run_sma:
 
 # Display Last Scanned Timestamp
 if st.session_state.last_scanned:
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 Sync with Database", use_container_width=True, help="Force reload all results from the database to reflect background scans."):
+        st.session_state['db_cache_checked'] = False
+        st.rerun()
+
+    st.sidebar.markdown("### ⚙️ Scanner Settings")
+    st.sidebar.markdown("<p style='font-size:0.8rem; color:#94a3b8; margin-bottom:10px;'>Settings for VDU, Zanger, & Minervini Scans</p>", unsafe_allow_html=True)
     st.sidebar.markdown(f"<p style='text-align: center; font-size: 0.85rem; color: #94a3b8; margin-top: 10px;'>⏱️ Last Scan: <b>{st.session_state.last_scanned}</b></p>", unsafe_allow_html=True)
 else:
     st.sidebar.markdown("<p style='text-align: center; font-size: 0.85rem; color: #64748b; margin-top: 10px;'>⚠️ Click 'Run Scanner' to start</p>", unsafe_allow_html=True)
@@ -5506,7 +5494,7 @@ with tab_vpa_squeeze:
                 "sma50": st.column_config.NumberColumn("50 SMA", width="small"),
                 "ma_gap_pct": st.column_config.NumberColumn("Gap %", help="(Max SMA − Min SMA) / Min SMA × 100. Lower = tighter.", width="small"),
                 "compression_score": st.column_config.NumberColumn(
-                    "Squeeze (₹)",
+                    "Compression Score",
                     help="Max(10,21,50 SMA) − Min(10,21,50 SMA). Lower = tighter squeeze = stronger breakout candidate.",
                     format="%.2f",
                     width="small"
@@ -6541,7 +6529,7 @@ with tab_ema_support:
             # --- Download Button Logic ---
             import pandas as pd
             from datetime import datetime
-            today_str = datetime.now().strftime('%Y-%m-%d')
+            today_str = get_market_date()
             df_ema = pd.DataFrame([{
                 'Symbol': r.get('symbol', ''),
                 'CMP': r.get('cmp', 0.0),

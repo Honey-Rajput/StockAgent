@@ -1054,6 +1054,7 @@ def get_all_latest_scan_dates() -> dict[str, str]:
     Executes in a single database connection to prevent timeouts.
     """
     tables = [
+        "scanned_breakouts", "scanned_gapups",
         "scanned_wt_cross", "scanned_vcs", "scanned_vpa", "scanned_volume_profile",
         "scanned_ema_support", "scanned_vpa_squeeze", "scanned_stage2",
         "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
