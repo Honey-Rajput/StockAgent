@@ -590,8 +590,16 @@ def init_db() -> bool:
             suggested_stop DOUBLE PRECISION,
             risk_pct DOUBLE PRECISION,
             scan_date DATE NOT NULL,
+            target_price DOUBLE PRECISION,
+            rank INT,
+            score DOUBLE PRECISION,
+            risk_score DOUBLE PRECISION,
+            volume_score DOUBLE PRECISION,
+            timeframe VARCHAR(20),
+            confidence_level VARCHAR(50),
+            breakout_status VARCHAR(50),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(symbol, scan_date)
+            UNIQUE(symbol, scan_date, timeframe)
         );
         """
     )
