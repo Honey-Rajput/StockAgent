@@ -657,6 +657,7 @@ def init_db() -> bool:
             sma200 DOUBLE PRECISION,
             ma_gap_pct DOUBLE PRECISION,
             dist_to_200_pct DOUBLE PRECISION,
+            compression_score DOUBLE PRECISION,
             buy_price DOUBLE PRECISION,
             exit_price DOUBLE PRECISION,
             target_price DOUBLE PRECISION,
@@ -1478,8 +1479,8 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
         insert_query = """
         INSERT INTO scanned_vpa_squeeze (
             symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
-            ma_gap_pct, dist_to_200_pct, buy_price, exit_price, target_price, scan_date
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price, scan_date
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """
         for r in results:
             cur.execute(insert_query, (
@@ -1494,6 +1495,7 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
                 float(r['sma200']),
                 float(r['ma_gap_pct']),
                 float(r['dist_to_200_pct']),
+                float(r.get('compression_score', 0.0)),
                 float(r['buy_price']) if r.get('buy_price') is not None else None,
                 float(r['exit_price']) if r.get('exit_price') is not None else None,
                 float(r['target_price']) if r.get('target_price') is not None else None,
@@ -1520,7 +1522,7 @@ def get_cached_vpa_squeeze(date_str: str) -> list[dict]:
         cur = conn.cursor()
         query = """
         SELECT symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
-               ma_gap_pct, dist_to_200_pct, buy_price, exit_price, target_price
+               ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price
         FROM scanned_vpa_squeeze 
         WHERE scan_date = %s
         ORDER BY ma_gap_pct ASC;
@@ -1540,9 +1542,10 @@ def get_cached_vpa_squeeze(date_str: str) -> list[dict]:
                 'sma200': float(r[8]),
                 'ma_gap_pct': float(r[9]),
                 'dist_to_200_pct': float(r[10]),
-                'buy_price': float(r[11]) if r[11] is not None else None,
-                'exit_price': float(r[12]) if r[12] is not None else None,
-                'target_price': float(r[13]) if r[13] is not None else None
+                'compression_score': float(r[11]) if r[11] is not None else 0.0,
+                'buy_price': float(r[12]) if r[12] is not None else None,
+                'exit_price': float(r[13]) if r[13] is not None else None,
+                'target_price': float(r[14]) if r[14] is not None else None
             })
         cur.close()
     except Exception as e:
