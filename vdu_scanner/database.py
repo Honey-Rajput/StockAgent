@@ -1047,27 +1047,38 @@ def get_zanger_scan_dates() -> list[str]:
     return dates
 
 
-def get_latest_date_for_table(table_name: str) -> str | None:
+def get_all_latest_scan_dates() -> dict[str, str]:
     """
-    Returns the most recent scan_date stored in any given scan results table.
-    Used so each tab can independently load its own latest results regardless
-    of whether other tables have data for the same date.
+    Returns a dictionary mapping each scan table to its most recent scan_date.
+    Executes in a single database connection to prevent timeouts.
     """
+    tables = [
+        "scanned_wt_cross", "scanned_vcs", "scanned_vpa", "scanned_volume_profile",
+        "scanned_bb_squeeze", "scanned_vpa_squeeze", "scanned_stage2",
+        "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
+        "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini"
+    ]
+    latest_dates = {}
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(f"SELECT MAX(scan_date) FROM {table_name};")
-        row = cur.fetchone()
+        for table in tables:
+            try:
+                cur.execute(f"SELECT MAX(scan_date) FROM {table};")
+                row = cur.fetchone()
+                if row and row[0]:
+                    latest_dates[table] = row[0].strftime("%Y-%m-%d") if hasattr(row[0], 'strftime') else str(row[0])
+            except Exception:
+                conn.rollback() # Handle missing tables gracefully
+                continue
         cur.close()
-        if row and row[0]:
-            return row[0].strftime("%Y-%m-%d") if hasattr(row[0], 'strftime') else str(row[0])
     except Exception as e:
-        print(f"Error getting latest date for {table_name}: {e}")
+        print(f"Error getting latest dates for all tables: {e}")
     finally:
         if conn:
             conn.close()
-    return None
+    return latest_dates
 
 
 def get_cached_breakouts(date_str: str) -> list[dict]:

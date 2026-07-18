@@ -1037,18 +1037,25 @@ if not st.session_state.get('db_cache_checked', False):
 
         # ── Independent loaders: each scanner uses its OWN table's latest date ──────
         # This guarantees each tab reloads its latest data regardless of what date
-        # other scanners saved on. Uses get_latest_date_for_table() per table.
+        # other scanners saved on. Uses get_all_latest_scan_dates() to avoid timeouts.
+        
+        all_latest_dates = database.get_all_latest_scan_dates()
 
         def _load_latest(table, getter_fn, state_key, post_fn=None):
             """Helper: find own latest date for a table, then load and set session state."""
             try:
-                d = database.get_latest_date_for_table(table)
+                d = all_latest_dates.get(table)
                 if d:
                     data = getter_fn(d)
                     if data:
                         st.session_state[state_key] = post_fn(data) if post_fn else data
+                    else:
+                        st.session_state[state_key] = []
+                else:
+                    st.session_state[state_key] = []
             except Exception as _e:
                 print(f"Error loading {state_key} from {table}: {_e}")
+                st.session_state[state_key] = []
 
         _load_latest("scanned_wt_cross", database.get_cached_wt_cross, "wt_results")
         if st.session_state.get("wt_results"):
