@@ -47,7 +47,8 @@ def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = Fals
         if not rows:
             return None
             
-        df = pd.DataFrame(rows)
+        columns = [desc[0] for desc in cur.description]
+        df = pd.DataFrame(rows, columns=columns)
         df.rename(columns={"date": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"}, inplace=True)
         df['Date'] = pd.to_datetime(df['Date'])
         return df
@@ -79,7 +80,8 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
             rows = cur.fetchall()
             
             if rows:
-                df_all = pd.DataFrame(rows)
+                columns = [desc[0] for desc in cur.description]
+                df_all = pd.DataFrame(rows, columns=columns)
                 df_all.rename(columns={"symbol": "Symbol", "date": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"}, inplace=True)
                 df_all['Date'] = pd.to_datetime(df_all['Date'])
                 for sym, group in df_all.groupby('Symbol'):
