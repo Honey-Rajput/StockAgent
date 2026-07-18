@@ -640,6 +640,32 @@ def init_db() -> bool:
         );
         """
     )
+
+    # Inject VPA Squeeze Table
+    queries.append(
+        """
+        CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(255),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            sma10 DOUBLE PRECISION,
+            sma21 DOUBLE PRECISION,
+            sma50 DOUBLE PRECISION,
+            sma200 DOUBLE PRECISION,
+            ma_gap_pct DOUBLE PRECISION,
+            dist_to_200_pct DOUBLE PRECISION,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """
+    )
     
     # Inject OHLCV Daily Table
     queries.append(
@@ -1387,6 +1413,93 @@ def save_vpa_only(date_str: str, vpa_results: list[dict]) -> bool:
     finally:
         if conn:
             conn.close()
+
+def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
+    """
+    UPSERTs the VPA Squeeze results for the given date.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_vpa_squeeze WHERE scan_date = %s;", (date_str,))
+        
+        insert_query = """
+        INSERT INTO scanned_vpa_squeeze (
+            symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
+            ma_gap_pct, dist_to_200_pct, buy_price, exit_price, target_price, scan_date
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        for r in results:
+            cur.execute(insert_query, (
+                str(r['symbol']),
+                str(r.get('company_name', "")),
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                int(r.get('volume', 0)),
+                float(r['sma10']),
+                float(r['sma21']),
+                float(r['sma50']),
+                float(r['sma200']),
+                float(r['ma_gap_pct']),
+                float(r['dist_to_200_pct']),
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                date_str
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving VPA Squeeze results: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_cached_vpa_squeeze(date_str: str) -> list[dict]:
+    """
+    Retrieves the VPA Squeeze results for the given date.
+    """
+    conn = None
+    results = []
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        query = """
+        SELECT symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
+               ma_gap_pct, dist_to_200_pct, buy_price, exit_price, target_price
+        FROM scanned_vpa_squeeze 
+        WHERE scan_date = %s
+        ORDER BY ma_gap_pct ASC;
+        """
+        cur.execute(query, (date_str,))
+        rows = cur.fetchall()
+        for r in rows:
+            results.append({
+                'symbol': r[0],
+                'company_name': r[1],
+                'cmp': float(r[2]),
+                'day_change_pct': float(r[3]),
+                'volume': int(r[4]),
+                'sma10': float(r[5]),
+                'sma21': float(r[6]),
+                'sma50': float(r[7]),
+                'sma200': float(r[8]),
+                'ma_gap_pct': float(r[9]),
+                'dist_to_200_pct': float(r[10]),
+                'buy_price': float(r[11]) if r[11] is not None else None,
+                'exit_price': float(r[12]) if r[12] is not None else None,
+                'target_price': float(r[13]) if r[13] is not None else None
+            })
+        cur.close()
+    except Exception as e:
+        print(f"Error getting cached VPA Squeeze: {e}")
+    finally:
+        if conn:
+            conn.close()
+    return results
 def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
     """Saves WT Cross results without deleting other scan results."""
     conn = None

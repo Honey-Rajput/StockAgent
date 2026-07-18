@@ -1252,9 +1252,9 @@ min_dry_spikes = st.sidebar.slider(
 
 min_signal_str = st.sidebar.slider(
     "Min Signal Strength Score",
-    min_value=0,
+    min_value=45,
     max_value=100,
-    value=20,
+    value=55,
     step=5,
     key="vdu_min_signal_str_v5",
     help="Filter stocks based on overall calculated algorithmic rating"
@@ -5481,7 +5481,12 @@ with tab_vpa_squeeze:
     st.info("Finds stocks where VPA is Green (Minor, Mid, Major), the 10/21/50 SMA are tightly clustered (<3% gap), and the 200 SMA is just above (<10%).")
     
     if "vpa_squeeze_results" not in st.session_state:
-        st.session_state.vpa_squeeze_results = []
+        from config import get_market_date
+        import database
+        today_str = get_market_date()
+        st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str)
+        if not st.session_state.vpa_squeeze_results:
+            st.session_state.vpa_squeeze_results = []
         
     run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch")
     if run_vpa_squeeze_btn:
@@ -5492,6 +5497,8 @@ with tab_vpa_squeeze:
                 from scanner import scan_vpa_ma_squeeze
                 from local_cache_manager import bulk_get_cached_ohlcv
                 import pandas as pd
+                from config import get_market_date
+                import database
                 
                 raw_symbols = get_all_nse_symbols()
                 symbols_to_scan = [s.strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]
@@ -5516,6 +5523,11 @@ with tab_vpa_squeeze:
                 prog.empty()
                 status.empty()
                 st.session_state.vpa_squeeze_results = results
+                
+                # Save to database
+                today_str = get_market_date()
+                database.save_vpa_squeeze_only(today_str, results)
+                
                 st.success(f"Scan complete! Found {len(results)} matches.")
                 
             except Exception as e:
