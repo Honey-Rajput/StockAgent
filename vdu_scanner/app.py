@@ -5483,7 +5483,7 @@ with tab_vpa:
 # TAB: VPA SQUEEZE
 with tab_vpa_squeeze:
     st.markdown("### 📉 VPA Green + MA Squeeze")
-    st.info("Finds stocks where VPA is Green (Minor, Mid, Major), the 10/21/50 SMA are tightly clustered (<3% gap), and the 200 SMA is just above (<10%).")
+    st.info("Finds stocks where VPA is Green (Minor, Mid, Major) and the 10/21/50 SMA are tightly clustered (<6% gap).")
     
     if "vpa_squeeze_results" not in st.session_state or st.session_state.vpa_squeeze_results is None:
         st.session_state.vpa_squeeze_results = []

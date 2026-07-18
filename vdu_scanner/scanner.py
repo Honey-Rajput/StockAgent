@@ -1723,8 +1723,7 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
 def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) -> dict | None:
     """
     Scans for stocks where Daily VPA Major, Mid, and Minor are green,
-    the 10, 21, and 50 SMA are tightly clustered (< 3% gap),
-    and the 200 SMA is just above the cluster (< 10% distance).
+    and the 10, 21, and 50 SMA are tightly clustered (< 6% gap).
     """
     if df is None or len(df) < 200:
         return None
@@ -1751,8 +1750,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         max_ma = max(ma_list)
         min_ma = min(ma_list)
         
-        # Squeeze: (max - min) / min < 0.03
-        if (max_ma - min_ma) / min_ma > 0.03:
+        # Squeeze: (max - min) / min < 0.06
+        if (max_ma - min_ma) / min_ma > 0.06:
             return None
             
         prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
