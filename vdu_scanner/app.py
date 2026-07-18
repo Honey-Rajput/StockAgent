@@ -5497,7 +5497,7 @@ with tab_vpa_squeeze:
                 from scanner import scan_vpa_ma_squeeze
                 from local_cache_manager import bulk_get_cached_ohlcv
                 import pandas as pd
-                from config import get_market_date
+
                 import database
                 
                 raw_symbols = get_all_nse_symbols()
