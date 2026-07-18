@@ -1023,7 +1023,7 @@ if not st.session_state.get('db_cache_checked', False):
                 st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
 
         # ── Independent loaders for background scanners ───────────
-        today_str_bg = get_market_date()
+        today_str_bg = latest_date_str if 'latest_date_str' in locals() and latest_date_str else get_market_date()
 
         try:
             st.session_state.wt_results = database.get_cached_wt_cross(today_str_bg)
@@ -1048,6 +1048,11 @@ if not st.session_state.get('db_cache_checked', False):
 
         try:
             st.session_state.bb_squeeze_results = database.get_cached_bb_squeeze(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str_bg)
         except Exception:
             pass
 
@@ -5480,13 +5485,8 @@ with tab_vpa_squeeze:
     st.markdown("### 📉 VPA Green + MA Squeeze")
     st.info("Finds stocks where VPA is Green (Minor, Mid, Major), the 10/21/50 SMA are tightly clustered (<3% gap), and the 200 SMA is just above (<10%).")
     
-    if "vpa_squeeze_results" not in st.session_state:
-        from config import get_market_date
-        import database
-        today_str = get_market_date()
-        st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str)
-        if not st.session_state.vpa_squeeze_results:
-            st.session_state.vpa_squeeze_results = []
+    if "vpa_squeeze_results" not in st.session_state or st.session_state.vpa_squeeze_results is None:
+        st.session_state.vpa_squeeze_results = []
         
     run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch")
     if run_vpa_squeeze_btn:
