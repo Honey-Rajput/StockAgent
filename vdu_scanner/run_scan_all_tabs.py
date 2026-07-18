@@ -12,8 +12,8 @@ import database
 from local_cache_manager import bulk_get_cached_ohlcv
 
 def run_all_tabs_scan():
-    print("Starting full scan of NIFTY 100 for all tabs...")
-    symbols = get_index_stocks("NIFTY 100")
+    print("Starting full scan of NIFTY 500 for all tabs...")
+    symbols = get_index_stocks("NIFTY 500")
     symbols_ns = [f"{s.strip().upper()}.NS" for s in symbols]
     
     print("Downloading benchmark...")
