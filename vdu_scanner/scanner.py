@@ -1731,10 +1731,6 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         if (max_ma - min_ma) / min_ma > 0.03:
             return None
             
-        # 200 SMA logic: must be above max_ma, but not more than 10% above
-        if sma200 <= max_ma or sma200 > max_ma * 1.10:
-            return None
-            
         prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
         day_change_pct = ((cmp - prev_close) / prev_close) * 100
         
