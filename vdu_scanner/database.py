@@ -581,6 +581,7 @@ def init_db() -> bool:
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
+            sector VARCHAR(255),
             cmp DOUBLE PRECISION,
             setup_type VARCHAR(50),
             prior_run_pct DOUBLE PRECISION,
