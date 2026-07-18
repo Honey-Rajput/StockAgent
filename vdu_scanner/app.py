@@ -728,7 +728,7 @@ def run_background_all_tab_scans():
             today_str = get_market_date()
             print(f"[BG All-Tab] Starting background scans for date: {today_str}")
 
-            from scanner import scan_wt_cross, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_volume_profile
+            from scanner import scan_wt_cross, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_volume_profile, scan_vpa_ma_squeeze
             from data_fetcher import get_all_nse_symbols, get_index_stocks
 
             # Phase 1: Check what needs to be run
@@ -737,8 +737,9 @@ def run_background_all_tab_scans():
             run_vpa = not bool(database.get_cached_vpa(today_str))
             run_vp = not bool(database.get_cached_volume_profile(today_str))
             run_s2 = not bool(database.get_cached_stage2(today_str))
+            run_vpa_sq = not bool(database.get_cached_vpa_squeeze(today_str))
 
-            if not (run_wt or run_vcs or run_vpa or run_vp or run_s2):
+            if not (run_wt or run_vcs or run_vpa or run_vp or run_s2 or run_vpa_sq):
                 ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
                 ALL_TAB_SCAN_STATUS["progress"] = 1.0
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
@@ -751,7 +752,7 @@ def run_background_all_tab_scans():
             
             # Phase 2: Shared Daily Download (1y or 2y)
             shared_daily_data = {}
-            if run_wt or run_vcs or run_vpa or run_vp:
+            if run_wt or run_vcs or run_vpa or run_vp or run_vpa_sq:
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
                 ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
                 ALL_TAB_SCAN_STATUS["progress"] = 0.05
@@ -812,8 +813,15 @@ def run_background_all_tab_scans():
                         return ("vp", res)
                 return ("vp", None)
 
+            def run_vpa_sq_worker(sym, df):
+                if len(df) >= 200:
+                    res = scan_vpa_ma_squeeze(sym, df)
+                    if res:
+                        return ("vpa_sq", res)
+                return ("vpa_sq", None)
+
             # Phase 3: Parallel Execution
-            wt_tf_results, custom_vcs_results, vpa_list, vp_list = [], [], [], []
+            wt_tf_results, custom_vcs_results, vpa_list, vp_list, vpa_sq_list = [], [], [], [], []
             
             if shared_daily_data:
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
@@ -825,6 +833,7 @@ def run_background_all_tab_scans():
                     if run_vcs: tasks_to_run.append((run_vcs_worker, sym, df))
                     if run_vpa: tasks_to_run.append((run_vpa_worker, sym, df))
                     if run_vp: tasks_to_run.append((run_vp_worker, sym, df))
+                    if run_vpa_sq: tasks_to_run.append((run_vpa_sq_worker, sym, df))
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = [executor.submit(func, sym, df) for func, sym, df in tasks_to_run]
@@ -838,6 +847,7 @@ def run_background_all_tab_scans():
                                 elif scan_type == "vcs": custom_vcs_results.append(result)
                                 elif scan_type == "vpa": vpa_list.append(result)
                                 elif scan_type == "vp": vp_list.append(result)
+                                elif scan_type == "vpa_sq": vpa_sq_list.append(result)
                         except Exception:
                             pass
                 
@@ -855,8 +865,12 @@ def run_background_all_tab_scans():
                     try: database.save_vpa_only(today_str, vpa_list)
                     except: pass
                 if run_vp:
-                    ALL_TAB_SCAN_STATUS["vp_results"] = vp_list
+                    ALL_TAB_SCAN_STATUS["volume_profile_results"] = vp_list
                     try: database.save_volume_profile_only(today_str, vp_list)
+                    except: pass
+                if run_vpa_sq:
+                    ALL_TAB_SCAN_STATUS["vpa_squeeze_results"] = vpa_sq_list
+                    try: database.save_vpa_squeeze_only(today_str, vpa_sq_list)
                     except: pass
 
             # Phase 4: Stage-2 (Monthly)
@@ -5536,12 +5550,13 @@ with tab_vpa_squeeze:
     if st.session_state.get('vpa_squeeze_results'):
         results = st.session_state.vpa_squeeze_results
         df_res = pd.DataFrame(results)
+        df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.write(f"### Found {len(results)} stocks")
         st.dataframe(
             df_res[['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'sma200', 'ma_gap_pct', 'dist_to_200_pct']],
             use_container_width=True,
             column_config={
-                "symbol": "Symbol",
+                "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
                 "cmp": "CMP (₹)",
                 "day_change_pct": "Chg %",
                 "sma10": "10 SMA",
@@ -5550,7 +5565,8 @@ with tab_vpa_squeeze:
                 "sma200": "200 SMA",
                 "ma_gap_pct": "MA Gap %",
                 "dist_to_200_pct": "200 Dist %"
-            }
+            },
+            hide_index=True
         )
 
 # TAB: FREQUENT FLYERS (CONSISTENT ALERTS)
