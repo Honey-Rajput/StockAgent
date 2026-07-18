@@ -1010,55 +1010,66 @@ if not st.session_state.get('db_cache_checked', False):
                 except Exception:
                     st.session_state.crossover_ma_results = []
                 try:
-                    st.session_state.wt_results = database.get_cached_wt_cross(latest_date_str)
-                    st.session_state.wt_results_by_tf = {"Daily_-40.0": st.session_state.wt_results, "Daily": st.session_state.wt_results}
-                except Exception:
-                    st.session_state.wt_results = []
-                    st.session_state.wt_results_by_tf = {"Daily_-40.0": [], "Daily": []}
-                try:
                     st.session_state.minervini_results = ensure_minervini_fields(database.get_cached_trend_setups(latest_date_str, 'minervini'))
                 except Exception:
                     st.session_state.minervini_results = []
                 try:
-                    st.session_state.vcs_results = database.get_cached_vcs(latest_date_str)
-                except Exception:
-                    st.session_state.vcs_results = []
-                try:
-                    st.session_state.vpa_results = database.get_cached_vpa(latest_date_str)
-                except Exception:
-                    st.session_state.vpa_results = []
-                try:
-                    st.session_state.vp_results = database.get_cached_volume_profile(latest_date_str)
-                except Exception:
-                    st.session_state.vp_results = []
-                try:
-                    st.session_state.bb_squeeze_results = database.get_cached_bb_squeeze(latest_date_str)
-                except Exception:
-                    st.session_state.bb_squeeze_results = []
-                try:
-                    st.session_state.stage2_results = database.get_cached_stage2(latest_date_str)
-                except Exception:
-                    st.session_state.stage2_results = []
-                try:
                     st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
                 except Exception:
                     st.session_state.stage_analysis_results = []
-                try:
-                    st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str)
-                except Exception:
-                    st.session_state.support_rsi_results = []
-                try:
-                    st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(latest_date_str)
-                except Exception:
-                    st.session_state.monthly_momentum_results = []
-                try:
-                    st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(latest_date_str)
-                except Exception:
-                    st.session_state.weekly_momentum_results = []
 
                 st.session_state.total_scanned = cached_log.get('total_scanned', 0)
                 st.session_state.failed_count = 0
                 st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
+
+        # ── Independent loaders for background scanners ───────────
+        today_str_bg = get_market_date()
+
+        try:
+            st.session_state.wt_results = database.get_cached_wt_cross(today_str_bg)
+            st.session_state.wt_results_by_tf = {"Daily_-40.0": st.session_state.wt_results, "Daily": st.session_state.wt_results}
+        except Exception:
+            pass
+
+        try:
+            st.session_state.vcs_results = database.get_cached_vcs(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.vpa_results = database.get_cached_vpa(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.vp_results = database.get_cached_volume_profile(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.bb_squeeze_results = database.get_cached_bb_squeeze(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.stage2_results = database.get_cached_stage2(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.support_rsi_results = database.get_cached_support_rsi(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(today_str_bg)
+        except Exception:
+            pass
+
+        try:
+            st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(today_str_bg)
+        except Exception:
+            pass
 
         # ── Independent loaders: each scanner uses its OWN latest date ───────────
         # These load even if scan_logs has no entry (e.g. ran from individual tab buttons)
