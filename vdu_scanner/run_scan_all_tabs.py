@@ -48,7 +48,7 @@ def run_all_tabs_scan():
     
     # All the lists from app.py
     flagged_list = []
-    bb_squeeze_list = []
+    ema_support_list = []
     gapup_list = []
     above_ma_list = []
     support_ma_list = []
@@ -93,7 +93,7 @@ def run_all_tabs_scan():
             return item
             
         if get_and_fix("flagged"): flagged_list.append(res["flagged"])
-        if get_and_fix("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+        if get_and_fix("ema_support"): ema_support_list.append(res["ema_support"])
         if get_and_fix("gapup"): gapup_list.append(res["gapup"])
         if get_and_fix("above_ma"): above_ma_list.append(res["above_ma"])
         if get_and_fix("support_ma"): support_ma_list.append(res["support_ma"])
@@ -130,7 +130,7 @@ def run_all_tabs_scan():
     except Exception: pass
     try: database.save_support_rsi_only(date_str, support_rsi_list)
     except Exception: pass
-    try: database.save_bb_squeeze_only(date_str, bb_squeeze_list)
+    try: database.save_ema_support_only(date_str, ema_support_list)
     except Exception: pass
     try: database.save_stage_analysis_only(date_str, stage_analysis_list)
     except Exception: pass

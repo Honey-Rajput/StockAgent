@@ -172,7 +172,7 @@ def precompute_indicators(df: pd.DataFrame) -> dict:
 
     # Bollinger Bands
     result['bb_width']   = float(latest['BB_width'])  if not pd.isna(latest['BB_width'])  else None
-    result['bb_squeeze'] = bool(latest['BB_squeeze'])  if not pd.isna(latest['BB_squeeze']) else False
+    result['ema_support'] = bool(latest['BB_squeeze'])  if not pd.isna(latest['BB_squeeze']) else False
 
 
     # OI Interpretation

@@ -72,9 +72,9 @@ def run_quick_nifty50_scan():
         if res.get("flagged"):
             res["flagged"]["market_cap_cr"] = 0
             breakout_list.append(res["flagged"])
-        if res.get("bb_squeeze"):
-            res["bb_squeeze"]["market_cap_cr"] = 0
-            squeeze_list.append(res["bb_squeeze"])
+        if res.get("ema_support"):
+            res["ema_support"]["market_cap_cr"] = 0
+            squeeze_list.append(res["ema_support"])
         
     print(f"Found {len(breakout_list)} breakouts and {len(squeeze_list)} squeezes.")
     
@@ -90,7 +90,7 @@ def run_quick_nifty50_scan():
         vcs_results=[],
         vpa_results=[]
     )
-    database.save_bb_squeeze_only(date_str, squeeze_list)
+    database.save_ema_support_only(date_str, squeeze_list)
     print("Saved successfully!")
 
 if __name__ == "__main__":

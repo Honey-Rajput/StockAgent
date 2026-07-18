@@ -263,8 +263,8 @@ if "sort_col" in st.query_params:
 
 
 # --- Initialize Session State ---
-if 'bb_squeeze_results' not in st.session_state:
-    st.session_state.bb_squeeze_results = None
+if 'ema_support_results' not in st.session_state:
+    st.session_state.ema_support_results = None
 if 'scan_results' not in st.session_state:
     st.session_state.scan_results = None
 if 'total_scanned' not in st.session_state:
@@ -623,16 +623,16 @@ def run_background_momentum_scans():
     t.start()
 
 
-def run_background_bb_squeeze_scan(force=False):
-    if ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
+def run_background_ema_support_scan(force=False):
+    if ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
         return
         
     is_already_running = any(t.name == "Background_BB_Squeeze" for t in __import__('threading').enumerate())
     if is_already_running:
         return
         
-    ALL_TAB_SCAN_STATUS["bb_squeeze_running"] = True
-    st.session_state.bb_squeeze_running = True
+    ALL_TAB_SCAN_STATUS["ema_support_running"] = True
+    st.session_state.ema_support_running = True
     
     def thread_runner():
         import yfinance as yf
@@ -642,12 +642,12 @@ def run_background_bb_squeeze_scan(force=False):
         try:
             today_str = get_market_date()
             if not force:
-                cached_bb = database.get_cached_bb_squeeze(today_str)
+                cached_bb = database.get_cached_ema_support(today_str)
                 if cached_bb and len(cached_bb) > 0:
-                    ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = cached_bb
-                    st.session_state.bb_squeeze_results = cached_bb
-                    ALL_TAB_SCAN_STATUS["bb_squeeze_running"] = False
-                    st.session_state.bb_squeeze_running = False
+                    ALL_TAB_SCAN_STATUS["ema_support_results"] = cached_bb
+                    st.session_state.ema_support_results = cached_bb
+                    ALL_TAB_SCAN_STATUS["ema_support_running"] = False
+                    st.session_state.ema_support_running = False
                     return
                 
             from scanner import scan_ema_support
@@ -675,18 +675,18 @@ def run_background_bb_squeeze_scan(force=False):
                 except Exception:
                     pass
                     
-            ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = bb_results
-            st.session_state.bb_squeeze_results = bb_results
+            ALL_TAB_SCAN_STATUS["ema_support_results"] = bb_results
+            st.session_state.ema_support_results = bb_results
             try:
-                database.save_bb_squeeze_only(today_str, bb_results)
+                database.save_ema_support_only(today_str, bb_results)
             except:
                 pass
             
         except Exception as e:
             print(f"BB Squeeze background thread crashed: {e}")
         finally:
-            ALL_TAB_SCAN_STATUS["bb_squeeze_running"] = False
-            st.session_state.bb_squeeze_running = False
+            ALL_TAB_SCAN_STATUS["ema_support_running"] = False
+            st.session_state.ema_support_running = False
             
     import threading
     from streamlit.runtime.scriptrunner import add_script_run_ctx
@@ -988,8 +988,8 @@ if enable_background_scans:
     if not ALL_TAB_SCAN_STATUS["is_running"]:
         run_background_all_tab_scans()
     # Auto-trigger BB Squeeze
-    if not ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
-        run_background_bb_squeeze_scan()
+    if not ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
+        run_background_ema_support_scan()
 
 # --- Automatic Daily Database Cache Loader ---
 # Runs ONCE per browser session (db_cache_checked stays False until first load).
@@ -1064,7 +1064,7 @@ if not st.session_state.get('db_cache_checked', False):
         _load_latest("scanned_vcs", database.get_cached_vcs, "vcs_results")
         _load_latest("scanned_vpa", database.get_cached_vpa, "vpa_results")
         _load_latest("scanned_volume_profile", database.get_cached_volume_profile, "vp_results")
-        _load_latest("scanned_bb_squeeze", database.get_cached_bb_squeeze, "bb_squeeze_results")
+        _load_latest("scanned_ema_support", database.get_cached_ema_support, "ema_support_results")
         _load_latest("scanned_vpa_squeeze", database.get_cached_vpa_squeeze, "vpa_squeeze_results")
         _load_latest("scanned_stage2", database.get_cached_stage2, "stage2_results")
         _load_latest("scanned_support_rsi", database.get_cached_support_rsi, "support_rsi_results")
@@ -1495,7 +1495,7 @@ if run_full or run_sma:
         zanger_list = []
         vp_list = []
         support_rsi_list = []
-        bb_squeeze_list = []
+        ema_support_list = []
         stage_analysis_list = []
         stage2_list = []
         monthly_momentum_list = []
@@ -1710,7 +1710,7 @@ if run_full or run_sma:
                 if res.get("zanger"): zanger_list.append(res["zanger"])
                 if res.get("volume_profile"): vp_list.append(res["volume_profile"])
                 if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
-                if res.get("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+                if res.get("ema_support"): ema_support_list.append(res["ema_support"])
                 if res.get("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
                 if res.get("stage2"): stage2_list.append(res["stage2"])
                 if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
@@ -1802,7 +1802,7 @@ if run_full or run_sma:
                         if res.get("zanger"): zanger_list.append(res["zanger"])
                         if res.get("volume_profile"): vp_list.append(res["volume_profile"])
                         if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
-                        if res.get("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+                        if res.get("ema_support"): ema_support_list.append(res["ema_support"])
                         if res.get("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
                         if res.get("stage2"): stage2_list.append(res["stage2"])
                         if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
@@ -1858,7 +1858,7 @@ if run_full or run_sma:
             
         st.session_state.vp_results = vp_list
         st.session_state.support_rsi_results = support_rsi_list
-        st.session_state.bb_squeeze_results = bb_squeeze_list
+        st.session_state.ema_support_results = ema_support_list
         st.session_state.stage_analysis_results = stage_analysis_list
         st.session_state.stage2_results = stage2_list
         st.session_state.monthly_momentum_results = monthly_momentum_list
@@ -1898,7 +1898,7 @@ if run_full or run_sma:
                 except Exception: pass
                 try: database.save_support_rsi_only(today_ist_str, support_rsi_list)
                 except Exception: pass
-                try: database.save_bb_squeeze_only(today_ist_str, bb_squeeze_list)
+                try: database.save_ema_support_only(today_ist_str, ema_support_list)
                 except Exception: pass
                 try: database.save_stage_analysis_only(today_ist_str, stage_analysis_list)
                 except Exception: pass
@@ -1998,7 +1998,7 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_bb_squeeze, tab_stage_analysis, tab_vpa_squeeze) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
@@ -6503,7 +6503,7 @@ with tab_rsi_wt:
 # ==============================================================================
 # TAB: BB SQUEEZE
 # ==============================================================================
-with tab_bb_squeeze:
+with tab_ema_support:
     st.markdown("### 📈 9/21 EMA Support")
     st.markdown("Stocks taking support at their 9 or 21 EMA with tight proximity, plus crossover signals.")
     
@@ -6511,16 +6511,16 @@ with tab_bb_squeeze:
     run_bb_btn = col_btn.button("🔍 Run EMA Support Scan", type="primary", use_container_width=True)
     
     if run_bb_btn:
-        st.session_state.bb_squeeze_results = None
-        ALL_TAB_SCAN_STATUS["bb_squeeze_results"] = None
-        run_background_bb_squeeze_scan(force=True)
+        st.session_state.ema_support_results = None
+        ALL_TAB_SCAN_STATUS["ema_support_results"] = None
+        run_background_ema_support_scan(force=True)
         st.rerun()
         
-    if st.session_state.get('bb_squeeze_results') is None and ALL_TAB_SCAN_STATUS.get("bb_squeeze_results") is not None:
-        st.session_state.bb_squeeze_results = ALL_TAB_SCAN_STATUS["bb_squeeze_results"]
+    if st.session_state.get('ema_support_results') is None and ALL_TAB_SCAN_STATUS.get("ema_support_results") is not None:
+        st.session_state.ema_support_results = ALL_TAB_SCAN_STATUS["ema_support_results"]
         
-    if st.session_state.get('bb_squeeze_results') is not None:
-        ema_list = st.session_state.bb_squeeze_results
+    if st.session_state.get('ema_support_results') is not None:
+        ema_list = st.session_state.ema_support_results
         
         # Apply Universe Filter
         if "ALL NSE" not in universe_selection.upper() and len(ema_list) > 0:
@@ -6566,14 +6566,14 @@ with tab_bb_squeeze:
                 key="dl_ema_support_csv"
             )
             
-            render_unified_strategy_table(ema_list, "bb_squeeze", "ema_support_tab")
+            render_unified_strategy_table(ema_list, "ema_support", "ema_support_tab")
         else:
-            if st.session_state.get("bb_squeeze_running", False) or ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
+            if st.session_state.get("ema_support_running", False) or ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
                 st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
             else:
                 st.info("✅ Scan completed — no EMA Support setups found for the selected universe.")
     else:
-        if st.session_state.get("bb_squeeze_running", False) or ALL_TAB_SCAN_STATUS.get("bb_squeeze_running", False):
+        if st.session_state.get("ema_support_running", False) or ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
             st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
         else:
             st.warning("⚠️ Scan has not been run yet. Click **'Run EMA Support Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")

@@ -598,7 +598,7 @@ def init_db() -> bool:
     # Inject BB Squeeze Table
     queries.append(
         """
-        CREATE TABLE IF NOT EXISTS scanned_bb_squeeze (
+        CREATE TABLE IF NOT EXISTS scanned_ema_support (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
@@ -795,19 +795,19 @@ def init_db() -> bool:
             "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS monthly_vah DOUBLE PRECISION;",
 
             # BB Squeeze: score, confidence, score_breakdown columns
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS squeeze_score INTEGER;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS score_breakdown TEXT;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS squeeze_score INTEGER;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS score_breakdown TEXT;",
             # EMA Support alias columns
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS setup VARCHAR(100);",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS dist_9ema DOUBLE PRECISION;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS dist_21ema DOUBLE PRECISION;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS crossover BOOLEAN;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_bb_squeeze ADD COLUMN IF NOT EXISTS recommendation TEXT;"
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS setup VARCHAR(100);",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS dist_9ema DOUBLE PRECISION;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS dist_21ema DOUBLE PRECISION;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS crossover BOOLEAN;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
+            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS recommendation TEXT;"
         ]
         for m in migrations:
             try:
@@ -1054,7 +1054,7 @@ def get_all_latest_scan_dates() -> dict[str, str]:
     """
     tables = [
         "scanned_wt_cross", "scanned_vcs", "scanned_vpa", "scanned_volume_profile",
-        "scanned_bb_squeeze", "scanned_vpa_squeeze", "scanned_stage2",
+        "scanned_ema_support", "scanned_vpa_squeeze", "scanned_stage2",
         "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
         "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini"
     ]
@@ -2798,7 +2798,7 @@ def get_latest_rsi_wt_combo() -> tuple[list[dict], str | None]:
             conn.close()
     return results, scan_date
 
-def save_bb_squeeze_only(date_str: str, bb_results: list) -> bool:
+def save_ema_support_only(date_str: str, bb_results: list) -> bool:
     if not bb_results:
         return True
     conn = None
@@ -2807,7 +2807,7 @@ def save_bb_squeeze_only(date_str: str, bb_results: list) -> bool:
         cur = conn.cursor()
         for r in bb_results:
             cur.execute("""
-                INSERT INTO scanned_bb_squeeze
+                INSERT INTO scanned_ema_support
                 (symbol, company_name, cmp, day_change_pct,
                  daily_squeeze, weekly_squeeze, monthly_squeeze,
                  daily_bb_width, weekly_bb_width, monthly_bb_width,
@@ -2860,13 +2860,13 @@ def save_bb_squeeze_only(date_str: str, bb_results: list) -> bool:
         if conn:
             conn.close()
 
-def get_cached_bb_squeeze(date_str: str) -> list:
+def get_cached_ema_support(date_str: str) -> list:
     conn = None
     results = []
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_bb_squeeze WHERE scan_date = %s", (date_str,))
+        cur.execute("SELECT * FROM scanned_ema_support WHERE scan_date = %s", (date_str,))
         rows = cur.fetchall()
         cur.close()
         for r in rows:
@@ -3386,7 +3386,7 @@ def prune_old_data_ohlcv(days: int = 5):
             "scanned_wt_cross", "scanned_monthly_momentum", "scanned_weekly_momentum",
             "scanned_vcs", "scanned_vpa", "scanned_stage2", "scanned_volume_profile",
             "scanned_stage_analysis", "scanned_support_rsi", "scanned_rsi_wt_combo",
-            "scanned_zanger", "scanned_bb_squeeze", "scanned_vcp_minervini",
+            "scanned_zanger", "scanned_ema_support", "scanned_vcp_minervini",
             "scan_logs"
         ]
         

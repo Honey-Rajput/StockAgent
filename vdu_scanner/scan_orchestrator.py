@@ -16,7 +16,7 @@ from scanner import (
     scan_monthly_early_stage2,
     scan_stage_analysis,
     scan_volume_profile,
-    scan_bb_squeeze,
+    scan_ema_support,
     scan_support_rsi,
     scan_monthly_momentum,
     scan_weekly_momentum
@@ -48,7 +48,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         "minervini_vcp": None,
         "stage_analysis": None,
         "volume_profile": None,
-        "bb_squeeze": None,
+        "ema_support": None,
         "support_rsi": None,
         "rsi_wt_combo": None, # Wait, is there a scan_rsi_wt_combo?
         "monthly_momentum": None,
@@ -459,9 +459,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 w_df = resample_ohlcv(df, '1W-MON')
                 
                 if m_df is not None and not m_df.empty and w_df is not None and not w_df.empty:
-                    # EMA Support (repurposed from bb_squeeze)
+                    # EMA Support (repurposed from ema_support)
                     from scanner import scan_ema_support
-                    res["bb_squeeze"] = scan_ema_support(sym, df)
+                    res["ema_support"] = scan_ema_support(sym, df)
                     
                     # Stage Analysis
                     bRet = 0.0

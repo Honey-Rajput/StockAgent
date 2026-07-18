@@ -372,7 +372,7 @@ def run_headless_scan():
     
     # New Scanners
     zanger_list, stage2_list, stage_analysis_list = [], [], []
-    vp_list, bb_squeeze_list, support_rsi_list = [], [], []
+    vp_list, ema_support_list, support_rsi_list = [], [], []
     monthly_mom_list, weekly_mom_list = [], []
     
     for i, res in enumerate(generator):
@@ -396,7 +396,7 @@ def run_headless_scan():
             if res.get("stage2"): stage2_list.append(res["stage2"])
             if res.get("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
             if res.get("volume_profile"): vp_list.append(res["volume_profile"])
-            if res.get("bb_squeeze"): bb_squeeze_list.append(res["bb_squeeze"])
+            if res.get("ema_support"): ema_support_list.append(res["ema_support"])
             if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
             if res.get("monthly_momentum"): monthly_mom_list.append(res["monthly_momentum"])
             if res.get("weekly_momentum"): weekly_mom_list.append(res["weekly_momentum"])
@@ -437,7 +437,7 @@ def run_headless_scan():
         if stage2_list: database.save_stage2_only(today_ist_str, stage2_list)
         if stage_analysis_list: database.save_stage_analysis_only(today_ist_str, stage_analysis_list)
         if vp_list: database.save_volume_profile_only(today_ist_str, vp_list)
-        if bb_squeeze_list: database.save_bb_squeeze_only(today_ist_str, bb_squeeze_list)
+        if ema_support_list: database.save_ema_support_only(today_ist_str, ema_support_list)
         if support_rsi_list: database.save_support_rsi_only(today_ist_str, support_rsi_list)
         if monthly_mom_list: database.save_monthly_momentum_results(today_ist_str, monthly_mom_list)
         if weekly_mom_list: database.save_weekly_momentum_results(today_ist_str, weekly_mom_list)
