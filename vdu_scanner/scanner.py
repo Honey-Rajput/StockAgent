@@ -223,33 +223,57 @@ def scan_stock(
     # --- STEP 4d: Signal Strength Score (0-100) — balanced volume + price ---
     # Expert fix: volume and price must BOTH be strong for high score
     score = 0.0
-    # 1. Volume ratio: Up to 25 points (was 40 — reduced to avoid volume-only high scores)
-    score += min(volume_ratio / 5.0 * 25.0, 25.0)
-    # 2. Price move: Up to 25 points (raised from 30 to match volume weight)
-    best_pct = max(pct_change_intraday, pct_change_close)
-    score += min(best_pct / 3.0 * 25.0, 25.0)
-    # 3. COMBO BONUS: Both volume >= 3x AND price move >= 2% → institutional quality
-    if volume_ratio >= 3.0 and best_pct >= 2.0:
-        score += 10.0
-    # 4. Dry zone TIGHTNESS quality score:
-    #    Reward how "dry" the consolidation was relative to baseline.
     dryness_ratio = dry_avg_vol / baseline_avg_vol
-    dryness_score = max(0.0, (0.90 - dryness_ratio) / 0.90 * 20.0)  # up to 20 pts
-    score += dryness_score
-    # 5. Moving Average filter: above 50 SMA = uptrend confirmed
-    if above_50dma:
-        score += 8.0
-    # 5b. Above 200 SMA bonus (Stage-2 context)
-    if above_200dma:
-        score += 5.0
-    # 6. MACD cross-up bonus: momentum shift confirmation
-    if indicators and indicators.get('macd_cross_up', False):
-        score += 5.0
-    # 7. RVOL bonus: institutional participation vs 50-day baseline
-    if rvol >= 3.0:
-        score += 7.0
-    elif rvol >= 2.0:
-        score += 4.0
+
+    if setup_type == "VDU Pre-Breakout":
+        # For Pre-Breakouts, reward extreme tightness and dryness instead of volume surge
+        # 1. Tightness (Max 35 points) - closer to 0% is better
+        tightness = abs(pct_change_close)
+        score += max(0.0, (2.0 - tightness) / 2.0 * 35.0)
+        
+        # 2. Dry Zone Quality (Max 30 points) - how dry the consolidation was
+        score += max(0.0, (0.90 - dryness_ratio) / 0.90 * 30.0)
+        
+        # 3. Today's Dryness (Max 20 points) - ensure today is also extremely low volume
+        today_ratio = today['Volume'] / baseline_avg_vol
+        if today_ratio <= 0.75:
+            score += max(0.0, (0.75 - today_ratio) / 0.75 * 20.0)
+            
+        # 4. Moving Averages Context
+        if above_50dma:
+            score += 10.0
+        if above_200dma:
+            score += 5.0
+    else:
+        # Breakout Setup Scoring
+        # 1. Volume ratio: Up to 25 points (was 40 — reduced to avoid volume-only high scores)
+        score += min(volume_ratio / 5.0 * 25.0, 25.0)
+        # 2. Price move: Up to 25 points (raised from 30 to match volume weight)
+        best_pct = max(pct_change_intraday, pct_change_close)
+        score += min(best_pct / 3.0 * 25.0, 25.0)
+        # 3. COMBO BONUS: Both volume >= 3x AND price move >= 2% → institutional quality
+        if volume_ratio >= 3.0 and best_pct >= 2.0:
+            score += 10.0
+        # 4. Dry zone TIGHTNESS quality score:
+        #    Reward how "dry" the consolidation was relative to baseline.
+        dryness_score = max(0.0, (0.90 - dryness_ratio) / 0.90 * 20.0)  # up to 20 pts
+        score += dryness_score
+        # 5. Moving Average filter: above 50 SMA = uptrend confirmed
+        if above_50dma:
+            score += 8.0
+        # 5b. Above 200 SMA bonus (Stage-2 context)
+        if above_200dma:
+            score += 5.0
+        # 6. MACD cross-up bonus: momentum shift confirmation
+        if indicators and indicators.get('macd_cross_up', False):
+            score += 5.0
+        # 7. RVOL bonus: institutional participation vs 50-day baseline
+        if rvol >= 3.0:
+            score += 7.0
+        elif rvol >= 2.0:
+            score += 4.0
+
+    score = round(min(score, 100.0), 1)
 
     # Calculate day-over-day price change (standard Close-to-Close change)
     day_change_pct = pct_change_close
