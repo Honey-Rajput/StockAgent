@@ -5566,19 +5566,20 @@ with tab_vpa_squeeze:
             df_res[display_cols],
             use_container_width=True,
             column_config={
-                "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
-                "cmp": "CMP (₹)",
-                "day_change_pct": "Chg %",
-                "sma10": "10 SMA",
-                "sma21": "21 SMA",
-                "sma50": "50 SMA",
-                "ma_gap_pct": st.column_config.NumberColumn("MA Gap %", help="(Max SMA − Min SMA) / Min SMA × 100. Lower = tighter."),
+                "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)", width="small"),
+                "cmp": st.column_config.NumberColumn("CMP (₹)", width="small"),
+                "day_change_pct": st.column_config.NumberColumn("Chg %", width="small"),
+                "sma10": st.column_config.NumberColumn("10 SMA", width="small"),
+                "sma21": st.column_config.NumberColumn("21 SMA", width="small"),
+                "sma50": st.column_config.NumberColumn("50 SMA", width="small"),
+                "ma_gap_pct": st.column_config.NumberColumn("Gap %", help="(Max SMA − Min SMA) / Min SMA × 100. Lower = tighter.", width="small"),
                 "compression_score": st.column_config.NumberColumn(
-                    "Compression Score (₹)",
-                    help="Max(10,21,50 SMA) − Min(10,21,50 SMA). Lower score = tighter MA squeeze = stronger breakout candidate.",
-                    format="%.2f"
+                    "Squeeze (₹)",
+                    help="Max(10,21,50 SMA) − Min(10,21,50 SMA). Lower = tighter squeeze = stronger breakout candidate.",
+                    format="%.2f",
+                    width="small"
                 ),
-                "dist_to_200_pct": "200 Dist %"
+                "dist_to_200_pct": st.column_config.NumberColumn("200 Dist %", width="small")
             },
             hide_index=True
         )
