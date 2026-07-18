@@ -1773,6 +1773,7 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
             "sma50": round(sma50, 2),
             "sma200": round(sma200, 2),
             "ma_gap_pct": round(((max_ma - min_ma) / min_ma) * 100, 2),
+            "compression_score": round(max_ma - min_ma, 2),
             "dist_to_200_pct": round(((sma200 - max_ma) / max_ma) * 100, 2),
             "buy_price": buy_price,
             "exit_price": exit_price,

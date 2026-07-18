@@ -5556,8 +5556,14 @@ with tab_vpa_squeeze:
         df_res = pd.DataFrame(results)
         df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.write(f"### Found {len(results)} stocks")
+        # Sort by Compression Score ascending so tightest squeezes appear first
+        if 'compression_score' in df_res.columns:
+            df_res = df_res.sort_values('compression_score', ascending=True)
+        display_cols = ['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'compression_score', 'dist_to_200_pct']
+        # Keep only columns that actually exist (handles older cached results without the new field)
+        display_cols = [c for c in display_cols if c in df_res.columns]
         st.dataframe(
-            df_res[['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'sma200', 'ma_gap_pct', 'dist_to_200_pct']],
+            df_res[display_cols],
             use_container_width=True,
             column_config={
                 "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
@@ -5566,8 +5572,12 @@ with tab_vpa_squeeze:
                 "sma10": "10 SMA",
                 "sma21": "21 SMA",
                 "sma50": "50 SMA",
-                "sma200": "200 SMA",
-                "ma_gap_pct": "MA Gap %",
+                "ma_gap_pct": st.column_config.NumberColumn("MA Gap %", help="(Max SMA − Min SMA) / Min SMA × 100. Lower = tighter."),
+                "compression_score": st.column_config.NumberColumn(
+                    "Compression Score (₹)",
+                    help="Max(10,21,50 SMA) − Min(10,21,50 SMA). Lower score = tighter MA squeeze = stronger breakout candidate.",
+                    format="%.2f"
+                ),
                 "dist_to_200_pct": "200 Dist %"
             },
             hide_index=True
