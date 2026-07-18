@@ -5495,8 +5495,8 @@ with tab_vpa_squeeze:
                 "ma_gap_pct": st.column_config.NumberColumn("Gap %", help="(Max SMA − Min SMA) / Min SMA × 100. Lower = tighter.", width="small"),
                 "compression_score": st.column_config.NumberColumn(
                     "Compression Score",
-                    help="Max(10,21,50 SMA) − Min(10,21,50 SMA). Lower = tighter squeeze = stronger breakout candidate.",
-                    format="%.2f",
+                    help="Max(10,21,50 SMA) − Min(10,21,50 SMA) / Min(10,21,50 SMA). Lower = tighter squeeze = stronger breakout candidate.",
+                    format="%.2f %%",
                     width="small"
                 ),
                 "dist_to_200_pct": st.column_config.NumberColumn("200 Dist %", width="small")
