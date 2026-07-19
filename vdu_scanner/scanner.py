@@ -2627,10 +2627,10 @@ def scan_stage_analysis(symbol: str, df: pd.DataFrame, bench_ret: float) -> dict
         print(f"Error in stage analysis for {symbol}: {e}")
         return None
 
-def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 5.0) -> dict | None:
+def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 3.0) -> dict | None:
     """
     Scans for stocks where the current close is just above the 30-day SMA,
-    but not more than `max_dist_pct` (e.g. 5%) above it.
+    but not more than `max_dist_pct` (e.g. 3%) above it.
     """
     try:
         if len(df) < 30:
@@ -2649,7 +2649,7 @@ def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 5.0) ->
         if pd.isna(today_sma30):
             return None
             
-        # Condition: Price must be above SMA30, but not more than 5% above it
+        # Condition: Price must be above SMA30, but not more than 3% above it
         dist_pct = ((today_close - today_sma30) / today_sma30) * 100.0
         
         if 0.0 <= dist_pct <= max_dist_pct:
