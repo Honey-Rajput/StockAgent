@@ -2626,3 +2626,48 @@ def scan_stage_analysis(symbol: str, df: pd.DataFrame, bench_ret: float) -> dict
     except Exception as e:
         print(f"Error in stage analysis for {symbol}: {e}")
         return None
+
+def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 5.0) -> dict | None:
+    """
+    Scans for stocks where the current close is just above the 30-day SMA,
+    but not more than `max_dist_pct` (e.g. 5%) above it.
+    """
+    try:
+        if len(df) < 30:
+            return None
+        
+        # We need SMA 30
+        if 'SMA_30' not in df.columns:
+            df_copy = df.copy()
+            df_copy['SMA_30'] = df_copy['Close'].rolling(window=30).mean()
+        else:
+            df_copy = df
+            
+        today_close = df_copy['Close'].iloc[-1]
+        today_sma30 = df_copy['SMA_30'].iloc[-1]
+        
+        if pd.isna(today_sma30):
+            return None
+            
+        # Condition: Price must be above SMA30, but not more than 5% above it
+        dist_pct = ((today_close - today_sma30) / today_sma30) * 100.0
+        
+        if 0.0 <= dist_pct <= max_dist_pct:
+            today_vol = int(df_copy['Volume'].iloc[-1])
+            prev_close = df_copy['Close'].iloc[-2] if len(df_copy) >= 2 else today_close
+            day_change_pct = ((today_close - prev_close) / prev_close) * 100.0
+            
+            return {
+                'symbol': symbol,
+                'cmp': round(today_close, 2),
+                'day_change_pct': round(day_change_pct, 2),
+                'volume': today_vol,
+                'sma30': round(today_sma30, 2),
+                'dist_pct': round(dist_pct, 2)
+            }
+            
+        return None
+    except Exception as e:
+        print(f"Error in scan_near_30sma for {symbol}: {e}")
+        return None
+

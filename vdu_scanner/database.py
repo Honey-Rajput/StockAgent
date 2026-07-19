@@ -197,6 +197,23 @@ def init_db() -> bool:
     scanned_breakouts, scanned_squeezes, and scan_logs tables if not present.
     """
     queries = [
+
+        """
+        CREATE TABLE IF NOT EXISTS scanned_near_30sma (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            sma30 DOUBLE PRECISION,
+            dist_pct DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        """,
+
         """
         CREATE TABLE IF NOT EXISTS historical_ohlcv (
             symbol VARCHAR(20) NOT NULL,
@@ -1851,6 +1868,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         cur.execute("DELETE FROM scanned_wt_cross WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scanned_vcs WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scanned_vpa WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = %s;", (date_str,))
         cur.execute("DELETE FROM scan_logs WHERE scan_date = %s;", (date_str,))
         
         # 2. Insert new breakouts
@@ -2079,6 +2097,25 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 date_str
             ))
             
+        
+        # Insert Near 30 SMA
+        if near_30sma_list:
+            near_30sma_query = """
+            INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            for r in near_30sma_list:
+                cur.execute(near_30sma_query, (
+                    str(r['symbol']),
+                    str(r.get('company_name', '')),
+                    float(r['cmp']),
+                    float(r['day_change_pct']),
+                    int(r.get('volume', 0)),
+                    float(r['sma30']),
+                    float(r['dist_pct']),
+                    date_str
+                ))
+
         # 4. Insert execution log
         cur.execute("""
         INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
@@ -3433,3 +3470,19 @@ def prune_old_data_ohlcv(days: int = 5):
     finally:
         if conn:
             conn.close()
+
+
+def get_cached_near_30sma(date_str: str) -> list[dict]:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM scanned_near_30sma WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
+        rows = cur.fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Error fetching near 30 SMA: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+

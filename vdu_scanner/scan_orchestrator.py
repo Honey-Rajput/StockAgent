@@ -19,7 +19,8 @@ from scanner import (
     scan_ema_support,
     scan_support_rsi,
     scan_monthly_momentum,
-    scan_weekly_momentum
+    scan_weekly_momentum,
+    scan_near_30sma
 )
 from vcp_minervini import MinerviniVCPAnalyzer, VCPConfig
 from zanger_scanner import scan_zanger, ZangerConfig
@@ -52,7 +53,8 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         "support_rsi": None,
         "rsi_wt_combo": None, # Wait, is there a scan_rsi_wt_combo?
         "monthly_momentum": None,
-        "weekly_momentum": None
+        "weekly_momentum": None,
+        "near_30sma": None
     }
     if df is None or len(df) < 5:
         res["failed"] = True
@@ -462,8 +464,11 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                     # EMA Support (repurposed from ema_support)
                     from scanner import scan_ema_support
                     res["ema_support"] = scan_ema_support(sym, df)
-                    
-                    # Stage Analysis
+                if scan_mode in ("all", "near_30sma"):
+                    from scanner import scan_near_30sma
+                    res["near_30sma"] = scan_near_30sma(sym, df)
+
+                if res["minervini"] or res["gapup"] or res["structural_vcp"] or res["vpa"]:
                     bRet = 0.0
                     if benchmark_df is not None and len(benchmark_df) > 250:
                         bC = float(benchmark_df['Close'].iloc[-1])

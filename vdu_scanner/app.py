@@ -1909,7 +1909,8 @@ if run_full or run_sma:
                     wt_cross=wt_list,
                     total_scanned=n_stocks,
                     vcs_results=vcs_list,
-                    vpa_results=vpa_list
+                    vpa_results=vpa_list,
+                    near_30sma_list=near_30sma_list
                 )
                 try: database.save_zanger_scan(today_ist_str, "Daily", zanger_list)
                 except Exception: pass
@@ -2024,12 +2025,12 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_near_30sma) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze", "📉 Near 30 SMA"
 ])
 
 # ==============================================================================
@@ -5550,6 +5551,47 @@ with tab_vpa_squeeze:
             },
             hide_index=True
         )
+
+# --- NEAR 30 SMA TAB ---
+with tab_near_30sma:
+    st.markdown("### 📉 Near 30 SMA")
+    st.info("Finds stocks where the price is just above the 30-day SMA, but not more than 5% above it.")
+    
+    if not st.session_state.get('near_30sma_results') and ALL_TAB_SCAN_STATUS.get("near_30sma_results") is not None:
+        st.session_state.near_30sma_results = ALL_TAB_SCAN_STATUS["near_30sma_results"]
+        
+    # Auto load from DB if missing in session
+    if 'near_30sma_results' not in st.session_state or not st.session_state.near_30sma_results:
+        try:
+            today_str = get_market_date()
+            import database
+            db_res = database.get_cached_near_30sma(today_str)
+            if db_res:
+                st.session_state.near_30sma_results = db_res
+        except Exception as e:
+            st.error(f"Failed to load DB results: {e}")
+            
+    if st.session_state.get('near_30sma_results'):
+        results = st.session_state.near_30sma_results
+        df_res = pd.DataFrame(results)
+        df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+        st.write(f"### Found {len(results)} stocks")
+        st.dataframe(
+            df_res,
+            use_container_width=True,
+            column_config={
+                "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)", width="small"),
+                "company_name": "Company",
+                "cmp": st.column_config.NumberColumn("CMP (₹)", width="small"),
+                "day_change_pct": st.column_config.NumberColumn("Chg %", width="small"),
+                "sma30": st.column_config.NumberColumn("30 SMA (₹)", width="small"),
+                "dist_pct": st.column_config.NumberColumn("Dist to SMA %", format="%.2f %%", width="small"),
+                "volume": st.column_config.NumberColumn("Volume", width="small")
+            },
+            hide_index=True
+        )
+    else:
+        st.info("No stocks found matching the Near 30 SMA criteria. Run the scanner.")
 
 # TAB: FREQUENT FLYERS (CONSISTENT ALERTS)
 with tab_alerts:
