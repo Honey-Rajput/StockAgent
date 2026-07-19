@@ -223,14 +223,14 @@ def get_index_stocks(index_name: str) -> list[str]:
     return NIFTY50_SYMBOLS
 
 
-MAX_NSE_SYMBOLS = 1000  # Limit to top 1000 NSE stocks by prominence to reduce scan time
+MAX_NSE_SYMBOLS = 3000  # Limit to 3000 to capture all active mainboard NSE stocks
 
 def get_all_nse_symbols() -> list[str]:
     """
     Downloads the official constituent list of all listed equity shares on the
     National Stock Exchange of India (NSE) directly from the nsearchives.
     Filters to keep mainboard active equities (SERIES == 'EQ').
-    Returns at most MAX_NSE_SYMBOLS (1000) stocks for faster scanning.
+    Returns at most MAX_NSE_SYMBOLS (3000) stocks.
     """
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
