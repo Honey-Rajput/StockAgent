@@ -301,6 +301,10 @@ if 'vcs_results' not in st.session_state:
     st.session_state.vcs_results = None
 if 'structural_vcp_results' not in st.session_state:
     st.session_state.structural_vcp_results = None
+if 'zanger_results' not in st.session_state:
+    st.session_state.zanger_results = None
+if 'vcp_minervini_results' not in st.session_state:
+    st.session_state.vcp_minervini_results = None
 # Initialize global status dictionary if not present (shared across all threads/sessions)
 if "MOMENTUM_SCAN_STATUS" not in globals():
     # Removed redundant global statement
@@ -1038,6 +1042,23 @@ if not st.session_state.get('db_cache_checked', False):
         _load_latest("scanned_support_rsi", database.get_cached_support_rsi, "support_rsi_results")
         _load_latest("scanned_monthly_momentum", database.get_cached_monthly_momentum, "monthly_momentum_results")
         _load_latest("scanned_weekly_momentum", database.get_cached_weekly_momentum, "weekly_momentum_results")
+
+        # ── Dan Zanger and VCP+Minervini: auto-load from their own DB tables ─────────
+        _load_latest("scanned_zanger", lambda d: database.get_cached_zanger(d, 'Daily'), "zanger_results")
+
+        def _load_vcp_from_db(data):
+            """Reconstruct Rank and Score columns for VCP data loaded from DB cache."""
+            import pandas as pd
+            if not data:
+                return data
+            vcp_df = pd.DataFrame(data)
+            rs_proxy = pd.to_numeric(vcp_df.get('RS Proxy', 50), errors='coerce').fillna(50)
+            vcp_range = pd.to_numeric(vcp_df.get('VCP range %', 100), errors='coerce').fillna(100)
+            vcp_df['Score'] = rs_proxy - (vcp_range * 5)
+            vcp_df = vcp_df.sort_values(by='Score', ascending=False)
+            vcp_df.insert(0, 'Rank', range(1, len(vcp_df) + 1))
+            return vcp_df.to_dict('records')
+        _load_latest("scanned_vcp_minervini", database.get_cached_vcp_minervini, "vcp_minervini_results", _load_vcp_from_db)
 
         # Load scan_logs for UI metadata
         available_dates = database.get_available_scan_dates()
@@ -2020,7 +2041,9 @@ with tab_results:
         st.markdown("---")
         
         # 2. Main Scan Table
-        if scan_data is None or total_scanned == 0:
+        # NOTE: Use len(scan_data) not total_scanned==0 because DB-loaded results
+        # have scan_data populated but total_scanned may be 0 from scan_logs.
+        if not scan_data:
             st.info("💡 Get started by configuring your universe in the sidebar and clicking '**Run Scanner**'.")
         elif len(scan_data) == 0:
             st.info("ℹ️ No VDU breakouts found today matching these criteria. Try lowering the thresholds in the sidebar (e.g. Min Volume Ratio or Min Price Change) and re-running.")
