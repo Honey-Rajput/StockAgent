@@ -1754,6 +1754,11 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         if (max_ma - min_ma) / min_ma > 0.06:
             return None
             
+        # Ensure price hasn't already broken out (price should be near the squeeze)
+        if cmp > max_ma * 1.04:  # If price is > 4% above the highest MA, it's already running
+            return None
+
+            
         prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
         day_change_pct = ((cmp - prev_close) / prev_close) * 100
         
