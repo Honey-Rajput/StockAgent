@@ -78,6 +78,9 @@ class PooledConnection:
         if self._pool and self._conn:
             self._pool.putconn(self._conn)
             self._conn = None
+        elif self._conn:
+            self._conn.close()
+            self._conn = None
             
     def __enter__(self):
         return self
@@ -114,7 +117,7 @@ def get_connection():
                     # Last resort direct connection
                     conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
                     conn.autocommit = True
-                    return PooledConnection(pool, conn)
+                    return PooledConnection(None, conn)
                 except Exception as direct_e:
                     raise direct_e
         except Exception as e:
@@ -122,7 +125,7 @@ def get_connection():
             try:
                 conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
                 conn.autocommit = True
-                return PooledConnection(pool, conn)
+                return PooledConnection(None, conn)
             except:
                 raise e
 
