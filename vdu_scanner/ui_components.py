@@ -422,8 +422,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         cells.append(wl_cell)
         
         # Clickable TradingView Symbol Link
-        tv_sym = r["symbol"].replace('.NS', '')
-        cells.append(f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{tv_sym}" target="_blank" rel="noopener noreferrer" style="color: #29b6f6; text-decoration: none;">{r["symbol"]}</a></td>')
+        tv_sym = r["symbol"].replace('.NS', '').strip()
+        cells.append(f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{tv_sym}" target="_blank" rel="noopener noreferrer" style="color: #29b6f6; text-decoration: none;">{tv_sym}</a></td>')
                 
         # Sector column
         sector = get_stock_sector(r["symbol"])
@@ -649,9 +649,10 @@ def render_quick_trade_board(results_list: list, key_prefix: str):
         conf_color = "#ef4444" if "Low" in clean_conf else "#ffa000" if "Medium" in clean_conf else "#00e676"
         conf_badge = f'<span class="custom-badge" style="background: rgba({ "0,230,118" if "High" in clean_conf else "255,160,0" if "Medium" in clean_conf else "239,68,68" },0.12); color: {conf_color}; border: 1px solid {conf_color}; font-size: 0.75rem; font-weight: bold; padding: 2px 6px; border-radius: 4px;">{clean_conf}</span>'
         
+        clean_sym_display = r["symbol"].replace('.NS', '').strip()
         row_str = (
             f'<tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s;">'
-            f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;">{r["symbol"]}</td>'
+            f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{clean_sym_display}" target="_blank" rel="noopener noreferrer" style="color: #29b6f6; text-decoration: none;">{clean_sym_display}</a></td>'
             f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{r.get("cmp", r.get("buy_price", 0.0)):,.2f}</td>'
             f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 600;">₹{buy:,.2f}</td>'
             f'<td style="padding: 10px 12px; color: #ef4444; font-weight: 600;">₹{sl:,.2f}</td>'
