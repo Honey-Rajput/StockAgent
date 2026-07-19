@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv("DATA_URL") or os.getenv("Database_URL") or os.getenv("
 
 import psycopg2
 import psycopg2.extras
-from psycopg2.extras import DictCursor
+from psycopg2.extras import DictCursor, RealDictCursor
 from psycopg2.pool import ThreadedConnectionPool
 import threading
 import time
