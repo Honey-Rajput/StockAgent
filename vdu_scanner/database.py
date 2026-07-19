@@ -1840,6 +1840,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
     conn = None
     try:
         conn = get_connection()
+        conn.autocommit = False  # Start a single transaction for speed and safety
         cur = conn.cursor()
         
         # 1. Clean existing records for this date
@@ -2098,6 +2099,10 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         return False
     finally:
         if conn:
+            try:
+                conn.autocommit = True  # Restore autocommit before returning to pool
+            except Exception:
+                pass
             conn.close()
 
 def save_monthly_momentum_results(date_str: str, results: list[dict]) -> bool:
