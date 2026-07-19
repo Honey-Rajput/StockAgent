@@ -1376,13 +1376,33 @@ if col1.button("💾 Save Results", help="Force save all current results to the 
 
 if col2.button("📥 Fetch Latest", help="Fetch the latest saved results from DB."):
     import database
-    from update_database import load_previous_scan_results
     latest_dates = database.get_available_scan_dates()
     latest_date_str = latest_dates[0] if latest_dates else None
     
     if latest_date_str:
         with st.spinner(f"Loading data for {latest_date_str}..."):
-            load_previous_scan_results(latest_date_str)
+            # Manually load all data from database to session state
+            st.session_state.scan_results = database.get_cached_master_scans(latest_date_str)
+            st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(latest_date_str)
+            st.session_state.gapup_results = database.get_cached_gapups(latest_date_str)
+            st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str)
+            st.session_state.wt_results = database.get_cached_wt_cross(latest_date_str)
+            st.session_state.vcs_results = database.get_cached_vcs(latest_date_str)
+            st.session_state.vpa_results = database.get_cached_vpa(latest_date_str)
+            
+            st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(latest_date_str)
+            st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(latest_date_str)
+            st.session_state.stage2_results = database.get_cached_stage2(latest_date_str)
+            st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str)
+            st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str)
+            st.session_state.ema_support_results = database.get_cached_ema_support(latest_date_str)
+            st.session_state.dan_zanger_results = database.get_cached_zanger(latest_date_str)
+            st.session_state.vcp_minervini_results = database.get_cached_vcp_minervini(latest_date_str)
+            st.session_state.vp_results = database.get_cached_volume_profile(latest_date_str)
+            
+            st.session_state.near_30sma_results = database.get_cached_near_30sma(latest_date_str) or []
+            st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str) or []
+            st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(latest_date_str) or []
             
             # Explicitly load missing multi-timeframe caches that aren't in load_previous_scan_results
             st.session_state.near_30sma_results = database.get_cached_near_30sma(latest_date_str) or []
