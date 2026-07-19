@@ -752,7 +752,8 @@ def run_background_all_tab_scans():
                 print("[BG All-Tab] All background tab scans already cached. Skipping.")
                 return
 
-            raw_symbols = get_all_nse_symbols()
+            from data_fetcher import get_top1000_nse_symbols
+            raw_symbols = get_top1000_nse_symbols()
             all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
             
             # Phase 2: Shared Daily Download (1y or 2y)
@@ -896,7 +897,8 @@ def run_background_all_tab_scans():
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
                 ALL_TAB_SCAN_STATUS["status_text"] = "Running Stage-2 monthly scan..."
                 ALL_TAB_SCAN_STATUS["progress"] = 0.75
-                s2_cands = get_index_stocks("NIFTY 500")
+                from data_fetcher import get_top1000_nse_symbols
+                s2_cands = get_top1000_nse_symbols()
                 s2_res = []
                 
                 from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
@@ -1058,6 +1060,7 @@ if not st.session_state.get('db_cache_checked', False):
         _load_latest("scanned_volume_profile", database.get_cached_volume_profile, "vp_results")
         _load_latest("scanned_ema_support", database.get_cached_ema_support, "ema_support_results")
         _load_latest("scanned_vpa_squeeze", database.get_cached_vpa_squeeze, "vpa_squeeze_results")
+        _load_latest("scanned_near_30sma", database.get_cached_near_30sma, "near_30sma_results")  # FIX: was missing on reload
         _load_latest("scanned_stage2", database.get_cached_stage2, "stage2_results")
         _load_latest("scanned_support_rsi", database.get_cached_support_rsi, "support_rsi_results")
         _load_latest("scanned_monthly_momentum", database.get_cached_monthly_momentum, "monthly_momentum_results")
@@ -1731,6 +1734,7 @@ if run_full or run_sma:
                 if res.get("stage2"): stage2_list.append(res["stage2"])
                 if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
                 if res.get("weekly_momentum"): weekly_momentum_list.append(res["weekly_momentum"])
+                if res.get("near_30sma"): near_30sma_list.append(res["near_30sma"])  # FIX: was missing from main pass
             except Exception as exc:
                 print(f"Error processing result: {exc}")
                 failed_count += 1
