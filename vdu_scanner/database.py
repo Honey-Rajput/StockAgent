@@ -3726,12 +3726,46 @@ def get_cached_near_30sma(date_str: str) -> list[dict]:
     conn = None
     try:
         conn = get_connection()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor) if 'RealDictCursor' in globals() else conn.cursor()
+        # Fallback if RealDictCursor isn't available
         cur.execute("SELECT * FROM scanned_near_30sma WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
         rows = cur.fetchall()
+        if rows and type(rows[0]) != dict and not hasattr(rows[0], 'keys'):
+            cols = [desc[0] for desc in cur.description]
+            return [dict(zip(cols, r)) for r in rows]
         return [dict(r) for r in rows]
     except Exception as e:
         print(f"Error fetching near 30 SMA: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def get_cached_near_30sma_weekly(date_str: str) -> list[dict]:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM scanned_near_30sma_weekly WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
+        rows = cur.fetchall()
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        print(f"Error fetching near 30 SMA weekly: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+def get_cached_near_30sma_monthly(date_str: str) -> list[dict]:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM scanned_near_30sma_monthly WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
+        rows = cur.fetchall()
+        cols = [desc[0] for desc in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as e:
+        print(f"Error fetching near 30 SMA monthly: {e}")
         return []
     finally:
         if conn: conn.close()

@@ -322,9 +322,9 @@ if 'vpa_squeeze_results' not in st.session_state:
 if 'near_30sma_results' not in st.session_state:
     st.session_state.near_30sma_results = database.get_cached_near_30sma(latest_date_str) if is_startup and latest_date_str else None
 if 'near_30sma_weekly_results' not in st.session_state:
-    st.session_state.near_30sma_weekly_results = []
+    st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str) if is_startup and latest_date_str else []
 if 'near_30sma_monthly_results' not in st.session_state:
-    st.session_state.near_30sma_monthly_results = []
+    st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(latest_date_str) if is_startup and latest_date_str else []
 if 'dan_zanger_results' not in st.session_state:
     st.session_state.dan_zanger_results = database.get_cached_zanger(latest_date_str) if is_startup and latest_date_str else None
 if 'vcp_minervini_results' not in st.session_state:
@@ -851,14 +851,14 @@ def run_background_all_tab_scans():
 
             def run_vpa_sq_worker(sym, df):
                 results = {"daily": None, "weekly": None, "monthly": None}
-                if len(df) >= 200:
+                if len(df) >= 50:
                     results["daily"] = scan_vpa_ma_squeeze(sym, df)
                     from local_cache_manager import resample_ohlcv
                     w_df = resample_ohlcv(df, "W")
-                    if len(w_df) >= 200:
+                    if len(w_df) >= 50:
                         results["weekly"] = scan_vpa_ma_squeeze(sym, w_df)
                     m_df = resample_ohlcv(df, "M")
-                    if len(m_df) >= 200:
+                    if len(m_df) >= 50:
                         results["monthly"] = scan_vpa_ma_squeeze(sym, m_df)
                 return ("vpa_sq", results)
 
@@ -1383,8 +1383,9 @@ if col2.button("📥 Fetch Latest", help="Fetch the latest saved results from DB
             load_previous_scan_results(latest_date_str)
             
             # Explicitly load missing multi-timeframe caches that aren't in load_previous_scan_results
-            st.session_state.near_30sma_weekly_results = []
-            st.session_state.near_30sma_monthly_results = []
+            st.session_state.near_30sma_results = database.get_cached_near_30sma(latest_date_str) or []
+            st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str)
+            st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(latest_date_str)
             try:
                 st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(latest_date_str)
                 st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(latest_date_str)
@@ -5696,6 +5697,8 @@ with tab_vpa_squeeze:
             },
             hide_index=True
         )
+    else:
+        st.info("No stocks found matching the VPA Squeeze criteria. Run the scanner.")
 
 # --- NEAR 30 SMA TAB ---
 with tab_near_30sma:
@@ -5706,9 +5709,9 @@ with tab_near_30sma:
         st.session_state.near_30sma_results = ALL_TAB_SCAN_STATUS["near_30sma_results"]
         
     if "near_30sma_weekly_results" not in st.session_state:
-        st.session_state.near_30sma_weekly_results = []
+        st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str) if is_startup and latest_date_str else []
     if "near_30sma_monthly_results" not in st.session_state:
-        st.session_state.near_30sma_monthly_results = []
+        st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(latest_date_str) if is_startup and latest_date_str else []
 
     # Auto load from DB if missing in session
     if 'near_30sma_results' not in st.session_state or not st.session_state.near_30sma_results:
@@ -6882,7 +6885,7 @@ with tab_stage_analysis:
                                 else:
                                     continue
                             df = df.dropna(subset=['Close'])
-                            if len(df) >= 200:
+                            if len(df) >= 50:
                                 res = scan_stage_analysis(sym, df, bRet)
                                 if res: chunk_results.append(res)
                         except Exception as e: pass
