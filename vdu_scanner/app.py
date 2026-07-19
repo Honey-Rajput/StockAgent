@@ -1331,6 +1331,76 @@ st.sidebar.markdown('---')
 
 # --- RUN SCAN ACTION ---
 run_full = st.sidebar.button("🔍 Run Full Scanner", use_container_width=True)
+
+col1, col2 = st.sidebar.columns(2)
+if col1.button("💾 Save Results", help="Force save all current results to the DB for today."):
+    import database
+    from datetime import datetime
+    import pytz
+    ist = pytz.timezone('Asia/Kolkata')
+    today_str = datetime.now(ist).strftime("%Y-%m-%d")
+    
+    with st.spinner("Saving all results to database..."):
+        # Gather data from session state
+        breakouts = st.session_state.get('scan_results', []) or []
+        squeezes = st.session_state.get('vpa_squeeze_results', []) or []
+        gapups = st.session_state.get('gapup_results', []) or []
+        trend = st.session_state.get('above_ma_results', []) or []  # Using above_ma_results for trend setups
+        wt = st.session_state.get('wt_results', []) or []
+        tot = st.session_state.get('total_scanned', 0)
+        vcs = st.session_state.get('vcs_results', []) or []
+        vpa = st.session_state.get('vpa_results', []) or []
+        near30 = st.session_state.get('near_30sma_results', []) or []
+        
+        # Save master results
+        database.save_scan_results(today_str, breakouts, squeezes, gapups, trend, wt, tot, vcs_results=vcs, vpa_results=vpa, near_30sma_list=near30)
+        
+        # Save other specific results
+        if st.session_state.get('monthly_momentum_results'): database.save_monthly_momentum_results(today_str, st.session_state['monthly_momentum_results'])
+        if st.session_state.get('weekly_momentum_results'): database.save_weekly_momentum_results(today_str, st.session_state['weekly_momentum_results'])
+        if st.session_state.get('stage2_results'): database.save_stage2_only(today_str, st.session_state['stage2_results'])
+        if st.session_state.get('support_rsi_results'): database.save_support_rsi_only(today_str, st.session_state['support_rsi_results'])
+        if st.session_state.get('stage_analysis_results'): database.save_stage_analysis_only(today_str, st.session_state['stage_analysis_results'])
+        if st.session_state.get('ema_support_results'): database.save_ema_support_only(today_str, st.session_state['ema_support_results'])
+        if st.session_state.get('dan_zanger_results'): database.save_zanger_scan(today_str, "1d", st.session_state['dan_zanger_results'])
+        if st.session_state.get('vcp_minervini_results'): database.save_vcp_minervini_scan(today_str, st.session_state['vcp_minervini_results'])
+        if st.session_state.get('vp_results'): database.save_volume_profile_only(today_str, st.session_state['vp_results'])
+        
+        # Multi-timeframe tables
+        if st.session_state.get('near_30sma_weekly_results'): database.save_near_30sma_weekly_only(today_str, st.session_state['near_30sma_weekly_results'])
+        if st.session_state.get('near_30sma_monthly_results'): database.save_near_30sma_monthly_only(today_str, st.session_state['near_30sma_monthly_results'])
+        
+    st.sidebar.success(f"Saved results for {today_str}!")
+
+if col2.button("📥 Fetch Latest", help="Fetch the latest saved results from DB."):
+    import database
+    from update_database import load_previous_scan_results
+    latest_dates = database.get_available_scan_dates()
+    latest_date_str = latest_dates[0] if latest_dates else None
+    
+    if latest_date_str:
+        with st.spinner(f"Loading data for {latest_date_str}..."):
+            load_previous_scan_results(latest_date_str)
+            
+            # Explicitly load missing multi-timeframe caches that aren't in load_previous_scan_results
+            st.session_state.near_30sma_weekly_results = []
+            st.session_state.near_30sma_monthly_results = []
+            try:
+                st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(latest_date_str)
+                st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(latest_date_str)
+            except Exception:
+                pass
+                
+            st.session_state.scan_executed = True
+            
+            # Re-read total scanned securely
+            log_entry = database.has_scanned_today(latest_date_str)
+            st.session_state.total_scanned = log_entry.get('total_scanned', 0) if log_entry else 0
+            
+        st.sidebar.success(f"Loaded {latest_date_str}!")
+        st.rerun()
+    else:
+        st.sidebar.warning("No saved data found.")
 run_sma = False
 
 if run_full or run_sma:
@@ -2025,9 +2095,7 @@ if run_full or run_sma:
 # Display Last Scanned Timestamp
 if st.session_state.last_scanned:
     st.sidebar.markdown("---")
-    if st.sidebar.button("🔄 Sync with Database", use_container_width=True, help="Force reload all results from the database to reflect background scans."):
-        st.session_state['db_cache_checked'] = False
-        st.rerun()
+    
 
     st.sidebar.markdown("### ⚙️ Scanner Settings")
     st.sidebar.markdown("<p style='font-size:0.8rem; color:#94a3b8; margin-bottom:10px;'>Settings for VDU, Zanger, & Minervini Scans</p>", unsafe_allow_html=True)
