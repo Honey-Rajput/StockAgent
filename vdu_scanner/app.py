@@ -742,8 +742,9 @@ def run_background_all_tab_scans():
             run_vp = not bool(database.get_cached_volume_profile(today_str))
             run_s2 = not bool(database.get_cached_stage2(today_str))
             run_vpa_sq = not bool(database.get_cached_vpa_squeeze(today_str))
+            run_near_30sma = not bool(database.get_cached_near_30sma(today_str))
 
-            if not (run_wt or run_vcs or run_vpa or run_vp or run_s2 or run_vpa_sq):
+            if not (run_wt or run_vcs or run_vpa or run_vp or run_s2 or run_vpa_sq or run_near_30sma):
                 ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
                 ALL_TAB_SCAN_STATUS["progress"] = 1.0
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
@@ -756,7 +757,7 @@ def run_background_all_tab_scans():
             
             # Phase 2: Shared Daily Download (1y or 2y)
             shared_daily_data = {}
-            if run_wt or run_vcs or run_vpa or run_vp or run_vpa_sq:
+            if run_wt or run_vcs or run_vpa or run_vp or run_vpa_sq or run_near_30sma:
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
                 ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
                 ALL_TAB_SCAN_STATUS["progress"] = 0.05
@@ -824,8 +825,15 @@ def run_background_all_tab_scans():
                         return ("vpa_sq", res)
                 return ("vpa_sq", None)
 
+            def run_near_30sma_worker(sym, df):
+                from scanner import scan_near_30sma
+                res = scan_near_30sma(sym, df)
+                if res:
+                    return ("near_30sma", res)
+                return ("near_30sma", None)
+
             # Phase 3: Parallel Execution
-            wt_tf_results, custom_vcs_results, vpa_list, vp_list, vpa_sq_list = [], [], [], [], []
+            wt_tf_results, custom_vcs_results, vpa_list, vp_list, vpa_sq_list, near_30sma_list = [], [], [], [], [], []
             
             if shared_daily_data:
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
@@ -838,6 +846,7 @@ def run_background_all_tab_scans():
                     if run_vpa: tasks_to_run.append((run_vpa_worker, sym, df))
                     if run_vp: tasks_to_run.append((run_vp_worker, sym, df))
                     if run_vpa_sq: tasks_to_run.append((run_vpa_sq_worker, sym, df))
+                    if run_near_30sma: tasks_to_run.append((run_near_30sma_worker, sym, df))
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = [executor.submit(func, sym, df) for func, sym, df in tasks_to_run]
@@ -852,6 +861,7 @@ def run_background_all_tab_scans():
                                 elif scan_type == "vpa": vpa_list.append(result)
                                 elif scan_type == "vp": vp_list.append(result)
                                 elif scan_type == "vpa_sq": vpa_sq_list.append(result)
+                                elif scan_type == "near_30sma": near_30sma_list.append(result)
                         except Exception:
                             pass
                 
@@ -875,6 +885,10 @@ def run_background_all_tab_scans():
                 if run_vpa_sq:
                     ALL_TAB_SCAN_STATUS["vpa_squeeze_results"] = vpa_sq_list
                     try: database.save_vpa_squeeze_only(today_str, vpa_sq_list)
+                    except: pass
+                if run_near_30sma:
+                    ALL_TAB_SCAN_STATUS["near_30sma_results"] = near_30sma_list
+                    try: database.save_near_30sma_only(today_str, near_30sma_list)
                     except: pass
 
             # Phase 4: Stage-2 (Monthly)
@@ -1864,6 +1878,7 @@ if run_full or run_sma:
             st.session_state.vcp_minervini_results = []
 
         st.session_state.vpa_results = vpa_list
+        st.session_state.near_30sma_results = near_30sma_list
         st.session_state.wt_results = wt_list
         st.session_state.wt_results_by_tf = {"Daily_-40.0": wt_list, "Daily": wt_list}
         

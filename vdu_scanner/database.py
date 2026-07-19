@@ -3486,3 +3486,38 @@ def get_cached_near_30sma(date_str: str) -> list[dict]:
     finally:
         if conn: conn.close()
 
+
+
+def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = %s;", (date_str,))
+        
+        insert_query = """
+        INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        
+        for r in near_30sma_results:
+            cur.execute(insert_query, (
+                r.get('symbol', ''),
+                r.get('company_name', ''),
+                r.get('cmp', 0.0),
+                r.get('day_change_pct', 0.0),
+                r.get('volume', 0),
+                r.get('sma30', 0.0),
+                r.get('dist_pct', 0.0),
+                date_str
+            ))
+            
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving near 30 SMA only: {e}")
+        if conn: conn.rollback()
+        return False
+    finally:
+        if conn: conn.close()
+
