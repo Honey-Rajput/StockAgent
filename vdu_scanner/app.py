@@ -5446,7 +5446,7 @@ with tab_vpa_squeeze:
     st.markdown("### 📉 VPA Green + MA Squeeze")
     st.info("Finds stocks where VPA is Green (Minor, Mid, Major) and the 10/21/50 SMA are tightly clustered (<6% gap).")
     
-    if "vpa_squeeze_results" not in st.session_state or st.session_state.vpa_squeeze_results is None:
+    if "vpa_squeeze_results" not in st.session_state:
         st.session_state.vpa_squeeze_results = []
         
     run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch")
@@ -6642,10 +6642,22 @@ with tab_stage_analysis:
             def process_sa_chunk(c_idx, chunk):
                 chunk_results = []
                 try:
-                    data = yf.download(chunk, period="2y", interval="1d", group_by="ticker", threads=True, progress=False, timeout=15)
+                    chunk_ns = [s if s.endswith('.NS') else f"{s}.NS" for s in chunk]
+                    data = yf.download(chunk_ns, period="2y", interval="1d", progress=False, threads=False, timeout=15)
                     for sym in chunk:
                         try:
-                            df = data[sym] if len(chunk) > 1 else data
+                            sym_ns = sym if sym.endswith('.NS') else f"{sym}.NS"
+                            if isinstance(data.columns, pd.MultiIndex):
+                                all_tkrs = data.columns.get_level_values(1).unique().tolist()
+                                matched_t = next((t for t in all_tkrs if t.upper() == sym_ns.upper()), None)
+                                if not matched_t:
+                                    continue
+                                df = data.xs(matched_t, axis=1, level=1).copy()
+                            else:
+                                if len(chunk) == 1:
+                                    df = data.copy()
+                                else:
+                                    continue
                             df = df.dropna(subset=['Close'])
                             if len(df) >= 200:
                                 res = scan_stage_analysis(sym, df, bRet)

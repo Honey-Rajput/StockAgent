@@ -3117,10 +3117,12 @@ def get_cached_zanger(scan_date: str, timeframe: str = 'Daily') -> list:
             
         results = []
         for r in rows:
+            close_val = float(r[2]) if r[2] is not None else None
             results.append({
                 'symbol': r[0],
                 'sector': r[1],
-                'close': float(r[2]) if r[2] is not None else None,
+                'close': close_val,
+                'cmp': close_val,   # alias so display code works for both live and DB-loaded data
                 'setup_type': r[3],
                 'prior_run_pct': float(r[4]) if r[4] is not None else None,
                 'base_depth_pct': float(r[5]) if r[5] is not None else None,
@@ -3137,6 +3139,7 @@ def get_cached_zanger(scan_date: str, timeframe: str = 'Daily') -> list:
                 'date': scan_date,
             })
         return results
+
     except Exception as e:
         print(f"Error fetching Dan Zanger cache: {e}")
         return []
