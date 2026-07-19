@@ -206,33 +206,20 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
 @st.cache_data(ttl=3600)
 def get_index_stocks(index_name: str) -> list[str]:
     """
-    Resolves the stock list for the selected index name.
-    Supports NIFTY 50, NIFTY 100, NIFTY 500, TOP 1000, ALL NSE, and falls back gracefully.
+    Always returns the Top 1000 NSE equity symbols by market cap.
+    The index_name parameter is kept for compatibility but ignored — 
+    scanner is hardcoded to Top 1000 only.
     """
-    index_name = index_name.strip().upper()
-
-    if index_name == "NIFTY 50":
-        return NIFTY50_SYMBOLS
-    elif index_name == "NIFTY 100":
-        return NIFTY100_SYMBOLS
-    elif index_name == "NIFTY 500":
-        return fetch_nifty500_constituent_symbols()
-    elif index_name == "TOP 1000":
-        return get_top1000_nse_symbols()
-    elif index_name == "ALL NSE":
-        return get_all_nse_symbols()
-
-    return NIFTY50_SYMBOLS
+    return get_top1000_nse_symbols()
 
 
 def get_top1000_nse_symbols() -> list[str]:
     """Returns the top 1000 NSE equity symbols (capped from the full NSE list)."""
     symbols = get_all_nse_symbols()
-    return symbols[:TOP_1000_LIMIT]
+    return symbols[:1000]
 
 
-MAX_NSE_SYMBOLS = 3000  # Limit to 3000 to capture all active mainboard NSE stocks
-TOP_1000_LIMIT = 1000   # Default limit for the recommended 'Top 1000' universe
+MAX_NSE_SYMBOLS = 1000  # Hardcapped to top 1000 NSE stocks only
 
 def get_all_nse_symbols() -> list[str]:
     """

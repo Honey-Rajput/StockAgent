@@ -23,7 +23,7 @@ if not (os.environ.get('DATA_URL') or os.environ.get('Database_URL') or os.envir
 import database
 from local_cache_manager import get_cached_ohlcv, save_to_cache, bulk_get_cached_ohlcv
 from config import LOOKBACK_DAYS, IST_TIMEZONE
-from data_fetcher import get_index_stocks
+from data_fetcher import get_top1000_nse_symbols
 from scan_orchestrator import process_single_symbol
 
 def get_market_date(for_display=False):
@@ -86,17 +86,16 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
 
 def run_headless_scan():
     print("=" * 50)
-    print("🚀 Starting Automated Headless Volume Surge Scan")
+    print("🚀 Starting Automated Headless Volume Surge Scan — Top 1000 NSE Stocks")
     print("=" * 50)
     
-    universe_key = "TOP 1000"
     scan_timeframe = "Daily (1d)"
     yf_period = f"{LOOKBACK_DAYS}d"
     yf_interval = "1d"
     
-    print(f"Universe: {universe_key} | Timeframe: {scan_timeframe}")
+    print(f"Universe: Top 1000 NSE Stocks | Timeframe: {scan_timeframe}")
     
-    raw_symbols = get_index_stocks(universe_key)
+    raw_symbols = get_top1000_nse_symbols()
     if not raw_symbols:
         print("❌ No symbols found to scan.")
         sys.exit(1)
