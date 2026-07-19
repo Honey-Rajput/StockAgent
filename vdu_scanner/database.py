@@ -749,6 +749,27 @@ def init_db() -> bool:
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
+        CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze_weekly (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            cmp NUMERIC(10, 2) NOT NULL,
+            day_change_pct NUMERIC(10, 2),
+            volume BIGINT,
+            ma_gap_pct NUMERIC(10, 2),
+            scan_date DATE NOT NULL,
+            UNIQUE(symbol, scan_date)
+        );
+        CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze_monthly (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            cmp NUMERIC(10, 2) NOT NULL,
+            day_change_pct NUMERIC(10, 2),
+            volume BIGINT,
+            ma_gap_pct NUMERIC(10, 2),
+            scan_date DATE NOT NULL,
+            UNIQUE(symbol, scan_date)
+        );
+
         """
     )
     
@@ -1150,6 +1171,8 @@ def cleanup_old_data(days: int = 30):
         "scanned_vcs",
         "scanned_vpa",
         "scanned_vpa_squeeze",
+        "scanned_vpa_squeeze_weekly",
+        "scanned_vpa_squeeze_monthly",
         "scanned_stage2",
         "scanned_volume_profile",
         "scanned_monthly_momentum",
@@ -1224,7 +1247,9 @@ def get_all_latest_scan_dates() -> dict[str, str]:
     tables = [
         "scanned_breakouts", "scanned_gapups",
         "scanned_wt_cross", "scanned_vcs", "scanned_vpa", "scanned_volume_profile",
-        "scanned_ema_support", "scanned_vpa_squeeze", "scanned_stage2",
+        "scanned_ema_support", "scanned_vpa_squeeze",
+        "scanned_vpa_squeeze_weekly",
+        "scanned_vpa_squeeze_monthly", "scanned_stage2",
         "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
         "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini"
     ]
@@ -1771,6 +1796,35 @@ def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
         if conn:
             conn.close()
 
+
+def get_cached_vpa_squeeze_weekly(date_str: str) -> list[dict]:
+    return _get_vpa_sq_by_table('scanned_vpa_squeeze_weekly', date_str)
+
+def get_cached_vpa_squeeze_monthly(date_str: str) -> list[dict]:
+    return _get_vpa_sq_by_table('scanned_vpa_squeeze_monthly', date_str)
+
+def _get_vpa_sq_by_table(table_name: str, date_str: str) -> list[dict]:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(f"""
+            SELECT symbol, cmp, day_change_pct, volume, ma_gap_pct
+            FROM {table_name}
+            WHERE scan_date = %s
+        """, (date_str,))
+        rows = cur.fetchall()
+        cur.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Error getting cached VPA squeeze {table_name}: {e}")
+        return []
+    finally:
+        if conn:
+            pool = get_pool()
+            if pool:
+                pool.putconn(conn)
+
 def get_cached_stage2(date_str: str) -> list[dict]:
     """
     Retrieves the cached Early Stage 2 setups scanned on a specific date.
@@ -1942,6 +1996,51 @@ def get_cached_volume_profile(date_str: str) -> list[dict]:
         if conn:
             cur.close()
             conn.close()
+
+
+def save_vpa_squeeze_weekly_only(date_str: str, results: list[dict]) -> bool:
+    return _save_vpa_squeeze_to_table("scanned_vpa_squeeze_weekly", date_str, results)
+
+def save_vpa_squeeze_monthly_only(date_str: str, results: list[dict]) -> bool:
+    return _save_vpa_squeeze_to_table("scanned_vpa_squeeze_monthly", date_str, results)
+
+def _save_vpa_squeeze_to_table(table_name: str, date_str: str, results: list[dict]) -> bool:
+    if not results:
+        return True
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(f"DELETE FROM {table_name} WHERE scan_date = %s;", (date_str,))
+        for r in results:
+            cur.execute(f"""
+                INSERT INTO {table_name} (
+                    symbol, cmp, day_change_pct, volume, ma_gap_pct, scan_date
+                ) VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (symbol, scan_date) DO UPDATE SET
+                    cmp = EXCLUDED.cmp,
+                    day_change_pct = EXCLUDED.day_change_pct,
+                    volume = EXCLUDED.volume,
+                    ma_gap_pct = EXCLUDED.ma_gap_pct
+            """, (
+                r['symbol'],
+                float(r['cmp']),
+                float(r.get('day_change_pct', 0)),
+                int(r.get('volume', 0)),
+                float(r.get('ma_gap_pct', 0)),
+                date_str
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving to {table_name}: {e}")
+        return False
+    finally:
+        if conn:
+            pool = get_pool()
+            if pool:
+                pool.putconn(conn)
 
 def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
     """

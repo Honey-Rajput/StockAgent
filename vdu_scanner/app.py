@@ -850,21 +850,32 @@ def run_background_all_tab_scans():
                 return ("vp", None)
 
             def run_vpa_sq_worker(sym, df):
+                results = {"daily": None, "weekly": None, "monthly": None}
                 if len(df) >= 200:
-                    res = scan_vpa_ma_squeeze(sym, df)
-                    if res:
-                        return ("vpa_sq", res)
-                return ("vpa_sq", None)
+                    results["daily"] = scan_vpa_ma_squeeze(sym, df)
+                    from local_cache_manager import resample_ohlcv
+                    w_df = resample_ohlcv(df, "W")
+                    if len(w_df) >= 200:
+                        results["weekly"] = scan_vpa_ma_squeeze(sym, w_df)
+                    m_df = resample_ohlcv(df, "M")
+                    if len(m_df) >= 200:
+                        results["monthly"] = scan_vpa_ma_squeeze(sym, m_df)
+                return ("vpa_sq", results)
 
             def run_near_30sma_worker(sym, df):
                 from scanner import scan_near_30sma
-                res = scan_near_30sma(sym, df)
-                if res:
-                    return ("near_30sma", res)
-                return ("near_30sma", None)
+                from local_cache_manager import resample_ohlcv
+                results = {"daily": None, "weekly": None, "monthly": None}
+                results["daily"] = scan_near_30sma(sym, df)
+                w_df = resample_ohlcv(df, "W")
+                results["weekly"] = scan_near_30sma(sym, w_df)
+                m_df = resample_ohlcv(df, "M")
+                results["monthly"] = scan_near_30sma(sym, m_df)
+                return ("near_30sma", results)
 
             # Phase 3: Parallel Execution
             wt_tf_results, custom_vcs_results, vpa_list, vp_list, vpa_sq_list, near_30sma_list = [], [], [], [], [], []
+            vpa_sq_weekly_list, vpa_sq_monthly_list = [], []
             near_30sma_weekly_list = []
             near_30sma_monthly_list = []
             
@@ -893,8 +904,14 @@ def run_background_all_tab_scans():
                                 elif scan_type == "vcs": custom_vcs_results.append(result)
                                 elif scan_type == "vpa": vpa_list.append(result)
                                 elif scan_type == "vp": vp_list.append(result)
-                                elif scan_type == "vpa_sq": vpa_sq_list.append(result)
-                                elif scan_type == "near_30sma": near_30sma_list.append(result)
+                                elif scan_type == "vpa_sq":
+                                    if result["daily"]: vpa_sq_list.append(result["daily"])
+                                    if result["weekly"]: vpa_sq_weekly_list.append(result["weekly"])
+                                    if result["monthly"]: vpa_sq_monthly_list.append(result["monthly"])
+                                elif scan_type == "near_30sma":
+                                    if result["daily"]: near_30sma_list.append(result["daily"])
+                                    if result["weekly"]: near_30sma_weekly_list.append(result["weekly"])
+                                    if result["monthly"]: near_30sma_monthly_list.append(result["monthly"])
                         except Exception:
                             pass
                 
@@ -917,12 +934,18 @@ def run_background_all_tab_scans():
                     except: pass
                 if run_vpa_sq:
                     ALL_TAB_SCAN_STATUS["vpa_squeeze_results"] = vpa_sq_list
-                    try: database.save_vpa_squeeze_only(today_str, vpa_sq_list)
-                    except: pass
+                    try:
+                        database.save_vpa_squeeze_only(today_str, vpa_sq_list)
+                        database.save_vpa_squeeze_weekly_only(today_str, vpa_sq_weekly_list)
+                        database.save_vpa_squeeze_monthly_only(today_str, vpa_sq_monthly_list)
+                    except Exception as e: print(f"Save VPA SQ failed: {e}")
                 if run_near_30sma:
                     ALL_TAB_SCAN_STATUS["near_30sma_results"] = near_30sma_list
-                    try: database.save_near_30sma_only(today_str, near_30sma_list)
-                    except: pass
+                    try:
+                        database.save_near_30sma_only(today_str, near_30sma_list)
+                        database.save_near_30sma_weekly_only(today_str, near_30sma_weekly_list)
+                        database.save_near_30sma_monthly_only(today_str, near_30sma_monthly_list)
+                    except Exception as e: print(f"Save Near 30SMA failed: {e}")
 
             # Phase 4: Stage-2 (Monthly)
             if run_s2:
@@ -5506,6 +5529,20 @@ with tab_vpa_squeeze:
     
     if "vpa_squeeze_results" not in st.session_state:
         st.session_state.vpa_squeeze_results = []
+    if "vpa_squeeze_weekly_results" not in st.session_state:
+        st.session_state.vpa_squeeze_weekly_results = []
+    if "vpa_squeeze_monthly_results" not in st.session_state:
+        st.session_state.vpa_squeeze_monthly_results = []
+        
+    if not st.session_state.vpa_squeeze_results:
+        try:
+            today_str = get_market_date()
+            import database
+            st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str)
+            st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(today_str)
+            st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(today_str)
+        except Exception as e:
+            pass
         
     run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch")
     if run_vpa_squeeze_btn:
@@ -5552,8 +5589,15 @@ with tab_vpa_squeeze:
             except Exception as e:
                 st.error(f"Error running scan: {e}")
 
-    if st.session_state.get('vpa_squeeze_results'):
-        results = st.session_state.vpa_squeeze_results
+    tf_vpa_sq = st.selectbox("Select Timeframe", ["Daily", "Weekly", "Monthly"], key="tf_vpa_sq")
+    if tf_vpa_sq == "Daily":
+        results = st.session_state.get('vpa_squeeze_results', [])
+    elif tf_vpa_sq == "Weekly":
+        results = st.session_state.get('vpa_squeeze_weekly_results', [])
+    else:
+        results = st.session_state.get('vpa_squeeze_monthly_results', [])
+
+    if results:
         df_res = pd.DataFrame(results)
         df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.write(f"### Found {len(results)} stocks")
@@ -5593,19 +5637,31 @@ with tab_near_30sma:
     if not st.session_state.get('near_30sma_results') and ALL_TAB_SCAN_STATUS.get("near_30sma_results") is not None:
         st.session_state.near_30sma_results = ALL_TAB_SCAN_STATUS["near_30sma_results"]
         
+    if "near_30sma_weekly_results" not in st.session_state:
+        st.session_state.near_30sma_weekly_results = []
+    if "near_30sma_monthly_results" not in st.session_state:
+        st.session_state.near_30sma_monthly_results = []
+
     # Auto load from DB if missing in session
     if 'near_30sma_results' not in st.session_state or not st.session_state.near_30sma_results:
         try:
             today_str = get_market_date()
             import database
-            db_res = database.get_cached_near_30sma(today_str)
-            if db_res:
-                st.session_state.near_30sma_results = db_res
+            st.session_state.near_30sma_results = database.get_cached_near_30sma(today_str) or []
+            st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(today_str) or []
+            st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(today_str) or []
         except Exception as e:
-            st.error(f"Failed to load DB results: {e}")
+            pass
             
-    if st.session_state.get('near_30sma_results'):
-        results = st.session_state.near_30sma_results
+    tf_near30 = st.selectbox("Select Timeframe", ["Daily", "Weekly", "Monthly"], key="tf_near30")
+    if tf_near30 == "Daily":
+        results = st.session_state.get('near_30sma_results', [])
+    elif tf_near30 == "Weekly":
+        results = st.session_state.get('near_30sma_weekly_results', [])
+    else:
+        results = st.session_state.get('near_30sma_monthly_results', [])
+
+    if results:
         df_res = pd.DataFrame(results)
         df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
         st.write(f"### Found {len(results)} stocks")
