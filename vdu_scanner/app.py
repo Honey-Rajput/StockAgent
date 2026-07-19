@@ -5705,7 +5705,7 @@ with tab_vpa_squeeze:
 # --- NEAR 30 SMA TAB ---
 with tab_near_30sma:
     st.markdown("### 📉 Near 30 SMA")
-    st.info("Finds stocks where the price is just above the 30-day SMA, but not more than 3% above it.")
+    st.info("Finds stocks where the price is within +/- 3% of the 30-day SMA (can be slightly above or below it).")
     
     if not st.session_state.get('near_30sma_results') and ALL_TAB_SCAN_STATUS.get("near_30sma_results") is not None:
         st.session_state.near_30sma_results = ALL_TAB_SCAN_STATUS["near_30sma_results"]
