@@ -1126,12 +1126,8 @@ st.markdown('<p class="gradient-subtitle">Scan NSE-listed stocks for institution
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.markdown('### ⚙️ Scan Universe')
-universe_selection = st.sidebar.selectbox(
-    "Select Universe to Scan",
-    options=["All NSE Listed Equities (Full Scan)", "NIFTY 500 (Top 500 Stocks)"],
-    index=0,
-    help="Select the universe of stocks to scan."
-)
+universe_selection = "Top 1000 NSE Stocks (By Market Cap)"
+st.sidebar.info("🔍 **Scan Universe:** Top 1000 NSE Stocks (By Market Cap)")
 
 # =============================================================================
 # MARKET CONDITION WIDGET — Nifty 50 Breadth Filter
@@ -1290,7 +1286,9 @@ if run_full or run_sma:
         yf_interval = "1d"
 
     # Resolve the universe selected in the sidebar
-    if "NIFTY 500" in universe_selection:
+    if "Top 1000" in universe_selection or "1000" in universe_selection:
+        universe_key = "TOP 1000"
+    elif "NIFTY 500" in universe_selection:
         universe_key = "NIFTY 500"
     elif "NIFTY 100" in universe_selection:
         universe_key = "NIFTY 100"
@@ -3457,7 +3455,9 @@ with tab_wave:
     
     if run_wt_btn:
         # Resolve the universe selected in the global sidebar
-        if "NIFTY 500" in universe_selection:
+        if "Top 1000" in universe_selection or "1000" in universe_selection:
+            universe_key = "TOP 1000"
+        elif "NIFTY 500" in universe_selection:
             universe_key = "NIFTY 500"
         elif "NIFTY 100" in universe_selection:
             universe_key = "NIFTY 100"
@@ -4114,8 +4114,10 @@ with tab_monthly:
             import time as _time
 
         # Resolve universe
-        from data_fetcher import get_index_stocks, get_all_nse_symbols
-        if "NIFTY 500" in universe_selection:
+        from data_fetcher import get_index_stocks, get_all_nse_symbols, get_top1000_nse_symbols
+        if "Top 1000" in universe_selection or "1000" in universe_selection:
+            mm_universe = get_top1000_nse_symbols()
+        elif "NIFTY 500" in universe_selection:
             mm_universe = get_index_stocks("NIFTY 500")
         elif "NIFTY 100" in universe_selection:
             mm_universe = get_index_stocks("NIFTY 100")
