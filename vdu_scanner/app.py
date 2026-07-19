@@ -263,16 +263,30 @@ if "sort_col" in st.query_params:
 
 
 # --- Initialize Session State ---
+import database
+latest_dates = database.get_available_scan_dates()
+latest_date_str = latest_dates[0] if latest_dates else None
+
+# Clean up data older than 30 days automatically
+try:
+    database.cleanup_old_data(days=30)
+except Exception as e:
+    print(f"Cleanup error (non-fatal): {e}")
+
+# First time app load check
+is_startup = 'scan_results' not in st.session_state
+
 if 'ema_support_results' not in st.session_state:
-    st.session_state.ema_support_results = None
+    st.session_state.ema_support_results = database.get_cached_ema_support(latest_date_str) if is_startup and latest_date_str else None
 if 'scan_results' not in st.session_state:
-    st.session_state.scan_results = None
+    st.session_state.scan_results = database.get_cached_breakouts(latest_date_str) if is_startup and latest_date_str else None
 if 'total_scanned' not in st.session_state:
-    st.session_state.total_scanned = 0
+    log_entry = database.has_scanned_today(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.total_scanned = log_entry.get('total_scanned', 0) if log_entry else 0
 if 'failed_count' not in st.session_state:
     st.session_state.failed_count = 0
 if 'last_scanned' not in st.session_state:
-    st.session_state.last_scanned = None
+    st.session_state.last_scanned = latest_date_str if is_startup else None
 if 'confirm_clear' not in st.session_state:
     st.session_state.confirm_clear = False
 if 'ai_selected_stock' not in st.session_state:
@@ -280,31 +294,47 @@ if 'ai_selected_stock' not in st.session_state:
 if 'ai_custom_sym_input' not in st.session_state:
     st.session_state.ai_custom_sym_input = ""
 if 'vpa_results' not in st.session_state:
-    st.session_state.vpa_results = []
+    st.session_state.vpa_results = database.get_cached_vpa(latest_date_str) if is_startup and latest_date_str else []
 if 'vp_results' not in st.session_state:
-    st.session_state.vp_results = []
+    st.session_state.vp_results = database.get_cached_volume_profile(latest_date_str) if is_startup and latest_date_str else []
 if 'gapup_results' not in st.session_state:
-    st.session_state.gapup_results = None
+    st.session_state.gapup_results = database.get_cached_gapups(latest_date_str) if is_startup and latest_date_str else None
 if 'above_ma_results' not in st.session_state:
-    st.session_state.above_ma_results = None
+    st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str, 'above_ma') if is_startup and latest_date_str else None
 if 'support_ma_results' not in st.session_state:
-    st.session_state.support_ma_results = None
+    st.session_state.support_ma_results = database.get_cached_trend_setups(latest_date_str, 'support_ma') if is_startup and latest_date_str else None
 if 'crossover_ma_results' not in st.session_state:
-    st.session_state.crossover_ma_results = None
+    st.session_state.crossover_ma_results = database.get_cached_trend_setups(latest_date_str, 'crossover_ma') if is_startup and latest_date_str else None
 if 'wt_results' not in st.session_state:
-    st.session_state.wt_results = None
+    st.session_state.wt_results = database.get_cached_wt_cross(latest_date_str) if is_startup and latest_date_str else None
 if 'wt_results_by_tf' not in st.session_state:
     st.session_state.wt_results_by_tf = {}
 if 'minervini_results' not in st.session_state:
-    st.session_state.minervini_results = None
+    st.session_state.minervini_results = database.get_cached_trend_setups(latest_date_str, 'minervini') if is_startup and latest_date_str else None
 if 'vcs_results' not in st.session_state:
-    st.session_state.vcs_results = None
-if 'structural_vcp_results' not in st.session_state:
-    st.session_state.structural_vcp_results = None
-if 'zanger_results' not in st.session_state:
-    st.session_state.zanger_results = None
+    st.session_state.vcs_results = database.get_cached_vcs(latest_date_str) if is_startup and latest_date_str else None
+if 'monthly_momentum_results' not in st.session_state:
+    st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(latest_date_str) if is_startup and latest_date_str else None
+if 'weekly_momentum_results' not in st.session_state:
+    st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(latest_date_str) if is_startup and latest_date_str else None
+if 'vpa_squeeze_results' not in st.session_state:
+    st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(latest_date_str) if is_startup and latest_date_str else None
+if 'near_30sma_results' not in st.session_state:
+    st.session_state.near_30sma_results = database.get_cached_near_30sma(latest_date_str) if is_startup and latest_date_str else None
+if 'near_30sma_weekly_results' not in st.session_state:
+    st.session_state.near_30sma_weekly_results = []
+if 'near_30sma_monthly_results' not in st.session_state:
+    st.session_state.near_30sma_monthly_results = []
+if 'dan_zanger_results' not in st.session_state:
+    st.session_state.dan_zanger_results = database.get_cached_zanger(latest_date_str) if is_startup and latest_date_str else None
 if 'vcp_minervini_results' not in st.session_state:
-    st.session_state.vcp_minervini_results = None
+    st.session_state.vcp_minervini_results = database.get_cached_vcp_minervini(latest_date_str) if is_startup and latest_date_str else []
+if 'stage2_results' not in st.session_state:
+    st.session_state.stage2_results = database.get_cached_stage2(latest_date_str) if is_startup and latest_date_str else None
+if 'support_rsi_results' not in st.session_state:
+    st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str) if is_startup and latest_date_str else None
+if 'stage_analysis_results' not in st.session_state:
+    st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str) if is_startup and latest_date_str else None
 # Initialize global status dictionary if not present (shared across all threads/sessions)
 if "MOMENTUM_SCAN_STATUS" not in globals():
     # Removed redundant global statement
@@ -835,6 +865,8 @@ def run_background_all_tab_scans():
 
             # Phase 3: Parallel Execution
             wt_tf_results, custom_vcs_results, vpa_list, vp_list, vpa_sq_list, near_30sma_list = [], [], [], [], [], []
+            near_30sma_weekly_list = []
+            near_30sma_monthly_list = []
             
             if shared_daily_data:
                 ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
@@ -1522,6 +1554,8 @@ if run_full or run_sma:
         monthly_momentum_list = []
         weekly_momentum_list = []
         near_30sma_list = []
+        near_30sma_weekly_list = []
+        near_30sma_monthly_list = []
         
         # Unpack manual dry constraints from the sidebar range slider
         min_dry = dry_zone_range[0]
@@ -1738,6 +1772,8 @@ if run_full or run_sma:
                 if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
                 if res.get("weekly_momentum"): weekly_momentum_list.append(res["weekly_momentum"])
                 if res.get("near_30sma"): near_30sma_list.append(res["near_30sma"])  # FIX: was missing from main pass
+                if res.get("near_30sma_weekly"): near_30sma_weekly_list.append(res["near_30sma_weekly"])
+                if res.get("near_30sma_monthly"): near_30sma_monthly_list.append(res["near_30sma_monthly"])
             except Exception as exc:
                 print(f"Error processing result: {exc}")
                 failed_count += 1
@@ -1868,6 +1904,8 @@ if run_full or run_sma:
 
         st.session_state.vpa_results = vpa_list
         st.session_state.near_30sma_results = near_30sma_list
+        st.session_state.near_30sma_weekly_results = near_30sma_weekly_list
+        st.session_state.near_30sma_monthly_results = near_30sma_monthly_list
         st.session_state.wt_results = wt_list
         st.session_state.wt_results_by_tf = {"Daily_-40.0": wt_list, "Daily": wt_list}
         
@@ -3914,7 +3952,8 @@ with tab_history:
         st.markdown("<br>", unsafe_allow_html=True)
         
         # Nested sub-tabs inside History tab
-        sub_breakout, sub_gapup, sub_above_ma, sub_support_ma, sub_crossover_ma, sub_wt, sub_vp = st.tabs([
+        sub_vcp_minervini, sub_breakout, sub_gapup, sub_above_ma, sub_support_ma, sub_crossover_ma, sub_wt, sub_vp = st.tabs([
+            "🏆 VCP+Minervini",
             "📊 VDU Breakouts",
             "🚀 Gap-Ups",
             "📈 Above 20 & 50 SMA",
@@ -3923,6 +3962,17 @@ with tab_history:
             "🌊 Wave Trend",
             "📊 Volume Profile"
         ])
+        
+        with sub_vcp_minervini:
+            h_vcp_minervini = database.get_cached_vcp_minervini(selected_date_str)
+            if not h_vcp_minervini:
+                st.info(f"ℹ️ No VCP+Minervini setups were recorded on {selected_date_str}.")
+            else:
+                st.markdown(f"**🏆 VCP+Minervini on {selected_date_str} ({len(h_vcp_minervini)})**")
+                df_vcp = pd.DataFrame(h_vcp_minervini)
+                if not df_vcp.empty:
+                    df_vcp = df_vcp.sort_values(by="rs_rating", ascending=False)
+                    st.dataframe(df_vcp.style.format({"rs_rating": "{:.1f}", "vcp_range_pct": "{:.1f}%", "vcp10_range_pct": "{:.1f}%", "vcp15_range_pct": "{:.1f}%"}), use_container_width=True, hide_index=True)
         
         # 1. Historical Breakouts
         with sub_breakout:

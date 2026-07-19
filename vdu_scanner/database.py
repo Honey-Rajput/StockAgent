@@ -229,6 +229,34 @@ def init_db() -> bool:
     queries = [
 
         """
+        CREATE TABLE IF NOT EXISTS scanned_near_30sma_weekly (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            sma30 DOUBLE PRECISION,
+            dist_pct DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+        
+        CREATE TABLE IF NOT EXISTS scanned_near_30sma_monthly (
+            id SERIAL PRIMARY KEY,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            sma30 DOUBLE PRECISION,
+            dist_pct DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+
         CREATE TABLE IF NOT EXISTS scanned_near_30sma (
             id SERIAL PRIMARY KEY,
             symbol VARCHAR(20) NOT NULL,
@@ -1107,6 +1135,58 @@ def get_available_scan_dates() -> list[str]:
         if conn:
             conn.close()
     return dates
+
+
+def cleanup_old_data(days: int = 30):
+    """
+    Deletes scan records older than `days` to prevent the database from growing too large.
+    """
+    tables = [
+        "scanned_breakouts",
+        "scanned_squeezes",
+        "scanned_gapups",
+        "scanned_trend_setups",
+        "scanned_wt_cross",
+        "scanned_vcs",
+        "scanned_vpa",
+        "scanned_vpa_squeeze",
+        "scanned_stage2",
+        "scanned_volume_profile",
+        "scanned_monthly_momentum",
+        "scanned_weekly_momentum",
+        "scanned_support_rsi",
+        "scanned_ema_support",
+        "scanned_stage_analysis",
+        "scanned_zanger",
+        "scanned_vcp_minervini",
+        "scanned_near_30sma",
+        "scanned_near_30sma_weekly",
+        "scanned_near_30sma_monthly",
+        "scan_logs"
+    ]
+    
+    conn = None
+    try:
+        conn = get_connection()
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        for table in tables:
+            try:
+                # Assuming scan_date is stored as 'YYYY-MM-DD' string
+                cur.execute(f"""
+                DELETE FROM {table} 
+                WHERE TO_DATE(scan_date, 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '{days} days'
+                """)
+            except Exception as e:
+                print(f"Failed to cleanup table {table}: {e}")
+                
+        cur.close()
+    except Exception as e:
+        print(f"Database cleanup error: {e}")
+    finally:
+        if conn:
+            put_connection(conn)
 
 def get_zanger_scan_dates() -> list[str]:
     """
@@ -3586,3 +3666,73 @@ def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
     finally:
         if conn: conn.close()
 
+
+def save_near_30sma_weekly_only(date_str, near_30sma_list):
+    conn = get_connection()
+    if not conn:
+        return False
+    try:
+        cur = conn.cursor()
+        query = """
+            INSERT INTO scanned_near_30sma_weekly (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, scan_date) DO NOTHING
+        """
+        for r in near_30sma_list:
+            cur.execute(query, (
+                str(r['symbol']),
+                str(r.get('company_name', '')),
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                int(r.get('volume', 0)),
+                float(r['sma30']),
+                float(r['dist_pct']),
+                date_str
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving Weekly Near 30SMA: {e}")
+        return False
+    finally:
+        if conn:
+            try:
+                put_connection(conn)
+            except Exception:
+                pass
+
+def save_near_30sma_monthly_only(date_str, near_30sma_list):
+    conn = get_connection()
+    if not conn:
+        return False
+    try:
+        cur = conn.cursor()
+        query = """
+            INSERT INTO scanned_near_30sma_monthly (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, scan_date) DO NOTHING
+        """
+        for r in near_30sma_list:
+            cur.execute(query, (
+                str(r['symbol']),
+                str(r.get('company_name', '')),
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                int(r.get('volume', 0)),
+                float(r['sma30']),
+                float(r['dist_pct']),
+                date_str
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving Monthly Near 30SMA: {e}")
+        return False
+    finally:
+        if conn:
+            try:
+                put_connection(conn)
+            except Exception:
+                pass
