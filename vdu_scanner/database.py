@@ -3803,7 +3803,7 @@ def save_near_30sma_weekly_only(date_str, near_30sma_list):
     finally:
         if conn:
             try:
-                put_connection(conn)
+                conn.close()
             except Exception:
                 pass
 
@@ -3838,6 +3838,6 @@ def save_near_30sma_monthly_only(date_str, near_30sma_list):
     finally:
         if conn:
             try:
-                put_connection(conn)
+                conn.close()
             except Exception:
                 pass
