@@ -1845,7 +1845,7 @@ def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
         if conn:
             conn.close()
 
-def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], wt_cross: list[dict], total_scanned: int, vcs_results: list[dict] = None, vpa_results: list[dict] = None) -> bool:
+def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], wt_cross: list[dict], total_scanned: int, vcs_results: list[dict] = None, vpa_results: list[dict] = None, near_30sma_list: list[dict] = None) -> bool:
     """
     Saves the full market scan results and logs the completion.
     Uses clean transactions to perform daily upsert overrides.
