@@ -42,7 +42,17 @@ def get_pool():
             if _pool is None:
                 if not DATABASE_URL:
                     raise ValueError("Database_URL is not set in environment.")
-                _pool = ThreadedConnectionPool(1, 40, DATABASE_URL, cursor_factory=DictCursor)
+                import time
+                for attempt in range(3):
+                    try:
+                        _pool = ThreadedConnectionPool(1, 40, DATABASE_URL, cursor_factory=DictCursor)
+                        break
+                    except Exception as e:
+                        if attempt < 2:
+                            print(f"Warning: DB pool init failed, retrying... ({e})")
+                            time.sleep(2)
+                        else:
+                            raise e
     return _pool
 
 class PooledConnection:
@@ -53,7 +63,7 @@ class PooledConnection:
         
     def __getattr__(self, name):
         return getattr(self._conn, name)
-        
+
     def cursor(self, *args, **kwargs):
         return self._conn.cursor(*args, **kwargs)
         
@@ -62,42 +72,59 @@ class PooledConnection:
         
     def rollback(self):
         self._conn.rollback()
-        
+
     def close(self):
-        if self._conn:
-            try:
-                self._pool.putconn(self._conn)
-            except Exception:
-                pass
+        # Return connection to pool instead of closing it
+        if self._pool and self._conn:
+            self._pool.putconn(self._conn)
             self._conn = None
+            
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 def get_connection():
-    pool = get_pool()
-    try:
-        conn = pool.getconn()
-    except Exception:
-        # Fallback to direct connection if pool fails
-        conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
-        conn.autocommit = True
-        return conn
-        
-    try:
-        conn.autocommit = True
-        # Fast ping to ensure connection is alive
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1")
-    except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.ProgrammingError):
-        # Connection is dead, discard and get a fresh one
+    import time
+    for attempt in range(3):
         try:
-            pool.putconn(conn, close=True)
-            time.sleep(1)
-            conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
+            pool = get_pool()
+            conn = pool.getconn()
             conn.autocommit = True
-            return conn
-        except Exception:
-            pass
             
-    return PooledConnection(pool, conn)
+            # Fast ping to ensure connection is alive
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            
+            return PooledConnection(pool, conn)
+            
+        except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.ProgrammingError) as e:
+            if 'conn' in locals() and conn:
+                try:
+                    pool.putconn(conn, close=True)
+                except:
+                    pass
+            
+            if attempt < 2:
+                print(f"Warning: DB connection ping failed, retrying... ({e})")
+                time.sleep(2)
+            else:
+                try:
+                    # Last resort direct connection
+                    conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
+                    conn.autocommit = True
+                    return PooledConnection(pool, conn)
+                except Exception as direct_e:
+                    raise direct_e
+        except Exception as e:
+            # For pool empty or other errors, try direct
+            try:
+                conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
+                conn.autocommit = True
+                return PooledConnection(pool, conn)
+            except:
+                raise e
 
 def execute_values(cur, query, argslist, page_size=100):
     psycopg2.extras.execute_values(cur, query, argslist, page_size=page_size)
@@ -1013,6 +1040,32 @@ def has_scanned_today(date_str: str) -> dict | None:
         if conn:
             conn.close()
 
+def get_best_scan_date() -> str:
+    """
+    Returns the scan_date of the run with the highest total_scanned.
+    Ties are broken by most recent scan_date.
+    """
+    query = """
+    SELECT scan_date FROM scan_logs
+    WHERE total_scanned > 0
+    ORDER BY total_scanned DESC, scan_date DESC
+    LIMIT 1;
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(query)
+        row = cur.fetchone()
+        if row and row[0]:
+            return row[0].strftime("%Y-%m-%d") if hasattr(row[0], 'strftime') else str(row[0])
+    except Exception:
+        pass
+    finally:
+        if conn:
+            conn.close()
+    return None
+
 def get_available_scan_dates() -> list[str]:
     """
     Retrieves all dates that have completed daily scan logs, sorted descending.
@@ -1859,6 +1912,15 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         conn = get_connection()
         conn.autocommit = False  # Start a single transaction for speed and safety
         cur = conn.cursor()
+        
+        # Check if existing scan is more complete
+        cur.execute("SELECT total_scanned FROM scan_logs WHERE scan_date = %s;", (date_str,))
+        existing_log = cur.fetchone()
+        if existing_log and existing_log['total_scanned'] is not None:
+            if existing_log['total_scanned'] > total_scanned:
+                print(f"Skipping save: existing scan for {date_str} has {existing_log['total_scanned']} stocks, but current scan only has {total_scanned}.")
+                conn.rollback()
+                return False
         
         # 1. Clean existing records for this date
         cur.execute("DELETE FROM scanned_breakouts WHERE scan_date = %s;", (date_str,))

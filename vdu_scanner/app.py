@@ -1019,12 +1019,15 @@ if not st.session_state.get('db_cache_checked', False):
     try:
         # Fetch the max dates for ALL tables at once
         all_latest_dates = database.get_all_latest_scan_dates()
+        best_scan_date = database.get_best_scan_date()
 
         def _load_latest(table, getter_fn, state_key, post_fn=None):
             """Helper: find own latest date for a table, then load and set session state.
             Returns the date string the data was loaded from (or None)."""
             try:
-                d = all_latest_dates.get(table)
+                # Prefer best_scan_date for breakouts to ensure we don't load a partial scan
+                d = best_scan_date if table == "scanned_breakouts" and best_scan_date else all_latest_dates.get(table)
+                
                 if d:
                     data = getter_fn(d)
                     if data:
