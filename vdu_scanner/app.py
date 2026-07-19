@@ -1005,7 +1005,8 @@ if not st.session_state.get('db_cache_checked', False):
         all_latest_dates = database.get_all_latest_scan_dates()
 
         def _load_latest(table, getter_fn, state_key, post_fn=None):
-            """Helper: find own latest date for a table, then load and set session state."""
+            """Helper: find own latest date for a table, then load and set session state.
+            Returns the date string the data was loaded from (or None)."""
             try:
                 d = all_latest_dates.get(table)
                 if d:
@@ -1014,14 +1015,19 @@ if not st.session_state.get('db_cache_checked', False):
                         st.session_state[state_key] = post_fn(data) if post_fn else data
                     else:
                         st.session_state[state_key] = []
+                    return d  # Return the date loaded
                 else:
                     st.session_state[state_key] = []
+                    return None
             except Exception as _e:
                 print(f"Error loading {state_key} from {table}: {_e}")
                 st.session_state[state_key] = []
+                return None
 
         # ── Independent loaders: each scanner uses its OWN table's latest date ──────
-        _load_latest("scanned_breakouts", database.get_cached_breakouts, "scan_results")
+        breakouts_date = _load_latest("scanned_breakouts", database.get_cached_breakouts, "scan_results")
+        # Store the breakouts date so Results tab can show "data from" and correctly look up total_scanned
+        st.session_state['scan_results_date'] = breakouts_date
         _load_latest("scanned_gapups", database.get_cached_gapups, "gapup_results")
         _load_latest("scanned_trend_setups", lambda d: database.get_cached_trend_setups(d, 'above_ma'), "above_ma_results")
         _load_latest("scanned_trend_setups", lambda d: database.get_cached_trend_setups(d, 'support_ma'), "support_ma_results")
@@ -1061,18 +1067,29 @@ if not st.session_state.get('db_cache_checked', False):
         _load_latest("scanned_vcp_minervini", database.get_cached_vcp_minervini, "vcp_minervini_results", _load_vcp_from_db)
 
         # Load scan_logs for UI metadata
-        available_dates = database.get_available_scan_dates()
-        if available_dates:
-            latest_date_str = available_dates[0]
-            cached_log = database.has_scanned_today(latest_date_str) or {}
-            st.session_state.total_scanned = cached_log.get('total_scanned', 0)
+        # IMPORTANT: Use the SAME date as the loaded breakouts (not scan_logs latest date)
+        # to avoid a mismatch where total_scanned is from a different scan than the results.
+        breakouts_scan_date = st.session_state.get('scan_results_date')
+        if breakouts_scan_date:
+            # First try to get total_scanned from the same date as the breakout data
+            cached_log = database.has_scanned_today(breakouts_scan_date) or {}
+            loaded_total = cached_log.get('total_scanned', 0)
+            # If scan_logs doesn't have this date, derive from actual breakout data
+            st.session_state.total_scanned = loaded_total or len(st.session_state.scan_results or [])
             st.session_state.failed_count = 0
-            st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
+            st.session_state.last_scanned = breakouts_scan_date + " (Loaded from DB Cache)"
         else:
-            st.session_state.total_scanned = 0
-            st.session_state.failed_count = 0
-            st.session_state.last_scanned = "Never"
-            latest_date_str = None
+            available_dates = database.get_available_scan_dates()
+            if available_dates:
+                latest_date_str = available_dates[0]
+                cached_log = database.has_scanned_today(latest_date_str) or {}
+                st.session_state.total_scanned = cached_log.get('total_scanned', 0)
+                st.session_state.failed_count = 0
+                st.session_state.last_scanned = latest_date_str + " (Loaded from DB Cache)"
+            else:
+                st.session_state.total_scanned = 0
+                st.session_state.failed_count = 0
+                st.session_state.last_scanned = "Never"
 
         # Auto-resume background AI scan for flagged symbols
         all_syms = []
@@ -2025,6 +2042,10 @@ with tab_results:
         
         if scan_data:
             total_scanned = st.session_state.total_scanned
+            # If total_scanned is 0 or less than actual breakout count, use breakout count as floor
+            # (scan_logs may not have the entry for this date)
+            if total_scanned < len(scan_data):
+                total_scanned = len(scan_data)
             flagged_count = len(scan_data)
             top_score = max(r['signal_strength'] for r in scan_data)
             avg_vol_ratio = sum(r['volume_ratio'] for r in scan_data) / flagged_count
@@ -2038,8 +2059,11 @@ with tab_results:
         m2.markdown(f'<div class="glass-card metric-glow-green"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Breakouts Identified</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#00e676;">{flagged_count}</h3></div>', unsafe_allow_html=True)
         m3.markdown(f'<div class="glass-card metric-glow-amber"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Highest Signal Score</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ffa000;">{top_score:.1f} <span style="font-size: 1.1rem; color: #94a3b8;">pts</span></h3></div>', unsafe_allow_html=True)
         m4.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Avg Volume Ratio</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{avg_vol_ratio:.2f}x</h3></div>', unsafe_allow_html=True)
-        st.markdown("---")
-        
+        # Show which date the data is from (critical transparency for cached results)
+        _scan_date_display = st.session_state.get('scan_results_date') or st.session_state.get('last_scanned', '')
+        if _scan_date_display and scan_data:
+            st.info(f"📅 **Showing scan results from: {_scan_date_display}** — Refresh auto-loaded these from the database. Click **'Run Scanner'** in the sidebar to get today's fresh results.")
+
         # 2. Main Scan Table
         # NOTE: Use len(scan_data) not total_scanned==0 because DB-loaded results
         # have scan_data populated but total_scanned may be 0 from scan_logs.
