@@ -1324,7 +1324,7 @@ if run_full or run_sma:
                 formatted = f"{formatted}.NS"
             all_tickers_ns.append(formatted)
             
-        today_date_str = datetime.now(IST_TIMEZONE).strftime('%Y-%m-%d')
+        today_date_str = get_market_date()
         cache_key_p1 = f"p1_quotes_v2_{universe_key}_{today_date_str}"
         
         if cache_key_p1 in st.session_state:

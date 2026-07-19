@@ -62,7 +62,13 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         
     df = df.sort_values('Date').reset_index(drop=True)
     last_df_date = df['Date'].iloc[-1].date()
-    today_date = datetime.now(IST_TIMEZONE).date()
+    today_raw = datetime.now(IST_TIMEZONE)
+    if today_raw.isoweekday() == 7:
+        today_date = (today_raw - pd.Timedelta(days=2)).date()
+    elif today_raw.isoweekday() == 6:
+        today_date = (today_raw - pd.Timedelta(days=1)).date()
+    else:
+        today_date = today_raw.date()
     
     # Only append the live quote if we are scanning on a Daily timeframe.
     # Otherwise, injecting a single day's quote into a Weekly/Monthly dataframe ruins the final candle.

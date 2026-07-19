@@ -110,7 +110,8 @@ def run_all_tabs_scan():
 
     print(f"Found {len(flagged_list)} breakouts, {len(above_ma_list)} above MA, {len(crossover_ma_list)} MA cross...")
     
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    from cron_scanner import get_market_date
+    date_str = get_market_date()
     trend_setups_list = above_ma_list + support_ma_list + crossover_ma_list + minervini_list
     
     database.save_scan_results(

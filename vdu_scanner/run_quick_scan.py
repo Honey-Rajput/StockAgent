@@ -78,7 +78,8 @@ def run_quick_nifty50_scan():
         
     print(f"Found {len(breakout_list)} breakouts and {len(squeeze_list)} squeezes.")
     
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    from cron_scanner import get_market_date
+    date_str = get_market_date()
     database.save_scan_results(
         date_str=date_str,
         breakouts=breakout_list,
