@@ -1369,6 +1369,8 @@ if col1.button("💾 Save Results", help="Force save all current results to the 
         # Multi-timeframe tables
         if st.session_state.get('near_30sma_weekly_results'): database.save_near_30sma_weekly_only(today_str, st.session_state['near_30sma_weekly_results'])
         if st.session_state.get('near_30sma_monthly_results'): database.save_near_30sma_monthly_only(today_str, st.session_state['near_30sma_monthly_results'])
+        if st.session_state.get('vpa_squeeze_weekly_results'): database.save_vpa_squeeze_weekly_only(today_str, st.session_state['vpa_squeeze_weekly_results'])
+        if st.session_state.get('vpa_squeeze_monthly_results'): database.save_vpa_squeeze_monthly_only(today_str, st.session_state['vpa_squeeze_monthly_results'])
         
     st.sidebar.success(f"Saved results for {today_str}!")
 
