@@ -2097,6 +2097,11 @@ with tab_results:
             def _safe_date(v):
                 if v is None:
                     return ""
+                try:
+                    if pd.isnull(v):
+                        return ""
+                except (TypeError, ValueError):
+                    pass
                 if hasattr(v, 'strftime'):
                     return v.strftime("%Y-%m-%d")
                 return str(v)
