@@ -1519,6 +1519,7 @@ if run_full or run_sma:
         stage2_list = []
         monthly_momentum_list = []
         weekly_momentum_list = []
+        near_30sma_list = []
         
         # Unpack manual dry constraints from the sidebar range slider
         min_dry = dry_zone_range[0]
@@ -1826,6 +1827,7 @@ if run_full or run_sma:
                         if res.get("stage2"): stage2_list.append(res["stage2"])
                         if res.get("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
                         if res.get("weekly_momentum"): weekly_momentum_list.append(res["weekly_momentum"])
+                        if res.get("near_30sma"): near_30sma_list.append(res["near_30sma"])
                 except Exception:
                     pass
         
