@@ -473,6 +473,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 if scan_mode in ("all", "near_30sma"):
                     from scanner import scan_near_30sma
                     res["near_30sma"] = scan_near_30sma(sym, df)
+                    res["near_30sma_weekly"] = scan_near_30sma(sym, w_df)
+                    res["near_30sma_monthly"] = scan_near_30sma(sym, m_df)
+
 
                 if res["minervini"] or res["gapup"] or res["structural_vcp"] or res["vpa"]:
                     bRet = 0.0

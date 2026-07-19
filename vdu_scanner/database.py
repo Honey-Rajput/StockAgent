@@ -1172,11 +1172,11 @@ def cleanup_old_data(days: int = 30):
         cur = conn.cursor()
         
         for table in tables:
-            try:
-                # Assuming scan_date is stored as 'YYYY-MM-DD' string
+            try:                # scan_date is stored as DATE type, except in scan_logs where it's also DATE or string.
+                # In PostgreSQL, we can just cast to DATE or compare directly.
                 cur.execute(f"""
                 DELETE FROM {table} 
-                WHERE TO_DATE(scan_date, 'YYYY-MM-DD') < CURRENT_DATE - INTERVAL '{days} days'
+                WHERE scan_date::DATE < CURRENT_DATE - INTERVAL '{days} days'
                 """)
             except Exception as e:
                 print(f"Failed to cleanup table {table}: {e}")
@@ -1186,7 +1186,13 @@ def cleanup_old_data(days: int = 30):
         print(f"Database cleanup error: {e}")
     finally:
         if conn:
-            put_connection(conn)
+            try:
+                pool = get_pool()
+                if pool:
+                    pool.putconn(conn)
+            except Exception:
+                pass
+
 
 def get_zanger_scan_dates() -> list[str]:
     """
