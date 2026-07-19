@@ -1285,26 +1285,10 @@ if run_full or run_sma:
         yf_period = "2y"
         yf_interval = "1d"
 
-    # Resolve the universe selected in the sidebar
-    if "Top 1000" in universe_selection or "1000" in universe_selection:
-        universe_key = "TOP 1000"
-    elif "NIFTY 500" in universe_selection:
-        universe_key = "NIFTY 500"
-    elif "NIFTY 100" in universe_selection:
-        universe_key = "NIFTY 100"
-    elif "NIFTY 50" in universe_selection:
-        universe_key = "NIFTY 50"
-    elif "WATCHLIST" in universe_selection.upper():
-        universe_key = "WATCHLIST"
-    else:
-        universe_key = "ALL NSE"
-        
-    if universe_key == "WATCHLIST":
-        import watchlist
-        wl = watchlist.load_watchlist()
-        raw_symbols = [s for s in wl['symbol'].tolist() if pd.notna(s)]
-    else:
-        raw_symbols = get_index_stocks(universe_key)
+    # Universe is hardcoded to Top 1000 NSE stocks
+    universe_key = "TOP 1000"
+    from data_fetcher import get_top1000_nse_symbols
+    raw_symbols = get_top1000_nse_symbols()
         
     if not raw_symbols:
         st.sidebar.error("❌ No symbols found to scan.")
@@ -3454,31 +3438,14 @@ with tab_wave:
     run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", width="stretch")
     
     if run_wt_btn:
-        # Resolve the universe selected in the global sidebar
-        if "Top 1000" in universe_selection or "1000" in universe_selection:
-            universe_key = "TOP 1000"
-        elif "NIFTY 500" in universe_selection:
-            universe_key = "NIFTY 500"
-        elif "NIFTY 100" in universe_selection:
-            universe_key = "NIFTY 100"
-        elif "NIFTY 50" in universe_selection:
-            universe_key = "NIFTY 50"
-        elif "WATCHLIST" in universe_selection.upper():
-            universe_key = "WATCHLIST"
-        else:
-            universe_key = "ALL NSE"
-            
-        if universe_key == "WATCHLIST":
-            import watchlist
-            wl = watchlist.load_watchlist()
-            raw_symbols = [s for s in wl['symbol'].tolist() if pd.notna(s)]
-        else:
-            from data_fetcher import get_index_stocks
-            raw_symbols = get_index_stocks(universe_key)
+        # Universe is hardcoded to Top 1000 NSE stocks
+        universe_key = "TOP 1000"
+        from data_fetcher import get_top1000_nse_symbols
+        raw_symbols = get_top1000_nse_symbols()
             
         symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
             
-        with st.spinner(f"Running Advanced WaveTrend {wt_timeframe} scan on {universe_key} ({len(symbols_to_scan)} stocks)..."):
+        with st.spinner(f"Running Advanced WaveTrend {wt_timeframe} scan on Top 1000 ({len(symbols_to_scan)} stocks)..."):
             from scanner import scan_wt_cross
             
             # Map timeframes
@@ -4633,24 +4600,9 @@ with tab_vcs:
             import yfinance as yf
             from zanger_scanner import ZangerConfig, scan_zanger, get_latest_signal, rank_signals
             
-            if "NIFTY 500" in universe_selection:
-                universe_key = "NIFTY 500"
-            elif "NIFTY 100" in universe_selection:
-                universe_key = "NIFTY 100"
-            elif "NIFTY 50" in universe_selection:
-                universe_key = "NIFTY 50"
-            elif "WATCHLIST" in universe_selection.upper():
-                universe_key = "WATCHLIST"
-            else:
-                universe_key = "ALL NSE"
-                
-            if universe_key == "WATCHLIST":
-                import watchlist
-                wl = watchlist.load_watchlist()
-                zanger_candidates = [s for s in wl['symbol'].tolist() if pd.notna(s)]
-            else:
-                from data_fetcher import get_index_stocks
-                zanger_candidates = get_index_stocks(universe_key)
+            # Universe is hardcoded to Top 1000 NSE stocks
+            from data_fetcher import get_top1000_nse_symbols
+            zanger_candidates = get_top1000_nse_symbols()
             
             zanger_results = []
             chunk_size = 50
