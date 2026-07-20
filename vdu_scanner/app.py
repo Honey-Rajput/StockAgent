@@ -1052,6 +1052,31 @@ if st.session_state.weekly_momentum_results is None:
         except Exception as e:
             print(f"Error loading weekly cache on boot: {e}")
 
+
+# --- Authentication System ---
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+
+if not st.session_state['authenticated']:
+    with st.sidebar.expander("🔐 Admin Login", expanded=False):
+        with st.form("login_form"):
+            user = st.text_input("Username")
+            pwd = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                if user == "admin" and pwd == "vdu123":
+                    st.session_state['authenticated'] = True
+                    st.toast("Logged in successfully!", icon="✅")
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials")
+else:
+    if st.sidebar.button("🔓 Logout", use_container_width=True):
+        st.session_state['authenticated'] = False
+        st.rerun()
+
+is_admin = st.session_state['authenticated']
+# -----------------------------
+
 st.sidebar.markdown('### ⚡ Performance Settings')
 enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", value=False, help="Disable this on Streamlit Cloud to prevent UI freezing due to heavy thread execution.")
 
@@ -1333,7 +1358,7 @@ st.sidebar.markdown('---')
 run_full = st.sidebar.button("🔍 Run Full Scanner", use_container_width=True)
 
 col1, col2 = st.sidebar.columns(2)
-if col1.button("💾 Save Results", help="Force save all current results to the DB for today."):
+if col1.button("💾 Save Results", help="Force save all current results to the DB for today.", disabled=not is_admin):
     import database
     from datetime import datetime
     import pytz
@@ -3148,7 +3173,7 @@ with tab_ai:
                 btn_batch_scan = btn_cols[0].button(f"🤖 Trigger Background AI Scan ({unscanned_count} Pending)", key="batch_ai_scan_action_btn", width="stretch")
                 
             if len(active_flagged_symbols) > 0:
-                btn_force_batch_scan = btn_cols[1].button(f"🔄 Force Re-scan All ({len(active_flagged_symbols)} Flagged Candidates)", key="force_batch_ai_scan_action_btn", width="stretch")
+                btn_force_batch_scan = btn_cols[1].button(f"🔄 Force Re-scan All ({len(active_flagged_symbols)} Flagged Candidates)", key="force_batch_ai_scan_action_btn", width="stretch", disabled=not is_admin)
                 
             if btn_batch_scan or btn_force_batch_scan:
                 to_scan_list = []
@@ -3601,7 +3626,7 @@ with tab_wave:
     if 'wt_results_by_tf' not in st.session_state:
         st.session_state.wt_results_by_tf = {}
         
-    run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", width="stretch")
+    run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", width="stretch", disabled=not is_admin)
     
     if run_wt_btn:
         # Universe is hardcoded to Top 1000 NSE stocks
@@ -5263,7 +5288,7 @@ with tab_vpa:
 
     col1, col2 = st.columns([3, 7])
     with col1:
-        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch")
+        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch", disabled=not is_admin)
     
     if run_vpa_btn:
         st.session_state.vpa_results = []
@@ -5642,7 +5667,7 @@ with tab_vpa_squeeze:
         except Exception as e:
             pass
         
-    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch")
+    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch", disabled=not is_admin)
     if run_vpa_squeeze_btn:
         st.session_state.vpa_squeeze_results = []
         with st.spinner("Running VPA Squeeze Scan..."):
