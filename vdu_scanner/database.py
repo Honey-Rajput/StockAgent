@@ -897,7 +897,7 @@ def get_pattern_by_date(symbol: str, date_str: str) -> dict | None:
         if row:
             row_dict = dict(row)
             # Standardize date output as string
-            row_dict['analyzed_date'] = row_dict['analyzed_date'].strftime("%Y-%m-%d")
+            row_dict['analyzed_date'] = row_dict['analyzed_date'].strftime('%Y-%m-%d') if hasattr(row_dict['analyzed_date'], 'strftime') else str(row_dict['analyzed_date'])
             return row_dict
         return None
     except Exception as e:
@@ -928,7 +928,7 @@ def get_all_patterns_by_date(date_str: str) -> dict:
         for row in rows:
             row_dict = dict(row)
             # Standardize date output as string
-            row_dict['analyzed_date'] = row_dict['analyzed_date'].strftime("%Y-%m-%d")
+            row_dict['analyzed_date'] = row_dict['analyzed_date'].strftime('%Y-%m-%d') if hasattr(row_dict['analyzed_date'], 'strftime') else str(row_dict['analyzed_date'])
             results[row_dict['symbol']] = row_dict
     except Exception as e:
         print(f"Error loading cached patterns from database: {e}")
@@ -1006,8 +1006,8 @@ def get_recent_patterns(limit: int = 10) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['analyzed_date'] = r_dict['analyzed_date'].strftime("%Y-%m-%d")
-            r_dict['created_at'] = r_dict['created_at'].strftime("%Y-%m-%d %I:%M %p")
+            r_dict['analyzed_date'] = r_dict['analyzed_date'].strftime('%Y-%m-%d') if hasattr(r_dict['analyzed_date'], 'strftime') else str(r_dict['analyzed_date'])
+            r_dict['created_at'] = r_dict['created_at'].strftime('%Y-%m-%d %I:%M %p') if hasattr(r_dict['created_at'], 'strftime') else str(r_dict['created_at'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading recent patterns from database: {e}")
@@ -1139,11 +1139,11 @@ def cleanup_old_data(days: int = 30):
         cur = conn.cursor()
         
         for table in tables:
-            try:                # scan_date is stored as DATE type, except in scan_logs where it's also DATE or string.
-                # In PostgreSQL, we can just cast to DATE or compare directly.
+            try:
+                # SQLite syntax for date comparison
                 cur.execute(f"""
                 DELETE FROM {table} 
-                WHERE scan_date::DATE < CURRENT_DATE - INTERVAL '{days} days'
+                WHERE date(scan_date) < date('now', '-{days} days')
                 """)
             except Exception as e:
                 print(f"Failed to cleanup table {table}: {e}")
@@ -1238,7 +1238,7 @@ def get_cached_breakouts(date_str: str) -> list[dict]:
             r_dict = dict(r)
             r_dict['dry_start_date'] = pd.to_datetime(r_dict['dry_start_date'])
             r_dict['dry_end_date'] = pd.to_datetime(r_dict['dry_end_date'])
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached breakouts from database: {e}")
@@ -1268,7 +1268,7 @@ def get_cached_squeezes(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached squeezes from database: {e}")
@@ -1297,7 +1297,7 @@ def get_cached_gapups(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached gapups from database: {e}")
@@ -1329,7 +1329,7 @@ def get_cached_trend_setups(date_str: str, setup_type: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached trend setups for {setup_type} from database: {e}")
@@ -1359,7 +1359,7 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             # Ensure buy_signal is always a bool (may be None from old rows)
             r_dict['buy_signal'] = bool(r_dict.get('buy_signal', False))
             r_dict['wt2_value'] = float(r_dict.get('wt2_value') or 0.0)
@@ -1396,7 +1396,7 @@ def get_cached_vcs(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             r_dict['vcs_score'] = float(r_dict.get('vcs_score') or 0.0)
             r_dict['volume'] = int(r_dict.get('volume') or 0)
             results.append(r_dict)
@@ -1433,7 +1433,7 @@ def get_cached_vpa(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             r_dict['volume'] = int(r_dict.get('volume') or 0)
             
             r_dict['daily'] = {
@@ -1781,7 +1781,7 @@ def get_cached_stage2(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             # Convert decimal back to float if needed
             for k in ['cmp', 'buy_price', 'exit_price', 'target_price', 'score', 'historical_high', 'base_bottom', 'sma7', 'extension', 'rsi', 'cci']:
                 if r_dict.get(k) is not None:
@@ -2465,7 +2465,7 @@ def get_cached_monthly_momentum(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached Monthly Momentum from database: {e}")
@@ -2495,7 +2495,7 @@ def get_cached_weekly_momentum(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error loading cached Weekly Momentum from database: {e}")
@@ -2607,7 +2607,7 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
                COUNT(DISTINCT scan_date) as days_appeared,
                MIN(scan_date) as first_seen_date, 
                MAX(scan_date) as last_seen_date,
-               STRING_AGG(DISTINCT source, ', ') as strategies,
+               GROUP_CONCAT(DISTINCT source) as strategies,
                MAX(score) as max_score
         FROM all_scans
         GROUP BY symbol
@@ -2619,11 +2619,14 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
     SELECT a.*, v.daily_rsi as rsi, v.daily_cci as cci,
            CASE WHEN a.first_seen_date = (SELECT max_date FROM latest_date) THEN TRUE ELSE FALSE END as is_new_today
     FROM aggregated a
-    LEFT JOIN LATERAL (
-        SELECT daily_rsi, daily_cci FROM scanned_vpa
-        WHERE symbol = a.symbol
-        ORDER BY scan_date DESC LIMIT 1
-    ) v ON TRUE
+    LEFT JOIN (
+        SELECT symbol, daily_rsi, daily_cci
+        FROM (
+            SELECT symbol, daily_rsi, daily_cci,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY scan_date DESC) as rn
+            FROM scanned_vpa
+        ) WHERE rn = 1
+    ) v ON a.symbol = v.symbol
     ORDER BY 
         CASE WHEN a.first_seen_date = (SELECT max_date FROM latest_date) THEN 0 ELSE 1 END,
         a.days_appeared DESC, a.total_appearances DESC
@@ -2639,8 +2642,8 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['first_seen_date'] = r_dict['first_seen_date'].strftime('%Y-%m-%d')
-            r_dict['last_seen_date'] = r_dict['last_seen_date'].strftime('%Y-%m-%d')
+            r_dict['first_seen_date'] = r_dict['first_seen_date'].strftime('%Y-%m-%d') if hasattr(r_dict['first_seen_date'], 'strftime') else str(r_dict['first_seen_date'])
+            r_dict['last_seen_date'] = r_dict['last_seen_date'].strftime('%Y-%m-%d') if hasattr(r_dict['last_seen_date'], 'strftime') else str(r_dict['last_seen_date'])
             r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
             r_dict['cci'] = float(r_dict.get('cci') or 0.0)
             results.append(r_dict)
@@ -2794,7 +2797,7 @@ def get_cached_support_rsi(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
             r_dict['cci'] = float(r_dict.get('cci') or 0.0)
             r_dict['support_price'] = float(r_dict.get('support_price') or 0.0)
@@ -2841,7 +2844,7 @@ def get_latest_support_rsi() -> tuple[list[dict], str | None]:
         for r in rows:
             r_dict = dict(r)
             scan_date = r_dict['scan_date'].strftime("%Y-%m-%d") if scan_date is None else scan_date
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
             r_dict['cci'] = float(r_dict.get('cci') or 0.0)
             r_dict['support_price'] = float(r_dict.get('support_price') or 0.0)
@@ -2895,7 +2898,7 @@ def get_rsi_oversold(date_str: str, rsi_threshold: float = 35.0) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             rsi_val = float(r_dict.get('rsi') or 0.0)
             r_dict['rsi'] = rsi_val
             r_dict['cci'] = float(r_dict.get('cci') or 0.0)
@@ -3016,7 +3019,7 @@ def get_latest_rsi_wt_combo() -> tuple[list[dict], str | None]:
         for r in rows:
             r_dict = dict(r)
             scan_date = r_dict['scan_date'].strftime("%Y-%m-%d") if scan_date is None else scan_date
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
             r_dict['wt_value'] = float(r_dict.get('wt_value') or 0.0)
             r_dict['wt2_value'] = float(r_dict.get('wt2_value') or 0.0)
@@ -3107,7 +3110,7 @@ def get_cached_ema_support(date_str: str) -> list:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error fetching cached BB Squeeze: {e}")
@@ -3236,7 +3239,7 @@ def get_cached_stage_analysis(date_str: str) -> list[dict]:
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime("%Y-%m-%d")
+            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
             results.append(r_dict)
     except Exception as e:
         print(f"Error fetching cached stage analysis: {e}")
