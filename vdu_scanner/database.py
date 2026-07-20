@@ -3174,7 +3174,7 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
             INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found) 
             VALUES (?, ?, 0, 0)
             ON CONFLICT (scan_date) DO UPDATE SET
-                total_scanned = GREATEST(scan_logs.total_scanned, EXCLUDED.total_scanned),
+                total_scanned = MAX(scan_logs.total_scanned, EXCLUDED.total_scanned),
                 completed_at = CURRENT_TIMESTAMP;
         """, (date_str, int(total_scanned)))
         
