@@ -1731,8 +1731,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
     try:
         # Check Daily VPA
         daily_trends = calc_vpa_trends(df)
-        if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] != 1:
-            return None # Must be fully green
+        if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] == -1:
+            return None # Must be green for Major/Mid. Minor can be green or yellow (0).
             
         # Calculate SMAs
         close_series = df['Close']

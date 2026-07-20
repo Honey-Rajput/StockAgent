@@ -470,7 +470,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                     # EMA Support (repurposed from ema_support)
                     from scanner import scan_ema_support
                     res["ema_support"] = scan_ema_support(sym, df)
-                if scan_mode in ("all", "near_30sma"):
+                if scan_mode in ("all", "full", "near_30sma"):
                     from scanner import scan_near_30sma
                     res["near_30sma"] = scan_near_30sma(sym, df)
                     res["near_30sma_weekly"] = scan_near_30sma(sym, w_df)
