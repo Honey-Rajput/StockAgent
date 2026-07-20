@@ -1382,7 +1382,7 @@ if col2.button("📥 Fetch Latest", help="Fetch the latest saved results from DB
     if latest_date_str:
         with st.spinner(f"Loading data for {latest_date_str}..."):
             # Manually load all data from database to session state
-            st.session_state.scan_results = database.get_cached_master_scans(latest_date_str)
+            st.session_state.scan_results = database.get_cached_breakouts(latest_date_str)
             st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(latest_date_str)
             st.session_state.gapup_results = database.get_cached_gapups(latest_date_str)
             st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str)
