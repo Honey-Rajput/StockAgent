@@ -1153,13 +1153,7 @@ def cleanup_old_data(days: int = 30):
         print(f"Database cleanup error: {e}")
     finally:
         if conn:
-            try:
-                pass
-                if pool:
-                    pass
-            except Exception:
-                pass
-
+            conn.close()
 
 def get_zanger_scan_dates() -> list[str]:
     """
