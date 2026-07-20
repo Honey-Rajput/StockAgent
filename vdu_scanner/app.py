@@ -1362,7 +1362,7 @@ if col1.button("💾 Save Results", help="Force save all current results to the 
         if st.session_state.get('support_rsi_results'): database.save_support_rsi_only(today_str, st.session_state['support_rsi_results'])
         if st.session_state.get('stage_analysis_results'): database.save_stage_analysis_only(today_str, st.session_state['stage_analysis_results'])
         if st.session_state.get('ema_support_results'): database.save_ema_support_only(today_str, st.session_state['ema_support_results'])
-        if st.session_state.get('dan_zanger_results'): database.save_zanger_scan(today_str, "1d", st.session_state['dan_zanger_results'])
+        if st.session_state.get('zanger_results'): database.save_zanger_scan(today_str, "1d", st.session_state['zanger_results'])
         if st.session_state.get('vcp_minervini_results'): database.save_vcp_minervini_scan(today_str, st.session_state['vcp_minervini_results'])
         if st.session_state.get('vp_results'): database.save_volume_profile_only(today_str, st.session_state['vp_results'])
         
