@@ -1517,8 +1517,8 @@ if run_full or run_sma:
 
             _db_quotes = {}
             if not _market_open:
-                # Market is closed — check if today's data is already in Turso
-                status_box.text("Phase 1/3: Checking Turso DB for today's cached quotes...")
+                # Market is closed — check if today's data is already in the database
+                status_box.text("Phase 1/3: Checking Local Database for today's cached quotes...")
                 try:
                     import concurrent.futures as _p1_cf
                     with _p1_cf.ThreadPoolExecutor(max_workers=1) as _p1_tex:
@@ -1543,7 +1543,7 @@ if run_full or run_sma:
                         high_price_map[_sym]   = _q["high"]
                         low_price_map[_sym]    = _q["low"]
                         volume_map[_sym]       = _q["volume"]
-                status_box.text(f"Phase 1/3: ✅ Loaded {len(close_price_map)} quotes from Turso DB (skipped Yahoo Finance!)")
+                status_box.text(f"Phase 1/3: ✅ Loaded {len(close_price_map)} quotes from Local Database (skipped Yahoo Finance!)")
                 prog_bar.progress(1.0)
             else:
                 # ⬇️ Download from Yahoo Finance (first scan of the day / market open)
