@@ -3788,11 +3788,11 @@ def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
             cur.execute(insert_query, (
                 r.get('symbol', ''),
                 r.get('company_name', ''),
-                r.get('cmp', 0.0),
-                r.get('day_change_pct', 0.0),
-                r.get('volume', 0),
-                r.get('sma30', 0.0),
-                r.get('dist_pct', 0.0),
+                float(r.get('cmp', 0.0)),
+                float(r.get('day_change_pct', 0.0)),
+                int(r.get('volume', 0)),
+                float(r.get('sma30', 0.0)),
+                float(r.get('dist_pct', 0.0)),
                 date_str
             ))
             
