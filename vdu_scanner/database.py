@@ -10,10 +10,8 @@ load_dotenv(dotenv_path=env_path)
 
 DATABASE_URL = os.getenv("DATA_URL") or os.getenv("Database_URL") or os.getenv("Database_Url")
 
-import psycopg2
-import psycopg2.extras
-from psycopg2.extras import DictCursor, RealDictCursor
-from psycopg2.pool import ThreadedConnectionPool
+import sqlite3
+import json
 import threading
 import time
 
@@ -32,34 +30,13 @@ def safe_date_str(val):
         return None
     return s
 
-_pool = None
-_pool_lock = threading.Lock()
-
-def get_pool():
-    global _pool
-    if _pool is None:
-        with _pool_lock:
-            if _pool is None:
-                if not DATABASE_URL:
-                    raise ValueError("Database_URL is not set in environment.")
-                import time
-                for attempt in range(3):
-                    try:
-                        _pool = ThreadedConnectionPool(1, 40, DATABASE_URL, cursor_factory=DictCursor)
-                        break
-                    except Exception as e:
-                        if attempt < 2:
-                            print(f"Warning: DB pool init failed, retrying... ({e})")
-                            time.sleep(2)
-                        else:
-                            raise e
-    return _pool
+DB_PATH = os.path.join(parent_dir, "scanner_data.db")
+_conn = None
+_conn_lock = threading.Lock()
 
 class PooledConnection:
-    def __init__(self, pool, conn):
-        self._pool = pool
+    def __init__(self, conn):
         self._conn = conn
-        self._conn.autocommit = True
         
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -74,13 +51,8 @@ class PooledConnection:
         self._conn.rollback()
 
     def close(self):
-        # Return connection to pool instead of closing it
-        if self._pool and self._conn:
-            self._pool.putconn(self._conn)
-            self._conn = None
-        elif self._conn:
-            self._conn.close()
-            self._conn = None
+        # We use a single shared connection for SQLite in this app for simplicity
+        pass
             
     def __enter__(self):
         return self
@@ -89,47 +61,18 @@ class PooledConnection:
         self.close()
 
 def get_connection():
-    import time
-    for attempt in range(3):
-        try:
-            pool = get_pool()
-            conn = pool.getconn()
-            conn.autocommit = True
-            
-            # Fast ping to ensure connection is alive
-            with conn.cursor() as cur:
-                cur.execute("SELECT 1")
-            
-            return PooledConnection(pool, conn)
-            
-        except (psycopg2.OperationalError, psycopg2.InterfaceError, psycopg2.ProgrammingError) as e:
-            if 'conn' in locals() and conn:
-                try:
-                    pool.putconn(conn, close=True)
-                except:
-                    pass
-            
-            if attempt < 2:
-                print(f"Warning: DB connection ping failed, retrying... ({e})")
-                time.sleep(2)
-            else:
-                try:
-                    # Last resort direct connection
-                    conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
-                    conn.autocommit = True
-                    return PooledConnection(None, conn)
-                except Exception as direct_e:
-                    raise direct_e
-        except Exception as e:
-            # For pool empty or other errors, try direct
-            try:
-                conn = psycopg2.connect(DATABASE_URL, cursor_factory=DictCursor)
-                conn.autocommit = True
-                return PooledConnection(None, conn)
-            except:
-                raise e
+    global _conn
+    if _conn is None:
+        with _conn_lock:
+            if _conn is None:
+                _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+                _conn.row_factory = sqlite3.Row
+                # enable WAL mode for better concurrency
+                _conn.execute('pragma journal_mode=wal')
+    return PooledConnection(_conn)
 
 def execute_values(cur, query, argslist, page_size=100):
+
     psycopg2.extras.execute_values(cur, query, argslist, page_size=page_size)
 
 
@@ -151,10 +94,10 @@ def get_today_quotes(symbols: list, date_str: str) -> dict:
         clean_symbols = [s.strip().upper().replace(".NS", "") for s in symbols]
         for i in range(0, len(clean_symbols), chunk_size):
             chunk = clean_symbols[i:i + chunk_size]
-            placeholders = ",".join(["%s" for _ in chunk])
+            placeholders = ",".join(["?" for _ in chunk])
             cur.execute(
                 f"SELECT symbol, open, high, low, close, volume FROM historical_ohlcv "
-                f"WHERE timeframe='Daily (1d)' AND date=%s AND symbol IN ({placeholders})",
+                f"WHERE timeframe='Daily (1d)' AND date=? AND symbol IN ({placeholders})",
                 [date_str] + chunk
             )
             for row in cur.fetchall():
@@ -190,7 +133,7 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
         
         upsert_query = """
             INSERT INTO historical_ohlcv (symbol, timeframe, date, open, high, low, close, volume)
-            VALUES (%s, 'Daily (1d)', %s, %s, %s, %s, %s, %s)
+            VALUES (?, 'Daily (1d)', ?, ?, ?, ?, ?, ?)
             ON CONFLICT (symbol, timeframe, date) 
             DO UPDATE SET 
                 open = EXCLUDED.open,
@@ -230,7 +173,7 @@ def init_db() -> bool:
 
         """
         CREATE TABLE IF NOT EXISTS scanned_near_30sma_weekly (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -244,7 +187,7 @@ def init_db() -> bool:
         );
         
         CREATE TABLE IF NOT EXISTS scanned_near_30sma_monthly (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -258,7 +201,7 @@ def init_db() -> bool:
         );
 
         CREATE TABLE IF NOT EXISTS scanned_near_30sma (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -287,7 +230,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS ai_chart_patterns (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             pattern_name VARCHAR(50) NOT NULL,
             confidence VARCHAR(20) NOT NULL,
@@ -301,7 +244,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_breakouts (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -330,7 +273,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_squeezes (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -351,7 +294,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_gapups (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             prev_close DOUBLE PRECISION,
@@ -372,7 +315,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_trend_setups (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -401,7 +344,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_wt_cross (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -435,7 +378,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_monthly_momentum (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -462,7 +405,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_weekly_momentum (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -490,7 +433,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_vcs (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -509,7 +452,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_vpa (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -532,7 +475,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_stage2 (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -555,7 +498,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_volume_profile (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -573,7 +516,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_stage_analysis (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -590,7 +533,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_support_rsi (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -618,7 +561,7 @@ def init_db() -> bool:
         """,
         """
         CREATE TABLE IF NOT EXISTS scanned_rsi_wt_combo (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
@@ -653,7 +596,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_zanger (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             sector VARCHAR(255),
@@ -683,19 +626,21 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_ema_support (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(200),
             cmp DOUBLE PRECISION,
             day_change_pct DOUBLE PRECISION,
-            daily_squeeze BOOLEAN,
-            weekly_squeeze BOOLEAN,
-            monthly_squeeze BOOLEAN,
-            daily_bb_width DOUBLE PRECISION,
-            weekly_bb_width DOUBLE PRECISION,
-            monthly_bb_width DOUBLE PRECISION,
-            above_50dma BOOLEAN,
-            market_cap_cr DOUBLE PRECISION,
+            setup VARCHAR(50),
+            dist_9ema DOUBLE PRECISION,
+            dist_21ema DOUBLE PRECISION,
+            crossover BOOLEAN,
+            score DOUBLE PRECISION,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            confidence VARCHAR(50),
+            recommendation TEXT,
             scan_date DATE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
@@ -707,7 +652,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_vcp_minervini (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             sector VARCHAR(200),
             close DOUBLE PRECISION,
@@ -729,7 +674,7 @@ def init_db() -> bool:
     queries.append(
         """
         CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
             company_name VARCHAR(255),
             cmp DOUBLE PRECISION,
@@ -750,22 +695,22 @@ def init_db() -> bool:
             UNIQUE(symbol, scan_date)
         );
         CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze_weekly (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
-            cmp NUMERIC(10, 2) NOT NULL,
-            day_change_pct NUMERIC(10, 2),
+            cmp REAL(10, 2) NOT NULL,
+            day_change_pct REAL(10, 2),
             volume BIGINT,
-            ma_gap_pct NUMERIC(10, 2),
+            ma_gap_pct REAL(10, 2),
             scan_date DATE NOT NULL,
             UNIQUE(symbol, scan_date)
         );
         CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze_monthly (
-            id SERIAL PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
-            cmp NUMERIC(10, 2) NOT NULL,
-            day_change_pct NUMERIC(10, 2),
+            cmp REAL(10, 2) NOT NULL,
+            day_change_pct REAL(10, 2),
             volume BIGINT,
-            ma_gap_pct NUMERIC(10, 2),
+            ma_gap_pct REAL(10, 2),
             scan_date DATE NOT NULL,
             UNIQUE(symbol, scan_date)
         );
@@ -795,7 +740,7 @@ def init_db() -> bool:
         conn = get_connection()
         cur = conn.cursor()
         for q in queries:
-            cur.execute(q)
+            cur.executescript(q)
             
         # Safely migrate existing tables if columns are missing
         migrations = [
@@ -927,7 +872,7 @@ def init_db() -> bool:
         print("Database initialized and migrated successfully.")
         return True
     except Exception as e:
-        print(f"Error initializing PostgreSQL database: {e}")
+        print(f"Error initializing SQLite database: {e}")
         return False
     finally:
         if conn:
@@ -941,7 +886,7 @@ def get_pattern_by_date(symbol: str, date_str: str) -> dict | None:
     query = """
     SELECT symbol, pattern_name, confidence, direction, analysis_text, price_data_snapshot, analyzed_date
     FROM ai_chart_patterns
-    WHERE UPPER(symbol) = %s AND analyzed_date = %s;
+    WHERE UPPER(symbol) = ? AND analyzed_date = ?;
     """
     conn = None
     try:
@@ -971,7 +916,7 @@ def get_all_patterns_by_date(date_str: str) -> dict:
     query = """
     SELECT symbol, pattern_name, confidence, direction, analysis_text, price_data_snapshot, analyzed_date
     FROM ai_chart_patterns
-    WHERE analyzed_date = %s;
+    WHERE analyzed_date = ?;
     """
     conn = None
     results = {}
@@ -1008,7 +953,7 @@ def save_pattern(
     """
     insert_query = """
     INSERT INTO ai_chart_patterns (symbol, pattern_name, confidence, direction, analysis_text, price_data_snapshot, analyzed_date)
-    VALUES (%s, %s, %s, %s, %s, %s, %s)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (symbol, analyzed_date) 
     DO UPDATE SET 
         pattern_name = EXCLUDED.pattern_name,
@@ -1050,7 +995,7 @@ def get_recent_patterns(limit: int = 10) -> list[dict]:
     SELECT symbol, pattern_name, confidence, direction, analysis_text, analyzed_date, created_at
     FROM ai_chart_patterns
     ORDER BY created_at DESC
-    LIMIT %s;
+    LIMIT ?;
     """
     conn = None
     results = []
@@ -1076,7 +1021,7 @@ def has_scanned_today(date_str: str) -> dict | None:
     """
     Checks if a full market scan was logged on a specific day.
     """
-    query = "SELECT scan_date, total_scanned, breakouts_found, squeezes_found FROM scan_logs WHERE scan_date = %s AND total_scanned > 0;"
+    query = "SELECT scan_date, total_scanned, breakouts_found, squeezes_found FROM scan_logs WHERE scan_date = ? AND total_scanned > 0;"
     conn = None
     try:
         conn = get_connection()
@@ -1286,7 +1231,7 @@ def get_cached_breakouts(date_str: str) -> list[dict]:
            above_50dma, above_200dma, dry_start_date, dry_end_date, scan_date,
            buy_price, exit_price, target_price, confidence, recommendation, setup_type
     FROM scanned_breakouts
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1318,7 +1263,7 @@ def get_cached_squeezes(date_str: str) -> list[dict]:
            squeeze_score, market_cap_cr, scan_date,
            buy_price, exit_price, target_price, confidence, recommendation
     FROM scanned_squeezes
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1347,7 +1292,7 @@ def get_cached_gapups(date_str: str) -> list[dict]:
     SELECT symbol, company_name, prev_close, open_price, cmp, gap_pct, volume, day_change_pct, scan_date,
            buy_price, exit_price, target_price, confidence, recommendation
     FROM scanned_gapups
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1379,7 +1324,7 @@ def get_cached_trend_setups(date_str: str, setup_type: str) -> list[dict]:
            dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
            passes_daily, passes_weekly, passes_monthly, near_breakout
     FROM scanned_trend_setups
-    WHERE scan_date = %s AND setup_type = %s;
+    WHERE scan_date = ? AND setup_type = ?;
     """
     conn = None
     results = []
@@ -1409,7 +1354,7 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
            buy_price, exit_price, target_price, confidence, recommendation,
            wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume
     FROM scanned_wt_cross
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1446,7 +1391,7 @@ def get_cached_vcs(date_str: str) -> list[dict]:
     SELECT symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
            buy_price, exit_price, target_price, confidence, recommendation
     FROM scanned_vcs
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1483,7 +1428,7 @@ def get_cached_vpa(date_str: str) -> list[dict]:
            monthly_major_val, monthly_mid_val, monthly_minor_val,
            scan_date
     FROM scanned_vpa
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1563,12 +1508,12 @@ def save_vcs_only(date_str: str, vcs_results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_vcs WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_vcs WHERE scan_date = ?;", (date_str,))
         
         insert_vcs_query = """
         INSERT INTO scanned_vcs (symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
                                  buy_price, exit_price, target_price, confidence, recommendation)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in vcs_results:
             cur.execute(insert_vcs_query, (
@@ -1603,7 +1548,7 @@ def save_vpa_only(date_str: str, vpa_results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_vpa WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_vpa WHERE scan_date = ?;", (date_str,))
         
         insert_vpa_query = """
         INSERT INTO scanned_vpa (symbol, company_name, cmp, day_change_pct, volume, vpa_score, 
@@ -1614,7 +1559,7 @@ def save_vpa_only(date_str: str, vpa_results: list[dict]) -> bool:
                                  monthly_major, monthly_mid, monthly_minor, monthly_rsi, monthly_cci,
                                  monthly_major_val, monthly_mid_val, monthly_minor_val,
                                  scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in vpa_results:
             cur.execute(insert_vpa_query, (
@@ -1668,13 +1613,13 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_vpa_squeeze WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_vpa_squeeze WHERE scan_date = ?;", (date_str,))
         
         insert_query = """
         INSERT INTO scanned_vpa_squeeze (
             symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
             ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price, scan_date
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
@@ -1718,7 +1663,7 @@ def get_cached_vpa_squeeze(date_str: str) -> list[dict]:
         SELECT symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
                ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price
         FROM scanned_vpa_squeeze 
-        WHERE scan_date = %s
+        WHERE scan_date = ?
         ORDER BY ma_gap_pct ASC;
         """
         cur.execute(query, (date_str,))
@@ -1759,7 +1704,7 @@ def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
         INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
                                      buy_price, exit_price, target_price, confidence, recommendation,
                                      wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             above_20sma = EXCLUDED.above_20sma,
             above_50sma = EXCLUDED.above_50sma;
@@ -1767,7 +1712,7 @@ def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
         for r in wt_cross:
             cur.execute(insert_wt_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 float(r['wt_value']),
@@ -1811,7 +1756,7 @@ def _get_vpa_sq_by_table(table_name: str, date_str: str) -> list[dict]:
         cur.execute(f"""
             SELECT symbol, cmp, day_change_pct, volume, ma_gap_pct
             FROM {table_name}
-            WHERE scan_date = %s
+            WHERE scan_date = ?
         """, (date_str,))
         rows = cur.fetchall()
         cur.close()
@@ -1833,7 +1778,7 @@ def get_cached_stage2(date_str: str) -> list[dict]:
     SELECT symbol, company_name, cmp, buy_price, exit_price, target_price, confidence, score, recommendation,
            historical_high, base_bottom, sma7, extension, rsi, cci, scan_date
     FROM scanned_stage2
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -1875,7 +1820,7 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
          weekly_zone, weekly_pos, weekly_poc, weekly_val, weekly_vah,
          monthly_zone, monthly_pos, monthly_poc, monthly_val, monthly_vah,
          scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             cmp = EXCLUDED.cmp,
             market_cap_cr = EXCLUDED.market_cap_cr,
@@ -1951,7 +1896,7 @@ def get_cached_volume_profile(date_str: str) -> list[dict]:
         
         cur.execute("""
             SELECT * FROM scanned_volume_profile 
-            WHERE scan_date = %s
+            WHERE scan_date = ?
             ORDER BY market_cap_cr DESC
         """, (date_str,))
         
@@ -2011,12 +1956,12 @@ def _save_vpa_squeeze_to_table(table_name: str, date_str: str, results: list[dic
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(f"DELETE FROM {table_name} WHERE scan_date = %s;", (date_str,))
+        cur.execute(f"DELETE FROM {table_name} WHERE scan_date = ?;", (date_str,))
         for r in results:
             cur.execute(f"""
                 INSERT INTO {table_name} (
                     symbol, cmp, day_change_pct, volume, ma_gap_pct, scan_date
-                ) VALUES (%s, %s, %s, %s, %s, %s)
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol, scan_date) DO UPDATE SET
                     cmp = EXCLUDED.cmp,
                     day_change_pct = EXCLUDED.day_change_pct,
@@ -2050,12 +1995,12 @@ def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_stage2 WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_stage2 WHERE scan_date = ?;", (date_str,))
         
         insert_query = """
         INSERT INTO scanned_stage2 (symbol, company_name, cmp, buy_price, exit_price, target_price, confidence, 
                                     score, recommendation, historical_high, base_bottom, sma7, extension, rsi, cci, scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in stage2_results:
             cur.execute(insert_query, (
@@ -2102,7 +2047,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         cur = conn.cursor()
         
         # Check if existing scan is more complete
-        cur.execute("SELECT total_scanned FROM scan_logs WHERE scan_date = %s;", (date_str,))
+        cur.execute("SELECT total_scanned FROM scan_logs WHERE scan_date = ?;", (date_str,))
         existing_log = cur.fetchone()
         if existing_log and existing_log['total_scanned'] is not None:
             if existing_log['total_scanned'] > total_scanned:
@@ -2111,15 +2056,15 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 return False
         
         # 1. Clean existing records for this date
-        cur.execute("DELETE FROM scanned_breakouts WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_squeezes WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_gapups WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_wt_cross WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_vcs WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_vpa WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = %s;", (date_str,))
-        cur.execute("DELETE FROM scan_logs WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_breakouts WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_squeezes WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_gapups WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_wt_cross WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_vcs WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_vpa WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = ?;", (date_str,))
+        cur.execute("DELETE FROM scan_logs WHERE scan_date = ?;", (date_str,))
         
         # 2. Insert new breakouts
         insert_breakout_query = """
@@ -2128,12 +2073,12 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                       market_cap_cr, signal_strength, above_50dma, above_200dma, dry_start_date, 
                                       dry_end_date, scan_date, buy_price, exit_price, target_price, 
                                       confidence, recommendation, setup_type)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in breakouts:
             cur.execute(insert_breakout_query, (
                 str(r['symbol']), 
-                str(r['company_name']) if r['company_name'] else "", 
+                str(r.get('company_name', '')), 
                 float(r['cmp']), 
                 float(r['day_change_pct']), 
                 int(r['today_volume']),
@@ -2156,29 +2101,30 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 str(r['setup_type']) if r.get('setup_type') is not None else 'VDU Breakout'
             ))
             
-        # 3. Insert new squeezes
+        # 3. Insert new squeezes (EMA Support)
         insert_squeeze_query = """
-        INSERT INTO scanned_squeezes (symbol, company_name, cmp, range_5d, range_prev, 
-                                     vol_ratio, squeeze_score, market_cap_cr, scan_date,
-                                     buy_price, exit_price, target_price, confidence, recommendation)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        INSERT INTO scanned_ema_support (symbol, company_name, cmp, day_change_pct, setup, 
+                                     dist_9ema, dist_21ema, crossover, score,
+                                     buy_price, exit_price, target_price, confidence, recommendation, scan_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in squeezes:
             cur.execute(insert_squeeze_query, (
                 str(r['symbol']), 
-                str(r['company_name']) if r['company_name'] else "", 
+                str(r.get('company_name', '')), 
                 float(r['cmp']), 
-                float(r['range_5d']), 
-                float(r['range_prev']),
-                float(r['vol_ratio']), 
-                float(r['squeeze_score']), 
-                float(r['market_cap_cr']), 
-                date_str,
+                float(r.get('day_change_pct', 0.0)),
+                str(r.get('setup', '')),
+                float(r.get('dist_9ema', 0.0)), 
+                float(r.get('dist_21ema', 0.0)), 
+                bool(r.get('crossover', False)), 
+                float(r.get('score', 0.0)), 
                 float(r['buy_price']) if r.get('buy_price') is not None else None,
                 float(r['exit_price']) if r.get('exit_price') is not None else None,
                 float(r['target_price']) if r.get('target_price') is not None else None,
                 str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None
+                str(r['recommendation']) if r.get('recommendation') is not None else None,
+                date_str
             ))
             
         # 3.5. Insert new gapups
@@ -2186,12 +2132,12 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         INSERT INTO scanned_gapups (symbol, company_name, prev_close, open_price, cmp, gap_pct, volume, 
                                    day_change_pct, scan_date, buy_price, exit_price, target_price, 
                                    confidence, recommendation)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in gapups:
             cur.execute(insert_gapup_query, (
                 str(r['symbol']), 
-                str(r['company_name']) if r['company_name'] else "", 
+                str(r.get('company_name', '')), 
                 float(r['prev_close']),
                 float(r['open_price']),
                 float(r['cmp']), 
@@ -2213,7 +2159,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                          run_up_200, run_up_52w, is_early,
                                          dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
                                          passes_daily, passes_weekly, passes_monthly, near_breakout)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
             passes_daily = EXCLUDED.passes_daily,
             passes_weekly = EXCLUDED.passes_weekly,
@@ -2223,7 +2169,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         for r in trend_setups:
             cur.execute(insert_trend_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 str(r['setup_type']),
@@ -2251,7 +2197,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
                                      buy_price, exit_price, target_price, confidence, recommendation,
                                      wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             above_20sma = EXCLUDED.above_20sma,
             above_50sma = EXCLUDED.above_50sma;
@@ -2259,7 +2205,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         for r in wt_cross:
             cur.execute(insert_wt_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 float(r['wt_value']),
@@ -2282,12 +2228,12 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         insert_vcs_query = """
         INSERT INTO scanned_vcs (symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
                                  buy_price, exit_price, target_price, confidence, recommendation)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in vcs_results:
             cur.execute(insert_vcs_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 float(r['vcs_score']),
@@ -2310,12 +2256,12 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                  monthly_major, monthly_mid, monthly_minor, monthly_rsi, monthly_cci,
                                  monthly_major_val, monthly_mid_val, monthly_minor_val,
                                  scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in vpa_results:
             cur.execute(insert_vpa_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 int(r.get('volume', 0)),
@@ -2352,7 +2298,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         if near_30sma_list:
             near_30sma_query = """
             INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
             for r in near_30sma_list:
                 cur.execute(near_30sma_query, (
@@ -2369,7 +2315,7 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         # 4. Insert execution log
         cur.execute("""
         INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
-        VALUES (%s, %s, %s, %s)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT (scan_date) DO UPDATE SET
             total_scanned = EXCLUDED.total_scanned,
             breakouts_found = EXCLUDED.breakouts_found,
@@ -2402,7 +2348,7 @@ def save_monthly_momentum_results(date_str: str, results: list[dict]) -> bool:
         cur = conn.cursor()
         
         # 1. Clean existing records for this date
-        cur.execute("DELETE FROM scanned_monthly_momentum WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_monthly_momentum WHERE scan_date = ?;", (date_str,))
         
         # 2. Insert new results
         insert_query = """
@@ -2411,12 +2357,12 @@ def save_monthly_momentum_results(date_str: str, results: list[dict]) -> bool:
             volume, vol_sma12, market_cap_cr, momentum_score, buy_price, exit_price, target_price, 
             confidence, recommendation, return_1m, scan_date
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 float(r['ema8']),
@@ -2460,7 +2406,7 @@ def save_weekly_momentum_results(date_str: str, results: list[dict]) -> bool:
         cur = conn.cursor()
         
         # 1. Clean existing records for this date
-        cur.execute("DELETE FROM scanned_weekly_momentum WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_weekly_momentum WHERE scan_date = ?;", (date_str,))
         
         # 2. Insert new results
         insert_query = """
@@ -2469,12 +2415,12 @@ def save_weekly_momentum_results(date_str: str, results: list[dict]) -> bool:
             rsi_weekly, cci_weekly, volume, vol_sma20, vol_ratio, market_cap_cr, weekly_score, 
             buy_price, exit_price, target_price, confidence, recommendation, return_1m, scan_date
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['weekly_chg_pct']),
                 float(r['prev_close']),
@@ -2518,7 +2464,7 @@ def get_cached_monthly_momentum(date_str: str) -> list[dict]:
            volume, vol_sma12, market_cap_cr, momentum_score, buy_price, exit_price, target_price, 
            confidence, recommendation, return_1m, scan_date
     FROM scanned_monthly_momentum
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -2548,7 +2494,7 @@ def get_cached_weekly_momentum(date_str: str) -> list[dict]:
            rsi_weekly, cci_weekly, volume, vol_sma20, vol_ratio, market_cap_cr, weekly_score, 
            buy_price, exit_price, target_price, confidence, recommendation, return_1m, scan_date
     FROM scanned_weekly_momentum
-    WHERE scan_date = %s;
+    WHERE scan_date = ?;
     """
     conn = None
     results = []
@@ -2576,7 +2522,7 @@ def get_monthly_base_date(year: int, month: int) -> str | None:
     query = """
     SELECT MIN(scan_date) 
     FROM scanned_monthly_momentum 
-    WHERE EXTRACT(YEAR FROM scan_date) = %s AND EXTRACT(MONTH FROM scan_date) = %s;
+    WHERE EXTRACT(YEAR FROM scan_date) = ? AND EXTRACT(MONTH FROM scan_date) = ?;
     """
     conn = None
     try:
@@ -2602,7 +2548,7 @@ def get_weekly_base_date(start_date_str: str, end_date_str: str) -> str | None:
     query = """
     SELECT MIN(scan_date) 
     FROM scanned_weekly_momentum 
-    WHERE scan_date >= %s AND scan_date <= %s;
+    WHERE scan_date >= ? AND scan_date <= ?;
     """
     conn = None
     try:
@@ -2643,7 +2589,7 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         UNION SELECT scan_date FROM scanned_weekly_momentum
     ),
     recent_dates AS (
-        SELECT DISTINCT scan_date FROM all_dates ORDER BY scan_date DESC LIMIT %s
+        SELECT DISTINCT scan_date FROM all_dates ORDER BY scan_date DESC LIMIT ?
     ),
     all_scans AS (
         SELECT symbol, scan_date, 'VDU Breakout' as source, signal_strength as score FROM scanned_breakouts WHERE scan_date IN (SELECT scan_date FROM recent_dates)
@@ -2749,9 +2695,9 @@ def get_wt_vp_confluence(date_str: str) -> list[dict]:
     FROM scanned_wt_cross wt
     INNER JOIN scanned_volume_profile vp
         ON wt.symbol = vp.symbol AND wt.scan_date = vp.scan_date
-    WHERE wt.scan_date = %s
+    WHERE wt.scan_date = ?
       AND wt.buy_signal = TRUE
-      AND vp.daily_zone LIKE %s
+      AND vp.daily_zone LIKE ?
     ORDER BY wt.wt_value ASC;
     """
     conn = None
@@ -2791,7 +2737,7 @@ def save_support_rsi_only(date_str: str, results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_support_rsi WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_support_rsi WHERE scan_date = ?;", (date_str,))
         
         insert_query = """
         INSERT INTO scanned_support_rsi (symbol, company_name, cmp, day_change_pct, rsi, cci,
@@ -2799,7 +2745,7 @@ def save_support_rsi_only(date_str: str, results: list[dict]) -> bool:
                                          above_20sma, above_50sma, above_200sma, volume, score,
                                          buy_price, exit_price, target_price, confidence, recommendation,
                                          market_cap_cr, scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
@@ -2846,7 +2792,7 @@ def get_cached_support_rsi(date_str: str) -> list[dict]:
            buy_price, exit_price, target_price, confidence, recommendation,
            market_cap_cr, scan_date
     FROM scanned_support_rsi
-    WHERE scan_date = %s
+    WHERE scan_date = ?
     ORDER BY score DESC;
     """
     conn = None
@@ -2946,8 +2892,8 @@ def get_rsi_oversold(date_str: str, rsi_threshold: float = 35.0) -> list[dict]:
         sr.volume,
         sr.scan_date
     FROM scanned_support_rsi sr
-    WHERE sr.scan_date = %s
-      AND sr.rsi <= %s
+    WHERE sr.scan_date = ?
+      AND sr.rsi <= ?
     ORDER BY sr.rsi ASC;
     """
     conn = None
@@ -3005,7 +2951,7 @@ def save_rsi_wt_combo(date_str: str, results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_rsi_wt_combo WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_rsi_wt_combo WHERE scan_date = ?;", (date_str,))
 
         insert_query = """
         INSERT INTO scanned_rsi_wt_combo (symbol, company_name, cmp, day_change_pct, rsi,
@@ -3014,7 +2960,7 @@ def save_rsi_wt_combo(date_str: str, results: list[dict]) -> bool:
                                           above_20sma, above_50sma, above_200sma, volume, score,
                                           confidence, buy_price, exit_price, target_price,
                                           recommendation, scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
@@ -3114,26 +3060,12 @@ def save_ema_support_only(date_str: str, bb_results: list) -> bool:
             cur.execute("""
                 INSERT INTO scanned_ema_support
                 (symbol, company_name, cmp, day_change_pct,
-                 daily_squeeze, weekly_squeeze, monthly_squeeze,
-                 daily_bb_width, weekly_bb_width, monthly_bb_width,
-                 above_50dma, market_cap_cr, scan_date,
-                 squeeze_score, confidence, score_breakdown,
                  setup, dist_9ema, dist_21ema, crossover, score,
-                 buy_price, exit_price, target_price, recommendation)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 buy_price, exit_price, target_price, confidence, recommendation, scan_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol, scan_date) DO UPDATE SET
                     cmp = EXCLUDED.cmp,
                     day_change_pct = EXCLUDED.day_change_pct,
-                    daily_squeeze = EXCLUDED.daily_squeeze,
-                    weekly_squeeze = EXCLUDED.weekly_squeeze,
-                    monthly_squeeze = EXCLUDED.monthly_squeeze,
-                    daily_bb_width = EXCLUDED.daily_bb_width,
-                    weekly_bb_width = EXCLUDED.weekly_bb_width,
-                    monthly_bb_width = EXCLUDED.monthly_bb_width,
-                    above_50dma = EXCLUDED.above_50dma,
-                    squeeze_score = EXCLUDED.squeeze_score,
-                    confidence = EXCLUDED.confidence,
-                    score_breakdown = EXCLUDED.score_breakdown,
                     setup = EXCLUDED.setup,
                     dist_9ema = EXCLUDED.dist_9ema,
                     dist_21ema = EXCLUDED.dist_21ema,
@@ -3142,17 +3074,27 @@ def save_ema_support_only(date_str: str, bb_results: list) -> bool:
                     buy_price = EXCLUDED.buy_price,
                     exit_price = EXCLUDED.exit_price,
                     target_price = EXCLUDED.target_price,
-                    recommendation = EXCLUDED.recommendation
+                    confidence = EXCLUDED.confidence,
+                    recommendation = EXCLUDED.recommendation;
             """, (
-                r['symbol'], r.get('company_name', ''), float(r['cmp']), float(r.get('day_change_pct', 0.0)),
-                bool(r.get('daily_squeeze', False)), bool(r.get('weekly_squeeze', False)), bool(r.get('monthly_squeeze', False)),
-                float(r.get('daily_bb_width', 0.0) or 0.0), float(r.get('weekly_bb_width', 0.0) or 0.0), float(r.get('monthly_bb_width', 0.0) or 0.0),
-                bool(r.get('above_50dma', False)), float(r.get('market_cap_cr', 0.0)), date_str,
-                int(r.get('squeeze_score', 0) or 0), r.get('confidence', ''), r.get('score_breakdown', ''),
-                r.get('setup', ''), float(r.get('dist_9ema', 0.0)), float(r.get('dist_21ema', 0.0)), bool(r.get('crossover', False)),
-                float(r.get('score', 0.0)), float(r.get('buy_price', 0.0)), float(r.get('exit_price', 0.0)), float(r.get('target_price', 0.0)),
-                r.get('recommendation', '')
+                str(r['symbol']),
+                str(r.get('company_name', '')),
+                float(r['cmp']),
+                float(r.get('day_change_pct', 0.0)),
+                str(r.get('setup', '')),
+                float(r.get('dist_9ema', 0.0)),
+                float(r.get('dist_21ema', 0.0)),
+                bool(r.get('crossover', False)),
+                float(r.get('score', 0.0)),
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                str(r['confidence']) if r.get('confidence') is not None else None,
+                str(r['recommendation']) if r.get('recommendation') is not None else None,
+                date_str
             ))
+
+
         conn.commit()
         cur.close()
         return True
@@ -3171,7 +3113,7 @@ def get_cached_ema_support(date_str: str) -> list:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_ema_support WHERE scan_date = %s", (date_str,))
+        cur.execute("SELECT * FROM scanned_ema_support WHERE scan_date = ?", (date_str,))
         rows = cur.fetchall()
         cur.close()
         for r in rows:
@@ -3193,7 +3135,7 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
         cur = conn.cursor()
         
         # 1. Clean existing SMA records for this date
-        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = ?;", (date_str,))
         
         # 2. Insert new trend setups
         insert_trend_query = """
@@ -3202,7 +3144,7 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
                                          run_up_200, run_up_52w, is_early,
                                          dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
                                          passes_daily, passes_weekly, passes_monthly, near_breakout)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
             passes_daily = EXCLUDED.passes_daily,
             passes_weekly = EXCLUDED.passes_weekly,
@@ -3212,7 +3154,7 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
         for r in trend_setups:
             cur.execute(insert_trend_query, (
                 str(r['symbol']),
-                str(r['company_name']) if r['company_name'] else "",
+                str(r.get('company_name', '')),
                 float(r['cmp']),
                 float(r['day_change_pct']),
                 str(r['setup_type']),
@@ -3238,7 +3180,7 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
         # 3. Update scan log
         cur.execute("""
             INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found) 
-            VALUES (%s, %s, 0, 0)
+            VALUES (?, ?, 0, 0)
             ON CONFLICT (scan_date) DO UPDATE SET
                 total_scanned = GREATEST(scan_logs.total_scanned, EXCLUDED.total_scanned),
                 completed_at = CURRENT_TIMESTAMP;
@@ -3261,11 +3203,11 @@ def save_stage_analysis_only(date_str: str, results: list[dict]) -> bool:
         conn = get_connection()
         cur = conn.cursor()
         
-        cur.execute("DELETE FROM scanned_stage_analysis WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_stage_analysis WHERE scan_date = ?;", (date_str,))
         
         insert_query = """
         INSERT INTO scanned_stage_analysis (symbol, company_name, cmp, stage, score, template_str, sret, lo52, hi52, scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO NOTHING;
         """
         for r in results:
@@ -3294,7 +3236,7 @@ def save_stage_analysis_only(date_str: str, results: list[dict]) -> bool:
             conn.close()
 
 def get_cached_stage_analysis(date_str: str) -> list[dict]:
-    query = "SELECT * FROM scanned_stage_analysis WHERE scan_date = %s ORDER BY stage ASC, score DESC;"
+    query = "SELECT * FROM scanned_stage_analysis WHERE scan_date = ? ORDER BY stage ASC, score DESC;"
     conn = None
     results = []
     try:
@@ -3332,11 +3274,11 @@ def save_zanger_scan(scan_date: str, timeframe: str, results: list):
             target_price, rank, score, risk_score, volume_score, timeframe,
             confidence_level, breakout_status
         ) VALUES (
-            %s, %s, %s, %s, 
-            %s, %s, %s, 
-            %s, %s, %s,
-            %s, %s, %s, %s, %s, %s,
-            %s, %s
+            ?, ?, ?, ?, 
+            ?, ?, ?, 
+            ?, ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?
         ) ON CONFLICT (symbol, scan_date, timeframe) DO UPDATE SET
             cmp = EXCLUDED.cmp,
             setup_type = EXCLUDED.setup_type,
@@ -3401,7 +3343,7 @@ def get_cached_zanger(scan_date: str, timeframe: str = 'Daily') -> list:
                    suggested_stop, risk_pct, target_price, rank,
                    score, risk_score, volume_score, confidence_level, breakout_status
             FROM scanned_zanger 
-            WHERE scan_date = %s AND timeframe = %s
+            WHERE scan_date = ? AND timeframe = ?
         """, (scan_date, timeframe))
         rows = cur.fetchall()
         if not rows:
@@ -3460,10 +3402,10 @@ def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
             vcp10_status, vcp10_range_pct, vcp15_status, vcp15_range_pct,
             entry_signal, scan_date
         ) VALUES (
-            %s, %s, %s, %s, %s,
-            %s, %s, %s, %s,
-            %s, %s, %s, %s,
-            %s, %s
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?
         ) ON CONFLICT (symbol, scan_date) DO UPDATE SET
             sector = EXCLUDED.sector,
             close = EXCLUDED.close,
@@ -3524,7 +3466,7 @@ def get_cached_vcp_minervini(scan_date: str) -> list:
                    vcp10_status, vcp10_range_pct, vcp15_status, vcp15_range_pct,
                    entry_signal
             FROM scanned_vcp_minervini
-            WHERE scan_date = %s
+            WHERE scan_date = ?
             ORDER BY rs_rating DESC NULLS LAST
         """, (scan_date,))
         rows = cur.fetchall()
@@ -3585,7 +3527,7 @@ def get_latest_date_ohlcv(symbol: str) -> str | None:
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT MAX(date) FROM ohlcv_daily WHERE symbol = %s;", (symbol.strip().upper(),))
+        cur.execute("SELECT MAX(date) FROM ohlcv_daily WHERE symbol = ?;", (symbol.strip().upper(),))
         row = cur.fetchone()
         if row and row[0]:
             return row[0].strftime('%Y-%m-%d')
@@ -3603,9 +3545,9 @@ def get_historical_data_ohlcv(symbol: str, limit: int = 1100) -> pd.DataFrame | 
         query = """
             SELECT date as Date, open as Open, high as High, low as Low, close as Close, volume as Volume 
             FROM ohlcv_daily 
-            WHERE symbol = %s 
+            WHERE symbol = ? 
             ORDER BY date DESC
-            LIMIT %s
+            LIMIT ?
         """
         df = pd.read_sql_query(query, conn, params=(symbol.strip().upper(), limit))
         if df.empty:
@@ -3657,7 +3599,7 @@ def save_data_ohlcv(symbol: str, df: pd.DataFrame):
         
         query = """
             INSERT INTO ohlcv_daily (symbol, date, open, high, low, close, volume)
-            VALUES %s
+            VALUES ?
             ON CONFLICT (symbol, date) DO UPDATE SET
                 open = EXCLUDED.open,
                 high = EXCLUDED.high,
@@ -3728,7 +3670,7 @@ def get_cached_near_30sma(date_str: str) -> list[dict]:
         conn = get_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor) if 'RealDictCursor' in globals() else conn.cursor()
         # Fallback if RealDictCursor isn't available
-        cur.execute("SELECT * FROM scanned_near_30sma WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
+        cur.execute("SELECT * FROM scanned_near_30sma WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
         rows = cur.fetchall()
         if rows and type(rows[0]) != dict and not hasattr(rows[0], 'keys'):
             cols = [desc[0] for desc in cur.description]
@@ -3745,7 +3687,7 @@ def get_cached_near_30sma_weekly(date_str: str) -> list[dict]:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_near_30sma_weekly WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
+        cur.execute("SELECT * FROM scanned_near_30sma_weekly WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
         rows = cur.fetchall()
         cols = [desc[0] for desc in cur.description]
         return [dict(zip(cols, r)) for r in rows]
@@ -3760,7 +3702,7 @@ def get_cached_near_30sma_monthly(date_str: str) -> list[dict]:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_near_30sma_monthly WHERE scan_date = %s ORDER BY dist_pct ASC", (date_str,))
+        cur.execute("SELECT * FROM scanned_near_30sma_monthly WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
         rows = cur.fetchall()
         cols = [desc[0] for desc in cur.description]
         return [dict(zip(cols, r)) for r in rows]
@@ -3777,11 +3719,11 @@ def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = %s;", (date_str,))
+        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = ?;", (date_str,))
         
         insert_query = """
         INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
         """
         
         for r in near_30sma_results:
@@ -3814,7 +3756,7 @@ def save_near_30sma_weekly_only(date_str, near_30sma_list):
         cur = conn.cursor()
         query = """
             INSERT INTO scanned_near_30sma_weekly (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (symbol, scan_date) DO NOTHING
         """
         for r in near_30sma_list:
@@ -3849,7 +3791,7 @@ def save_near_30sma_monthly_only(date_str, near_30sma_list):
         cur = conn.cursor()
         query = """
             INSERT INTO scanned_near_30sma_monthly (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (symbol, scan_date) DO NOTHING
         """
         for r in near_30sma_list:

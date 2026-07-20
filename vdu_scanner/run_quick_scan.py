@@ -75,23 +75,43 @@ def run_quick_nifty50_scan():
         if res.get("ema_support"):
             res["ema_support"]["market_cap_cr"] = 0
             squeeze_list.append(res["ema_support"])
+            
+    trend_setups_list = []
+    wt_list = []
+    vpa_list = []
+    vcs_list = []
+    near_30sma_list = []
+    gapup_list = []
+    
+    for res in results:
+        if res.get("above_ma"): trend_setups_list.append(res["above_ma"])
+        if res.get("support_ma"): trend_setups_list.append(res["support_ma"])
+        if res.get("crossover_ma"): trend_setups_list.append(res["crossover_ma"])
+        if res.get("minervini"): trend_setups_list.append(res["minervini"])
+        if res.get("zanger"): trend_setups_list.append(res["zanger"])
+        if res.get("wt_cross"): wt_list.append(res["wt_cross"])
+        if res.get("vpa"): vpa_list.append(res["vpa"])
+        if res.get("vcs"): vcs_list.append(res["vcs"])
+        if res.get("near_30sma"): near_30sma_list.append(res["near_30sma"])
+        if res.get("gapup"): gapup_list.append(res["gapup"])
         
     print(f"Found {len(breakout_list)} breakouts and {len(squeeze_list)} squeezes.")
+    print(f"Found {len(trend_setups_list)} trend setups and {len(near_30sma_list)} near 30sma.")
     
     from cron_scanner import get_market_date
     date_str = get_market_date()
     database.save_scan_results(
         date_str=date_str,
         breakouts=breakout_list,
-        squeezes=[],
-        gapups=[],
-        trend_setups=[],
-        wt_cross=[],
+        squeezes=squeeze_list,
+        gapups=gapup_list,
+        trend_setups=trend_setups_list,
+        wt_cross=wt_list,
         total_scanned=len(symbols),
-        vcs_results=[],
-        vpa_results=[]
+        vcs_results=vcs_list,
+        vpa_results=vpa_list
     )
-    database.save_ema_support_only(date_str, squeeze_list)
+    database.save_near_30sma_only(date_str, near_30sma_list)
     print("Saved successfully!")
 
 if __name__ == "__main__":

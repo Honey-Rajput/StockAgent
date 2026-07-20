@@ -3,7 +3,6 @@ import time
 import pandas as pd
 from datetime import datetime, timedelta
 import database
-import psycopg2.extras
 
 # We no longer use local filesystem cache
 # All cache is stored in the Neon PostgreSQL historical_ohlcv table
@@ -140,7 +139,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
             )
             argslist.append(args)
             
-        psycopg2.extras.execute_values(cur, query, argslist, page_size=200)
+        database.execute_values(cur, query, argslist, page_size=200)
             
     except Exception as e:
         print(f"Error saving DB cache for {clean_sym}: {e}")
