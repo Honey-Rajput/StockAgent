@@ -156,7 +156,7 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
             ))
             
         cursor.executemany(upsert_query, data_to_insert)
-        # conn.commit() # autocommit is True, but no harm
+        conn.commit() 
         cursor.close()
         print(f"save_today_quotes: saved {len(data_to_insert)} symbols for {date_str}")
     except Exception as e:
@@ -740,6 +740,8 @@ def init_db() -> bool:
         cur = conn.cursor()
         for q in queries:
             cur.executescript(q)
+            
+        conn.commit() # Save tables before attempting migrations
             
         # Safely migrate existing tables if columns are missing
         migrations = [

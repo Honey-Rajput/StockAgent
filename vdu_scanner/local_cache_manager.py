@@ -40,7 +40,7 @@ def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = Fals
     try:
         conn = database.get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT date, open, high, low, close, volume FROM historical_ohlcv WHERE symbol=%s AND timeframe=%s ORDER BY date ASC", (clean_sym, timeframe))
+        cur.execute("SELECT date, open, high, low, close, volume FROM historical_ohlcv WHERE symbol=? AND timeframe=? ORDER BY date ASC", (clean_sym, timeframe))
         rows = cur.fetchall()
         
         if not rows:
@@ -71,8 +71,8 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
         chunk_size = 500
         for i in range(0, len(clean_syms), chunk_size):
             chunk = clean_syms[i:i+chunk_size]
-            placeholders = ','.join(['%s' for _ in chunk])
-            query = f"SELECT symbol, date, open, high, low, close, volume FROM historical_ohlcv WHERE timeframe=%s AND symbol IN ({placeholders}) ORDER BY date ASC"
+            placeholders = ','.join(['?' for _ in chunk])
+            query = f"SELECT symbol, date, open, high, low, close, volume FROM historical_ohlcv WHERE timeframe=? AND symbol IN ({placeholders}) ORDER BY date ASC"
             
             args = [timeframe] + chunk
             cur.execute(query, args)
@@ -104,10 +104,10 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
         cur = conn.cursor()
         
         # Optimization: Only upsert the most recent day (which might update) and any new days
-        cur.execute("SELECT MAX(date) FROM historical_ohlcv WHERE symbol=%s AND timeframe=%s", (clean_sym, timeframe))
+        cur.execute("SELECT MAX(date) as max_date FROM historical_ohlcv WHERE symbol=? AND timeframe=?", (clean_sym, timeframe))
         max_date_row = cur.fetchone()
-        if max_date_row and max_date_row['max']:
-            max_date = pd.to_datetime(max_date_row['max'])
+        if max_date_row and max_date_row['max_date']:
+            max_date = pd.to_datetime(max_date_row['max_date'])
             # Filter df to only keep dates >= max_date
             df = df[df['Date'] >= max_date]
             
@@ -116,7 +116,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
             
         query = """
         INSERT INTO historical_ohlcv (symbol, timeframe, date, open, high, low, close, volume)
-        VALUES %s
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(symbol, timeframe, date) DO UPDATE SET
         open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close, volume=EXCLUDED.volume
         """
@@ -140,6 +140,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
             argslist.append(args)
             
         database.execute_values(cur, query, argslist, page_size=200)
+        conn.commit()
             
     except Exception as e:
         print(f"Error saving DB cache for {clean_sym}: {e}")
