@@ -72,8 +72,7 @@ def get_connection():
     return PooledConnection(_conn)
 
 def execute_values(cur, query, argslist, page_size=100):
-
-    psycopg2.extras.execute_values(cur, query, argslist, page_size=page_size)
+    cur.executemany(query, argslist)
 
 
 def get_today_quotes(symbols: list, date_str: str) -> dict:
@@ -1155,9 +1154,9 @@ def cleanup_old_data(days: int = 30):
     finally:
         if conn:
             try:
-                pool = get_pool()
+                pass
                 if pool:
-                    pool.putconn(conn)
+                    pass
             except Exception:
                 pass
 
@@ -1752,7 +1751,7 @@ def _get_vpa_sq_by_table(table_name: str, date_str: str) -> list[dict]:
     conn = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         cur.execute(f"""
             SELECT symbol, cmp, day_change_pct, volume, ma_gap_pct
             FROM {table_name}
@@ -1766,9 +1765,7 @@ def _get_vpa_sq_by_table(table_name: str, date_str: str) -> list[dict]:
         return []
     finally:
         if conn:
-            pool = get_pool()
-            if pool:
-                pool.putconn(conn)
+            pass
 
 def get_cached_stage2(date_str: str) -> list[dict]:
     """
@@ -1983,9 +1980,7 @@ def _save_vpa_squeeze_to_table(table_name: str, date_str: str, results: list[dic
         return False
     finally:
         if conn:
-            pool = get_pool()
-            if pool:
-                pool.putconn(conn)
+            pass
 
 def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
     """
@@ -3599,7 +3594,7 @@ def save_data_ohlcv(symbol: str, df: pd.DataFrame):
         
         query = """
             INSERT INTO ohlcv_daily (symbol, date, open, high, low, close, volume)
-            VALUES ?
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (symbol, date) DO UPDATE SET
                 open = EXCLUDED.open,
                 high = EXCLUDED.high,
@@ -3668,7 +3663,7 @@ def get_cached_near_30sma(date_str: str) -> list[dict]:
     conn = None
     try:
         conn = get_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor) if 'RealDictCursor' in globals() else conn.cursor()
+        cur = conn.cursor()
         # Fallback if RealDictCursor isn't available
         cur.execute("SELECT * FROM scanned_near_30sma WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
         rows = cur.fetchall()
