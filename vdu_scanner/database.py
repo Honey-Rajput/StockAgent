@@ -1046,7 +1046,7 @@ def get_best_scan_date() -> str:
     query = """
     SELECT scan_date FROM scan_logs
     WHERE total_scanned > 0
-    ORDER BY total_scanned DESC, scan_date DESC
+    ORDER BY scan_date DESC, total_scanned DESC
     LIMIT 1;
     """
     conn = None

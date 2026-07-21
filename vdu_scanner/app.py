@@ -2145,6 +2145,8 @@ if run_full or run_sma:
             st.success("✅ Scanner complete! Results have been updated.")
             import time
             time.sleep(1.5)
+            # Force a full database reload on rerun to update banner dates & state
+            st.session_state['db_cache_checked'] = False
             st.rerun()
 
       except Exception as _scan_top_err:
