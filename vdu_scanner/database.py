@@ -1224,129 +1224,55 @@ def get_all_latest_scan_dates() -> dict[str, str]:
     return latest_dates
 
 
-def get_cached_breakouts(date_str: str) -> list[dict]:
+
+def _get_cached_scan(table_name: str, date_str: str, extra_conditions: dict = None, date_cols: list = None) -> list[dict]:
     """
-    Retrieves the cached VDU breakouts scanned on a specific date.
+    Generalized helper to fetch cached scan results.
     """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, today_volume, dry_avg_vol, 
-           volume_ratio, dry_days_count, dry_spikes, market_cap_cr, signal_strength, 
-           above_50dma, above_200dma, dry_start_date, dry_end_date, scan_date,
-           buy_price, exit_price, target_price, confidence, recommendation, setup_type
-    FROM scanned_breakouts
-    WHERE scan_date = ?;
-    """
+    conditions = ["scan_date = ?"]
+    params = [date_str]
+    if extra_conditions:
+        for k, v in extra_conditions.items():
+            conditions.append(f"{k} = ?")
+            params.append(v)
+            
+    query = f"SELECT * FROM {table_name} WHERE {' AND '.join(conditions)};"
     conn = None
     results = []
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (date_str,))
+        cur.execute(query, params)
         rows = cur.fetchall()
         cur.close()
         for r in rows:
             r_dict = dict(r)
-            r_dict['dry_start_date'] = pd.to_datetime(r_dict['dry_start_date'])
-            r_dict['dry_end_date'] = pd.to_datetime(r_dict['dry_end_date'])
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
+            if 'scan_date' in r_dict:
+                r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
+            if date_cols:
+                import pandas as pd
+                for dc in date_cols:
+                    if dc in r_dict and r_dict[dc]:
+                        r_dict[dc] = pd.to_datetime(r_dict[dc])
             results.append(r_dict)
     except Exception as e:
-        print(f"Error loading cached breakouts from database: {e}")
+        print(f"Error loading cached {table_name} from database: {e}")
     finally:
         if conn:
             conn.close()
     return results
+
+def get_cached_breakouts(date_str: str) -> list[dict]:
+    return _get_cached_scan('scanned_breakouts', date_str, date_cols=['dry_start_date', 'dry_end_date'])
 
 def get_cached_squeezes(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached coiled VCP squeezes scanned on a specific date.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, range_5d, range_prev, vol_ratio, 
-           squeeze_score, market_cap_cr, scan_date,
-           buy_price, exit_price, target_price, confidence, recommendation
-    FROM scanned_squeezes
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached squeezes from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_squeezes', date_str)
 
 def get_cached_gapups(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached Gap-Up setups scanned on a specific date.
-    """
-    query = """
-    SELECT symbol, company_name, prev_close, open_price, cmp, gap_pct, volume, day_change_pct, scan_date,
-           buy_price, exit_price, target_price, confidence, recommendation
-    FROM scanned_gapups
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached gapups from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_gapups', date_str)
 
 def get_cached_trend_setups(date_str: str, setup_type: str) -> list[dict]:
-    """
-    Retrieves the cached technical trend setups scanned on a specific date for a setup_type.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, setup_type, scan_date,
-           buy_price, exit_price, target_price, confidence, recommendation,
-           run_up_200, run_up_52w, is_early,
-           dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
-           passes_daily, passes_weekly, passes_monthly, near_breakout
-    FROM scanned_trend_setups
-    WHERE scan_date = ? AND setup_type = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str, setup_type))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached trend setups for {setup_type} from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_trend_setups', date_str, extra_conditions={'setup_type': setup_type})
 
 def get_cached_wt_cross(date_str: str) -> list[dict]:
     """
@@ -1387,121 +1313,10 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
     return results
 
 def get_cached_vcs(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached VCS setups scanned on a specific date.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
-           buy_price, exit_price, target_price, confidence, recommendation
-    FROM scanned_vcs
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            r_dict['vcs_score'] = float(r_dict.get('vcs_score') or 0.0)
-            r_dict['volume'] = int(r_dict.get('volume') or 0)
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached VCS from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_vcs', date_str)
 
 def get_cached_vpa(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached VPA trend setups scanned on a specific date.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, volume, vpa_score,
-           daily_major, daily_mid, daily_minor, daily_rsi, daily_cci,
-           daily_major_val, daily_mid_val, daily_minor_val,
-           weekly_major, weekly_mid, weekly_minor, weekly_rsi, weekly_cci,
-           weekly_major_val, weekly_mid_val, weekly_minor_val,
-           monthly_major, monthly_mid, monthly_minor, monthly_rsi, monthly_cci,
-           monthly_major_val, monthly_mid_val, monthly_minor_val,
-           scan_date
-    FROM scanned_vpa
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            r_dict['volume'] = int(r_dict.get('volume') or 0)
-            
-            r_dict['daily'] = {
-                "major": int(r_dict.get('daily_major') or 0),
-                "mid": int(r_dict.get('daily_mid') or 0),
-                "minor": int(r_dict.get('daily_minor') or 0),
-                "rsi": float(r_dict.get('daily_rsi') or 0.0),
-                "cci": float(r_dict.get('daily_cci') or 0.0),
-                "major_val": float(r_dict.get('daily_major_val') or 0.0),
-                "mid_val": float(r_dict.get('daily_mid_val') or 0.0),
-                "minor_val": float(r_dict.get('daily_minor_val') or 0.0)
-            }
-            r_dict['weekly'] = {
-                "major": int(r_dict.get('weekly_major') or 0),
-                "mid": int(r_dict.get('weekly_mid') or 0),
-                "minor": int(r_dict.get('weekly_minor') or 0),
-                "rsi": float(r_dict.get('weekly_rsi') or 0.0),
-                "cci": float(r_dict.get('weekly_cci') or 0.0),
-                "major_val": float(r_dict.get('weekly_major_val') or 0.0),
-                "mid_val": float(r_dict.get('weekly_mid_val') or 0.0),
-                "minor_val": float(r_dict.get('weekly_minor_val') or 0.0)
-            }
-            r_dict['monthly'] = {
-                "major": int(r_dict.get('monthly_major') or 0),
-                "mid": int(r_dict.get('monthly_mid') or 0),
-                "minor": int(r_dict.get('monthly_minor') or 0),
-                "rsi": float(r_dict.get('monthly_rsi') or 0.0),
-                "cci": float(r_dict.get('monthly_cci') or 0.0),
-                "major_val": float(r_dict.get('monthly_major_val') or 0.0),
-                "mid_val": float(r_dict.get('monthly_mid_val') or 0.0),
-                "minor_val": float(r_dict.get('monthly_minor_val') or 0.0)
-            }
-            
-            # Recompute normalized score (0-100) from trend values
-            # Same formula as scan_vpa_trend: raw_score = sum(major*3 + mid*2 + minor*1) per timeframe
-            raw_score = 0
-            for tf_data in [r_dict['daily'], r_dict['weekly'], r_dict['monthly']]:
-                raw_score += tf_data['major'] * 3
-                raw_score += tf_data['mid'] * 2
-                raw_score += tf_data['minor'] * 1
-            normalized_score = round((raw_score + 18) / 36 * 100)
-            r_dict['score'] = normalized_score
-            
-            # Derive confidence from normalized score
-            if normalized_score >= 80:
-                r_dict['confidence'] = "High"
-            elif normalized_score >= 50:
-                r_dict['confidence'] = "Medium"
-            else:
-                r_dict['confidence'] = "Low"
-            
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached VPA from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_vpa', date_str)
 
 def save_vcs_only(date_str: str, vcs_results: list[dict]) -> bool:
     """
@@ -1654,48 +1469,7 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
             conn.close()
 
 def get_cached_vpa_squeeze(date_str: str) -> list[dict]:
-    """
-    Retrieves the VPA Squeeze results for the given date.
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        query = """
-        SELECT symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
-               ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price
-        FROM scanned_vpa_squeeze 
-        WHERE scan_date = ?
-        ORDER BY ma_gap_pct ASC;
-        """
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        for r in rows:
-            results.append({
-                'symbol': r[0],
-                'company_name': r[1],
-                'cmp': float(r[2]),
-                'day_change_pct': float(r[3]),
-                'volume': int(r[4]),
-                'sma10': float(r[5]),
-                'sma21': float(r[6]),
-                'sma50': float(r[7]),
-                'sma200': float(r[8]),
-                'ma_gap_pct': float(r[9]),
-                'dist_to_200_pct': float(r[10]),
-                'compression_score': float(r[11]) if r[11] is not None else 0.0,
-                'buy_price': float(r[12]) if r[12] is not None else None,
-                'exit_price': float(r[13]) if r[13] is not None else None,
-                'target_price': float(r[14]) if r[14] is not None else None
-            })
-        cur.close()
-    except Exception as e:
-        print(f"Error getting cached VPA Squeeze: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_vpa_squeeze', date_str)
 def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
     """Saves WT Cross results without deleting other scan results."""
     conn = None
@@ -1772,37 +1546,7 @@ def _get_vpa_sq_by_table(table_name: str, date_str: str) -> list[dict]:
             pass
 
 def get_cached_stage2(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached Early Stage 2 setups scanned on a specific date.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, buy_price, exit_price, target_price, confidence, score, recommendation,
-           historical_high, base_bottom, sma7, extension, rsi, cci, scan_date
-    FROM scanned_stage2
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            # Convert decimal back to float if needed
-            for k in ['cmp', 'buy_price', 'exit_price', 'target_price', 'score', 'historical_high', 'base_bottom', 'sma7', 'extension', 'rsi', 'cci']:
-                if r_dict.get(k) is not None:
-                    r_dict[k] = float(r_dict[k])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached stage2 from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_stage2', date_str)
 
 def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
     """Saves Volume Profile results including POC/VAL/VAH levels."""
@@ -2455,64 +2199,10 @@ def save_weekly_momentum_results(date_str: str, results: list[dict]) -> bool:
             conn.close()
 
 def get_cached_monthly_momentum(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached Monthly Momentum results for a specific date from PostgreSQL.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, ema8, ema12, ema20, roc6, rsi_monthly, 
-           volume, vol_sma12, market_cap_cr, momentum_score, buy_price, exit_price, target_price, 
-           confidence, recommendation, return_1m, scan_date
-    FROM scanned_monthly_momentum
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached Monthly Momentum from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_monthly_momentum', date_str)
 
 def get_cached_weekly_momentum(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached Weekly Momentum results for a specific date from PostgreSQL.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, weekly_chg_pct, prev_close, curr_open, close_sma20, 
-           rsi_weekly, cci_weekly, volume, vol_sma20, vol_ratio, market_cap_cr, weekly_score, 
-           buy_price, exit_price, target_price, confidence, recommendation, return_1m, scan_date
-    FROM scanned_weekly_momentum
-    WHERE scan_date = ?;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached Weekly Momentum from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_weekly_momentum', date_str)
 
 def get_monthly_base_date(year: int, month: int) -> str | None:
     """
@@ -2784,47 +2474,7 @@ def save_support_rsi_only(date_str: str, results: list[dict]) -> bool:
             conn.close()
 
 def get_cached_support_rsi(date_str: str) -> list[dict]:
-    """
-    Retrieves the cached Support + RSI Oversold results for a specific date.
-    """
-    query = """
-    SELECT symbol, company_name, cmp, day_change_pct, rsi, cci,
-           support_price, support_touches, distance_to_support_pct,
-           above_20sma, above_50sma, above_200sma, volume, score,
-           buy_price, exit_price, target_price, confidence, recommendation,
-           market_cap_cr, scan_date
-    FROM scanned_support_rsi
-    WHERE scan_date = ?
-    ORDER BY score DESC;
-    """
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
-            r_dict['cci'] = float(r_dict.get('cci') or 0.0)
-            r_dict['support_price'] = float(r_dict.get('support_price') or 0.0)
-            r_dict['support_touches'] = int(r_dict.get('support_touches') or 0)
-            r_dict['distance_to_support_pct'] = float(r_dict.get('distance_to_support_pct') or 0.0)
-            r_dict['above_20sma'] = bool(r_dict.get('above_20sma', False))
-            r_dict['above_50sma'] = bool(r_dict.get('above_50sma', False))
-            r_dict['above_200sma'] = bool(r_dict.get('above_200sma', False))
-            r_dict['volume'] = int(r_dict.get('volume') or 0)
-            r_dict['score'] = float(r_dict.get('score') or 0.0)
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error loading cached support RSI from database: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_support_rsi', date_str)
 
 
 def get_latest_support_rsi() -> tuple[list[dict], str | None]:
@@ -3110,24 +2760,7 @@ def save_ema_support_only(date_str: str, bb_results: list) -> bool:
             conn.close()
 
 def get_cached_ema_support(date_str: str) -> list:
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_ema_support WHERE scan_date = ?", (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error fetching cached BB Squeeze: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_ema_support', date_str)
 
 
 def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned: int) -> bool:
@@ -3238,25 +2871,7 @@ def save_stage_analysis_only(date_str: str, results: list[dict]) -> bool:
             conn.close()
 
 def get_cached_stage_analysis(date_str: str) -> list[dict]:
-    query = "SELECT * FROM scanned_stage_analysis WHERE scan_date = ? ORDER BY stage ASC, score DESC;"
-    conn = None
-    results = []
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(query, (date_str,))
-        rows = cur.fetchall()
-        cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['scan_date'] = r_dict['scan_date'].strftime('%Y-%m-%d') if hasattr(r_dict['scan_date'], 'strftime') else str(r_dict['scan_date'])
-            results.append(r_dict)
-    except Exception as e:
-        print(f"Error fetching cached stage analysis: {e}")
-    finally:
-        if conn:
-            conn.close()
-    return results
+    return _get_cached_scan('scanned_stage_analysis', date_str)
 
 
 
@@ -3335,53 +2950,7 @@ def save_zanger_scan(scan_date: str, timeframe: str, results: list):
 
 
 def get_cached_zanger(scan_date: str, timeframe: str = 'Daily') -> list:
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT symbol, sector, cmp, setup_type,
-                   prior_run_pct, base_depth_pct, breakout_volume_ratio,
-                   suggested_stop, risk_pct, target_price, rank,
-                   score, risk_score, volume_score, confidence_level, breakout_status
-            FROM scanned_zanger 
-            WHERE scan_date = ? AND timeframe = ?
-        """, (scan_date, timeframe))
-        rows = cur.fetchall()
-        if not rows:
-            return []
-            
-        results = []
-        for r in rows:
-            close_val = float(r[2]) if r[2] is not None else None
-            results.append({
-                'symbol': r[0],
-                'sector': r[1],
-                'close': close_val,
-                'cmp': close_val,   # alias so display code works for both live and DB-loaded data
-                'setup_type': r[3],
-                'prior_run_pct': float(r[4]) if r[4] is not None else None,
-                'base_depth_pct': float(r[5]) if r[5] is not None else None,
-                'breakout_volume_ratio': float(r[6]) if r[6] is not None else None,
-                'suggested_stop': float(r[7]) if r[7] is not None else None,
-                'risk_pct': float(r[8]) if r[8] is not None else None,
-                'target_price': float(r[9]) if r[9] is not None else None,
-                'rank': int(r[10]) if r[10] is not None else None,
-                'score': float(r[11]) if r[11] is not None else None,
-                'risk_score': float(r[12]) if r[12] is not None else None,
-                'volume_score': float(r[13]) if r[13] is not None else None,
-                'confidence_level': r[14],
-                'breakout_status': r[15],
-                'date': scan_date,
-            })
-        return results
-
-    except Exception as e:
-        print(f"Error fetching Dan Zanger cache: {e}")
-        return []
-    finally:
-        if conn:
-            conn.close()
+    return _get_cached_scan('scanned_zanger', scan_date, extra_conditions={'timeframe': timeframe})
 
 
 # ==============================================================================
@@ -3457,50 +3026,7 @@ def save_vcp_minervini_scan(scan_date: str, results: list) -> bool:
 
 
 def get_cached_vcp_minervini(scan_date: str) -> list:
-    """Retrieve cached VCP+Minervini scan results from the database."""
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT symbol, sector, close, pressure, risk_50d,
-                   trend_tpr, rs_rating, vcp_status, vcp_range_pct,
-                   vcp10_status, vcp10_range_pct, vcp15_status, vcp15_range_pct,
-                   entry_signal
-            FROM scanned_vcp_minervini
-            WHERE scan_date = ?
-            ORDER BY rs_rating DESC NULLS LAST
-        """, (scan_date,))
-        rows = cur.fetchall()
-        if not rows:
-            return []
-
-        results = []
-        for r in rows:
-            results.append({
-                'symbol': r[0],
-                'Sector': r[1] or '',
-                'close': float(r[2]) if r[2] is not None else None,
-                'Pressure': r[3] or '',
-                'Risk (50d)': r[4] or '',
-                'Trend (TPR)': r[5] or '',
-                'RS Proxy': float(r[6]) if r[6] is not None else None,
-                'VCP (5d)': r[7] or '',
-                'VCP range %': float(r[8]) if r[8] is not None else None,
-                'VCP (10d)': r[9] or '',
-                'VCP 10d range %': float(r[10]) if r[10] is not None else None,
-                'VCP (15d)': r[11] or '',
-                'VCP 15d range %': float(r[12]) if r[12] is not None else None,
-                'Entry Signal': r[13] or '',
-                'date': scan_date,
-            })
-        return results
-    except Exception as e:
-        print(f"Error fetching VCP+Minervini cache: {e}")
-        return []
-    finally:
-        if conn:
-            conn.close()
+    return _get_cached_scan('scanned_vcp_minervini', scan_date)
 
 
 def get_vcp_minervini_scan_dates() -> list[str]:
@@ -3667,52 +3193,13 @@ def prune_old_data_ohlcv(days: int = 5):
 
 
 def get_cached_near_30sma(date_str: str) -> list[dict]:
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        # Fallback if RealDictCursor isn't available
-        cur.execute("SELECT * FROM scanned_near_30sma WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
-        rows = cur.fetchall()
-        if rows and type(rows[0]) != dict and not hasattr(rows[0], 'keys'):
-            cols = [desc[0] for desc in cur.description]
-            return [dict(zip(cols, r)) for r in rows]
-        return [dict(r) for r in rows]
-    except Exception as e:
-        print(f"Error fetching near 30 SMA: {e}")
-        return []
-    finally:
-        if conn: conn.close()
+    return _get_cached_scan('scanned_near_30sma', date_str)
 
 def get_cached_near_30sma_weekly(date_str: str) -> list[dict]:
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_near_30sma_weekly WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
-        rows = cur.fetchall()
-        cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, r)) for r in rows]
-    except Exception as e:
-        print(f"Error fetching near 30 SMA weekly: {e}")
-        return []
-    finally:
-        if conn: conn.close()
+    return _get_cached_scan('scanned_near_30sma_weekly', date_str)
 
 def get_cached_near_30sma_monthly(date_str: str) -> list[dict]:
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM scanned_near_30sma_monthly WHERE scan_date = ? ORDER BY dist_pct ASC", (date_str,))
-        rows = cur.fetchall()
-        cols = [desc[0] for desc in cur.description]
-        return [dict(zip(cols, r)) for r in rows]
-    except Exception as e:
-        print(f"Error fetching near 30 SMA monthly: {e}")
-        return []
-    finally:
-        if conn: conn.close()
+    return _get_cached_scan('scanned_near_30sma_monthly', date_str)
 
 
 
