@@ -1504,169 +1504,156 @@ if run_full or run_sma:
                 all_tickers_ns.append(formatted)
                 
             today_date_str = get_market_date()
-            cache_key_p1 = f"p1_quotes_v2_{universe_key}_{today_date_str}"
-            
-            if cache_key_p1 in st.session_state:
-                open_price_map, close_price_map, volume_map, high_price_map, low_price_map = st.session_state[cache_key_p1]
-                status_box.text("Phase 1/3: Loaded real-time quotes from session cache!")
+            # NOTE: We do NOT use st.session_state cache for Phase 1 quotes.
+            # Session state caches stale partial data (e.g. 201 stocks from a broken previous run).
+            # The database is the single source of truth — it supports incremental saves.
+            open_price_map = {}
+            close_price_map = {}
+            volume_map = {}
+            high_price_map = {}
+            low_price_map = {}
+
+            # ── Smart Phase 1: Check Local DB first ─────────────────────────────
+            _db_quotes = {}
+            # Always check if today's data is already in the database to avoid redundant downloads
+            status_box.text("Phase 1/3: Checking Local Database for today's cached quotes...")
+            try:
+                import concurrent.futures as _p1_cf
+                with _p1_cf.ThreadPoolExecutor(max_workers=1) as _p1_tex:
+                    _fut = _p1_tex.submit(database.get_today_quotes, raw_symbols, today_date_str)
+                    try:
+                        _db_quotes = _fut.result(timeout=10)  # 10s timeout
+                    except _p1_cf.TimeoutError:
+                        print("Phase 1 DB check timed out after 10s — falling back to Yahoo")
+                        _db_quotes = {}
+            except Exception as _dq_err:
+                print(f"Phase 1 DB check error: {_dq_err}")
+                _db_quotes = {}
+
+            # ✅ Always load whatever we have in the local DB to save time!
+            for _sym, _q in _db_quotes.items():
+                if _q["close"] > 0:
+                    close_price_map[_sym]  = _q["close"]
+                    open_price_map[_sym]   = _q["open"]
+                    high_price_map[_sym]   = _q["high"]
+                    low_price_map[_sym]    = _q["low"]
+                    volume_map[_sym]       = _q["volume"]
+
+            # Find which symbols are STILL missing
+            missing_ns = []
+            for s in raw_symbols:
+                clean_s = s.strip().upper()
+                if clean_s not in close_price_map:
+                    missing_ns.append(f"{clean_s}.NS")
+
+            if len(missing_ns) == 0:
+                status_box.text(f"Phase 1/3: ✅ Loaded {len(close_price_map)} quotes from Local Database (skipped Yahoo Finance!)")
                 prog_bar.progress(1.0)
             else:
-                open_price_map = {}
-                close_price_map = {}
-                volume_map = {}
-                high_price_map = {}
-                low_price_map = {}
-    
-                # ── Smart Phase 1: Check Turso DB first ─────────────────────────────
-                _db_quotes = {}
-                # Always check if today's data is already in the database to avoid redundant downloads
-                status_box.text("Phase 1/3: Checking Local Database for today's cached quotes...")
-                try:
-                    import concurrent.futures as _p1_cf
-                    with _p1_cf.ThreadPoolExecutor(max_workers=1) as _p1_tex:
-                        _fut = _p1_tex.submit(database.get_today_quotes, raw_symbols, today_date_str)
-                        try:
-                            _db_quotes = _fut.result(timeout=10)  # 10s timeout — don't hang the UI
-                        except _p1_cf.TimeoutError:
-                            print("Phase 1 DB check timed out after 10s — falling back to Yahoo")
-                            _db_quotes = {}
-                except Exception as _dq_err:
-                    print(f"Phase 1 DB check error: {_dq_err}")
-                    _db_quotes = {}
-    
-                _coverage = len(_db_quotes) / max(len(raw_symbols), 1)
-    
-                # ✅ Always load whatever we have in the local DB to save time!
-                for _sym, _q in _db_quotes.items():
-                    if _q["close"] > 0:
-                        close_price_map[_sym]  = _q["close"]
-                        open_price_map[_sym]   = _q["open"]
-                        high_price_map[_sym]   = _q["high"]
-                        low_price_map[_sym]    = _q["low"]
-                        volume_map[_sym]       = _q["volume"]
-                
-                # Find which symbols are STILL missing
-                missing_ns = []
-                for s in raw_symbols:
-                    clean_s = s.strip().upper()
-                    if clean_s not in close_price_map:
-                        missing_ns.append(f"{clean_s}.NS")
+                # ⬇️ Download from Yahoo Finance ONLY for the missing symbols
+                status_box.text(f"Phase 1/3: Downloading {len(missing_ns)} missing quotes from Yahoo...")
+                import time
+                chunk_size = 35  # 35 tickers per chunk
+                ticker_chunks = [missing_ns[i:i + chunk_size] for i in range(0, len(missing_ns), chunk_size)]
 
-                if len(missing_ns) == 0:
-                    status_box.text(f"Phase 1/3: ✅ Loaded {len(close_price_map)} quotes from Local Database (skipped Yahoo Finance!)")
-                    prog_bar.progress(1.0)
-                else:
-                    # ⬇️ Download from Yahoo Finance ONLY for the missing symbols
-                    status_box.text(f"Phase 1/3: Downloading {len(missing_ns)} missing quotes from Yahoo...")
-                    import time
-                    chunk_size = 35  # 35 tickers per chunk
-                    ticker_chunks = [missing_ns[i:i + chunk_size] for i in range(0, len(missing_ns), chunk_size)]
-                    
-                    # Thread-safe accumulators for parallel quote downloads
-                    import threading as _p1_threading
-                    _p1_lock = _p1_threading.Lock()
-                    
-                    def _download_quote_chunk(idx_chunk_pair):
-                        idx, chunk = idx_chunk_pair
-                        _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
-                        retries = 0
-                        max_retries = 5
-                        backoff = 3.0
-                        while retries <= max_retries:
-                            try:
-                                # yfinance 1.x: auto_adjust=True by default, threads param removed
-                                quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=15)
-                                if not quotes_df.empty:
-                                    # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
-                                    if isinstance(quotes_df.columns, pd.MultiIndex):
-                                        # Level 0 = price type (Close/Open/etc), Level 1 = ticker symbol
-                                        price_types = quotes_df.columns.get_level_values(0).unique().tolist()
-                                        tickers_in_idx = quotes_df.columns.get_level_values(1).unique().tolist()
-                                        # Build per-field Series indexed by ticker (with .NS suffix preserved)
-                                        def _get_field_series(field):
-                                            if field in price_types:
-                                                s = quotes_df[field].iloc[-1]
-                                                return s
-                                            return pd.Series(dtype=float)
-                                        close_series = _get_field_series('Close')
-                                        open_series = _get_field_series('Open')
-                                        volume_series = _get_field_series('Volume')
-                                        high_series = _get_field_series('High')
-                                        low_series = _get_field_series('Low')
-                                    else:
-                                        # Single ticker fallback
-                                        ticker_key = chunk[0]
-                                        close_series = pd.Series({ticker_key: quotes_df['Close'].iloc[-1]})
-                                        open_series = pd.Series({ticker_key: quotes_df['Open'].iloc[-1]}) if 'Open' in quotes_df else close_series
-                                        volume_series = pd.Series({ticker_key: quotes_df['Volume'].iloc[-1]}) if 'Volume' in quotes_df else pd.Series({ticker_key: 0})
-                                        high_series = pd.Series({ticker_key: quotes_df['High'].iloc[-1]}) if 'High' in quotes_df else close_series
-                                        low_series = pd.Series({ticker_key: quotes_df['Low'].iloc[-1]}) if 'Low' in quotes_df else close_series
-    
-                                    # Map prices back to plain symbols (strip .NS suffix)
-                                    # IMPORTANT: index still has .NS suffix, so use k directly for lookup
-                                    for k, v in close_series.items():
-                                        clean_k = str(k).replace(".NS", "").upper()
-                                        if not pd.isna(v) and float(v) > 0:
-                                            _close[clean_k] = float(v)
-                                            # Use original k (with .NS) to look up in the other series
-                                            if k in open_series.index and not pd.isna(open_series[k]):
-                                                _open[clean_k] = float(open_series[k])
-                                            if k in volume_series.index and not pd.isna(volume_series[k]):
-                                                _vol[clean_k] = int(volume_series[k])
-                                            if k in high_series.index and not pd.isna(high_series[k]):
-                                                _high[clean_k] = float(high_series[k])
-                                            if k in low_series.index and not pd.isna(low_series[k]):
-                                                _low[clean_k] = float(low_series[k])
-                                    # Successfully loaded chunk, add a tiny delay to respect rate limits
-                                    time.sleep(1.5)
-                                    return (_open, _close, _vol, _high, _low)
+                # Thread-safe accumulators for parallel quote downloads
+                import threading as _p1_threading
+                _p1_lock = _p1_threading.Lock()
+
+                def _download_quote_chunk(idx_chunk_pair):
+                    idx, chunk = idx_chunk_pair
+                    _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
+                    retries = 0
+                    max_retries = 5
+                    backoff = 3.0
+                    while retries <= max_retries:
+                        try:
+                            # yfinance 1.x: auto_adjust=True by default, threads param removed
+                            quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=15)
+                            if not quotes_df.empty:
+                                # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
+                                if isinstance(quotes_df.columns, pd.MultiIndex):
+                                    # Level 0 = price type (Close/Open/etc), Level 1 = ticker symbol
+                                    price_types = quotes_df.columns.get_level_values(0).unique().tolist()
+                                    # Build per-field Series indexed by ticker (with .NS suffix preserved)
+                                    def _get_field_series(field):
+                                        if field in price_types:
+                                            s = quotes_df[field].iloc[-1]
+                                            return s
+                                        return pd.Series(dtype=float)
+                                    close_series = _get_field_series('Close')
+                                    open_series = _get_field_series('Open')
+                                    volume_series = _get_field_series('Volume')
+                                    high_series = _get_field_series('High')
+                                    low_series = _get_field_series('Low')
                                 else:
-                                    raise ValueError("Empty DataFrame returned")
-                            except Exception as chunk_ex:
-                                retries += 1
-                                if retries > max_retries:
-                                    print(f"Error downloading quote chunk {idx+1}/{len(ticker_chunks)} after {max_retries} retries: {chunk_ex}")
-                                    break
-                                print(f"Rate limited or quote download failed for chunk {idx+1}/{len(ticker_chunks)}. Retrying in {backoff}s... (Error: {chunk_ex})")
-                                time.sleep(backoff)
-                                backoff *= 2.0
-                        return ({}, {}, {}, {}, {})
-                    
-                    # Use a single worker for large universes to prevent aggressive yfinance rate-limiting
-                    p1_workers = 1 if len(ticker_chunks) > 10 else min(3, len(ticker_chunks))
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=p1_workers) as p1_executor:
-                        chunk_pairs = list(enumerate(ticker_chunks))
-                        for i, result in enumerate(p1_executor.map(_download_quote_chunk, chunk_pairs)):
-                            _o, _c, _v, _h, _l = result
-                            open_price_map.update(_o)
-                            close_price_map.update(_c)
-                            volume_map.update(_v)
-                            high_price_map.update(_h)
-                            low_price_map.update(_l)
-                            prog_bar.progress((i + 1) / len(ticker_chunks))
-                            status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {i+1}/{len(ticker_chunks)})...")
-    
-                            # ✅ Save this chunk to Turso DB immediately (per-chunk progressive save)
-                            # This means if the user closes the app mid-scan, all completed chunks
-                            # are already in the DB and won't need to be downloaded again!
-                            if _c:
-                                _chunk_c = dict(_c); _chunk_o = dict(_o)
-                                _chunk_h = dict(_h); _chunk_l = dict(_l); _chunk_v = dict(_v)
-                                _d_str = today_date_str
-                                def _save_chunk_now(cc, co, ch, cl, cv, ds):
-                                    try:
-                                        database.save_today_quotes(ds, cc, co, ch, cl, cv)
-                                    except Exception as _sce:
-                                        print(f"Chunk {i+1} save error: {_sce}")
-                                import threading as _p1_save_t
-                                _p1_save_t.Thread(
-                                    target=_save_chunk_now,
-                                    args=(_chunk_c, _chunk_o, _chunk_h, _chunk_l, _chunk_v, _d_str),
-                                    daemon=True
-                                ).start()
-    
-                st.session_state[cache_key_p1] = (open_price_map, close_price_map, volume_map, high_price_map, low_price_map)
-    
+                                    # Single ticker fallback
+                                    ticker_key = chunk[0]
+                                    close_series = pd.Series({ticker_key: quotes_df['Close'].iloc[-1]})
+                                    open_series = pd.Series({ticker_key: quotes_df['Open'].iloc[-1]}) if 'Open' in quotes_df else close_series
+                                    volume_series = pd.Series({ticker_key: quotes_df['Volume'].iloc[-1]}) if 'Volume' in quotes_df else pd.Series({ticker_key: 0})
+                                    high_series = pd.Series({ticker_key: quotes_df['High'].iloc[-1]}) if 'High' in quotes_df else close_series
+                                    low_series = pd.Series({ticker_key: quotes_df['Low'].iloc[-1]}) if 'Low' in quotes_df else close_series
+
+                                # Map prices back to plain symbols (strip .NS suffix)
+                                for k, v in close_series.items():
+                                    clean_k = str(k).replace(".NS", "").upper()
+                                    if not pd.isna(v) and float(v) > 0:
+                                        _close[clean_k] = float(v)
+                                        if k in open_series.index and not pd.isna(open_series[k]):
+                                            _open[clean_k] = float(open_series[k])
+                                        if k in volume_series.index and not pd.isna(volume_series[k]):
+                                            _vol[clean_k] = int(volume_series[k])
+                                        if k in high_series.index and not pd.isna(high_series[k]):
+                                            _high[clean_k] = float(high_series[k])
+                                        if k in low_series.index and not pd.isna(low_series[k]):
+                                            _low[clean_k] = float(low_series[k])
+                                # Successfully loaded chunk, add a tiny delay to respect rate limits
+                                time.sleep(1.5)
+                                return (_open, _close, _vol, _high, _low)
+                            else:
+                                raise ValueError("Empty DataFrame returned")
+                        except Exception as chunk_ex:
+                            retries += 1
+                            if retries > max_retries:
+                                print(f"Error downloading quote chunk {idx+1}/{len(ticker_chunks)} after {max_retries} retries: {chunk_ex}")
+                                break
+                            print(f"Rate limited or quote download failed for chunk {idx+1}/{len(ticker_chunks)}. Retrying in {backoff}s... (Error: {chunk_ex})")
+                            time.sleep(backoff)
+                            backoff *= 2.0
+                    return ({}, {}, {}, {}, {})
+
+                # Use a single worker to prevent aggressive yfinance rate-limiting
+                p1_workers = 1 if len(ticker_chunks) > 10 else min(3, len(ticker_chunks))
+                with concurrent.futures.ThreadPoolExecutor(max_workers=p1_workers) as p1_executor:
+                    chunk_pairs = list(enumerate(ticker_chunks))
+                    for i, result in enumerate(p1_executor.map(_download_quote_chunk, chunk_pairs)):
+                        _o, _c, _v, _h, _l = result
+                        open_price_map.update(_o)
+                        close_price_map.update(_c)
+                        volume_map.update(_v)
+                        high_price_map.update(_h)
+                        low_price_map.update(_l)
+                        prog_bar.progress((i + 1) / len(ticker_chunks))
+                        status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {i+1}/{len(ticker_chunks)})...")
+
+                        # ✅ Save this chunk to DB immediately (per-chunk progressive save)
+                        if _c:
+                            _chunk_c = dict(_c); _chunk_o = dict(_o)
+                            _chunk_h = dict(_h); _chunk_l = dict(_l); _chunk_v = dict(_v)
+                            _d_str = today_date_str
+                            def _save_chunk_now(cc, co, ch, cl, cv, ds):
+                                try:
+                                    database.save_today_quotes(ds, cc, co, ch, cl, cv)
+                                except Exception as _sce:
+                                    print(f"Chunk {i+1} save error: {_sce}")
+                            import threading as _p1_save_t
+                            _p1_save_t.Thread(
+                                target=_save_chunk_now,
+                                args=(_chunk_c, _chunk_o, _chunk_h, _chunk_l, _chunk_v, _d_str),
+                                daemon=True
+                            ).start()
+
             # Fast filter Price > 0 (removes completely dead/invalid symbols)
             from local_cache_manager import get_cached_ohlcv
             scan_symbols = []
