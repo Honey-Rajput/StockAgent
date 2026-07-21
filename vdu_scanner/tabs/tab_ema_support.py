@@ -66,12 +66,12 @@ def render():
     
     if run_bb_btn:
         st.session_state.ema_support_results = None
-        ALL_TAB_SCAN_STATUS["ema_support_results"] = None
+        st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"] = None
         run_background_ema_support_scan(force=True)
         st.rerun()
         
-    if st.session_state.get('ema_support_results') is None and ALL_TAB_SCAN_STATUS.get("ema_support_results") is not None:
-        st.session_state.ema_support_results = ALL_TAB_SCAN_STATUS["ema_support_results"]
+    if st.session_state.get('ema_support_results') is None and st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_results") is not None:
+        st.session_state.ema_support_results = st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"]
         
     if st.session_state.get('ema_support_results') is not None:
         ema_list = st.session_state.ema_support_results
@@ -122,12 +122,12 @@ def render():
             
             render_unified_strategy_table(ema_list, "ema_support", "ema_support_tab")
         else:
-            if st.session_state.get("ema_support_running", False) or ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
+            if st.session_state.get("ema_support_running", False) or st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
                 st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
             else:
                 st.info("✅ Scan completed — no EMA Support setups found for the selected universe.")
     else:
-        if st.session_state.get("ema_support_running", False) or ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
+        if st.session_state.get("ema_support_running", False) or st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
             st.info("⏳ Background scanner is analyzing EMA Support... Please wait.")
         else:
             st.warning("⚠️ Scan has not been run yet. Click **'Run EMA Support Scan'** above to start, or enable **Auto-Background Scans** in the sidebar.")

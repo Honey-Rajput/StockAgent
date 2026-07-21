@@ -165,9 +165,9 @@ def render():
             st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete!", icon="✅")
             
     # Pick up background scan results if available
-    if not st.session_state.wt_results_by_tf.get(wt_cache_key) and ALL_TAB_SCAN_STATUS["wt_results"] is not None:
-        st.session_state.wt_results_by_tf["Daily_-40.0"] = ALL_TAB_SCAN_STATUS["wt_results"]
-        st.session_state.wt_results = ALL_TAB_SCAN_STATUS["wt_results"]
+    if not st.session_state.wt_results_by_tf.get(wt_cache_key) and st.session_state.ALL_TAB_SCAN_STATUS["wt_results"] is not None:
+        st.session_state.wt_results_by_tf["Daily_-40.0"] = st.session_state.ALL_TAB_SCAN_STATUS["wt_results"]
+        st.session_state.wt_results = st.session_state.ALL_TAB_SCAN_STATUS["wt_results"]
 
     wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, None)
     
@@ -221,10 +221,10 @@ def render():
     )
     
     # Background scan progress indicator
-    if wt_data is None and ALL_TAB_SCAN_STATUS["is_running"]:
-        _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
-        _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
-        _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+    if wt_data is None and st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
+        _bg_scanner = st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"]
+        _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
+        _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
         st.markdown(f"""
         <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
             <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">

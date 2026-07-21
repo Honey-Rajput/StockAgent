@@ -348,8 +348,8 @@ if "MOMENTUM_SCAN_STATUS" not in globals():
     }
 
 # Initialize global status dictionary for ALL individual tab background scans
-if "ALL_TAB_SCAN_STATUS" not in globals():
-    ALL_TAB_SCAN_STATUS = {
+if "st.session_state.ALL_TAB_SCAN_STATUS" not in st.session_state:
+    st.session_state.ALL_TAB_SCAN_STATUS = {
         "is_running": False,
         "current_scanner": "",
         "status_text": "Not started",
@@ -659,14 +659,14 @@ def run_background_momentum_scans():
 
 
 def run_background_ema_support_scan(force=False):
-    if ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
+    if st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
         return
         
     is_already_running = any(t.name == "Background_BB_Squeeze" for t in __import__('threading').enumerate())
     if is_already_running:
         return
         
-    ALL_TAB_SCAN_STATUS["ema_support_running"] = True
+    st.session_state.ALL_TAB_SCAN_STATUS["ema_support_running"] = True
     st.session_state.ema_support_running = True
     
     def thread_runner():
@@ -679,9 +679,9 @@ def run_background_ema_support_scan(force=False):
             if not force:
                 cached_bb = database.get_cached_ema_support(today_str)
                 if cached_bb and len(cached_bb) > 0:
-                    ALL_TAB_SCAN_STATUS["ema_support_results"] = cached_bb
+                    st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"] = cached_bb
                     st.session_state.ema_support_results = cached_bb
-                    ALL_TAB_SCAN_STATUS["ema_support_running"] = False
+                    st.session_state.ALL_TAB_SCAN_STATUS["ema_support_running"] = False
                     st.session_state.ema_support_running = False
                     return
                 
@@ -710,7 +710,7 @@ def run_background_ema_support_scan(force=False):
                 except Exception:
                     pass
                     
-            ALL_TAB_SCAN_STATUS["ema_support_results"] = bb_results
+            st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"] = bb_results
             st.session_state.ema_support_results = bb_results
             try:
                 database.save_ema_support_only(today_str, bb_results)
@@ -720,7 +720,7 @@ def run_background_ema_support_scan(force=False):
         except Exception as e:
             print(f"BB Squeeze background thread crashed: {e}")
         finally:
-            ALL_TAB_SCAN_STATUS["ema_support_running"] = False
+            st.session_state.ALL_TAB_SCAN_STATUS["ema_support_running"] = False
             st.session_state.ema_support_running = False
             
     import threading
@@ -736,8 +736,7 @@ def run_background_all_tab_scans():
     in a background daemon thread when Enable Auto-Background Scans is checked.
     Skips any scanner whose results are already cached in the database for today.
     """
-    global ALL_TAB_SCAN_STATUS
-    if ALL_TAB_SCAN_STATUS["is_running"]:
+    if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
         return
 
     # Guard to prevent duplicate concurrent background scanning threads
@@ -747,9 +746,9 @@ def run_background_all_tab_scans():
         print("Background all-tab scan thread is already active. Skipping duplicate thread launch.")
         return
 
-    ALL_TAB_SCAN_STATUS["is_running"] = True
-    ALL_TAB_SCAN_STATUS["status_text"] = "Initializing all-tab background scans..."
-    ALL_TAB_SCAN_STATUS["progress"] = 0.0
+    st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = True
+    st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Initializing all-tab background scans..."
+    st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.0
 
     def thread_runner():
         import yfinance as yf
@@ -776,10 +775,10 @@ def run_background_all_tab_scans():
             run_near_30sma = not bool(database.get_cached_near_30sma(today_str))
 
             if not (run_wt or run_vcs or run_vpa or run_vp or run_s2 or run_vpa_sq or run_near_30sma):
-                ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
-                ALL_TAB_SCAN_STATUS["progress"] = 1.0
-                ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
-                ALL_TAB_SCAN_STATUS["is_running"] = False
+                st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
+                st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 1.0
+                st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
+                st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = False
                 print("[BG All-Tab] All background tab scans already cached. Skipping.")
                 return
 
@@ -790,9 +789,9 @@ def run_background_all_tab_scans():
             # Phase 2: Shared Daily Download (1y or 2y)
             shared_daily_data = {}
             if run_wt or run_vcs or run_vpa or run_vp or run_vpa_sq or run_near_30sma:
-                ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
-                ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
-                ALL_TAB_SCAN_STATUS["progress"] = 0.05
+                st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
+                st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
+                st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.05
                 print("[BG All-Tab] Downloading shared daily data...")
                 
                 # Use incremental fetching from data_fetcher for efficiency
@@ -806,7 +805,7 @@ def run_background_all_tab_scans():
                         sym = futures[future]
                         processed_count += 1
                         if processed_count % 50 == 0:
-                            ALL_TAB_SCAN_STATUS["progress"] = 0.05 + (processed_count / len(all_symbols)) * 0.25
+                            st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.05 + (processed_count / len(all_symbols)) * 0.25
                         try:
                             df = future.result()
                             if df is not None and not df.empty and len(df) >= 40:
@@ -881,8 +880,8 @@ def run_background_all_tab_scans():
             near_30sma_monthly_list = []
             
             if shared_daily_data:
-                ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
-                ALL_TAB_SCAN_STATUS["status_text"] = "Running concurrent daily scans..."
+                st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
+                st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Running concurrent daily scans..."
                 
                 tasks_to_run = []
                 for sym, df in shared_daily_data.items():
@@ -897,7 +896,7 @@ def run_background_all_tab_scans():
                     futures = [executor.submit(func, sym, df) for func, sym, df in tasks_to_run]
                     for i, future in enumerate(concurrent.futures.as_completed(futures)):
                         if i % 100 == 0:
-                            ALL_TAB_SCAN_STATUS["progress"] = 0.30 + (i / len(tasks_to_run)) * 0.45
+                            st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.30 + (i / len(tasks_to_run)) * 0.45
                         try:
                             scan_type, result = future.result()
                             if result:
@@ -918,30 +917,30 @@ def run_background_all_tab_scans():
                 
                 # Save results
                 if run_wt:
-                    ALL_TAB_SCAN_STATUS["wt_results"] = wt_tf_results
+                    st.session_state.ALL_TAB_SCAN_STATUS["wt_results"] = wt_tf_results
                     try: database.save_wt_cross_only(today_str, wt_tf_results)
                     except: pass
                 if run_vcs:
-                    ALL_TAB_SCAN_STATUS["vcs_results"] = custom_vcs_results
+                    st.session_state.ALL_TAB_SCAN_STATUS["vcs_results"] = custom_vcs_results
                     try: database.save_vcs_only(today_str, custom_vcs_results)
                     except: pass
                 if run_vpa:
-                    ALL_TAB_SCAN_STATUS["vpa_results"] = vpa_list
+                    st.session_state.ALL_TAB_SCAN_STATUS["vpa_results"] = vpa_list
                     try: database.save_vpa_only(today_str, vpa_list)
                     except: pass
                 if run_vp:
-                    ALL_TAB_SCAN_STATUS["volume_profile_results"] = vp_list
+                    st.session_state.ALL_TAB_SCAN_STATUS["volume_profile_results"] = vp_list
                     try: database.save_volume_profile_only(today_str, vp_list)
                     except: pass
                 if run_vpa_sq:
-                    ALL_TAB_SCAN_STATUS["vpa_squeeze_results"] = vpa_sq_list
+                    st.session_state.ALL_TAB_SCAN_STATUS["vpa_squeeze_results"] = vpa_sq_list
                     try:
                         database.save_vpa_squeeze_only(today_str, vpa_sq_list)
                         database.save_vpa_squeeze_weekly_only(today_str, vpa_sq_weekly_list)
                         database.save_vpa_squeeze_monthly_only(today_str, vpa_sq_monthly_list)
                     except Exception as e: print(f"Save VPA SQ failed: {e}")
                 if run_near_30sma:
-                    ALL_TAB_SCAN_STATUS["near_30sma_results"] = near_30sma_list
+                    st.session_state.ALL_TAB_SCAN_STATUS["near_30sma_results"] = near_30sma_list
                     try:
                         database.save_near_30sma_only(today_str, near_30sma_list)
                         database.save_near_30sma_weekly_only(today_str, near_30sma_weekly_list)
@@ -950,9 +949,9 @@ def run_background_all_tab_scans():
 
             # Phase 4: Stage-2 (Monthly)
             if run_s2:
-                ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
-                ALL_TAB_SCAN_STATUS["status_text"] = "Running Stage-2 monthly scan..."
-                ALL_TAB_SCAN_STATUS["progress"] = 0.75
+                st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
+                st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Running Stage-2 monthly scan..."
+                st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.75
                 from data_fetcher import get_top1000_nse_symbols
                 s2_cands = get_top1000_nse_symbols()
                 s2_res = []
@@ -962,7 +961,7 @@ def run_background_all_tab_scans():
                 
                 for c_idx, (sym, t_df) in enumerate(s2_bulk.items()):
                     if c_idx % 20 == 0:
-                        ALL_TAB_SCAN_STATUS["progress"] = 0.75 + (c_idx / max(len(s2_bulk), 1)) * 0.20
+                        st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.75 + (c_idx / max(len(s2_bulk), 1)) * 0.20
                         
                     if t_df is None or t_df.empty:
                         continue
@@ -975,19 +974,19 @@ def run_background_all_tab_scans():
                     except Exception: pass
                     
                 s2_res = sorted(s2_res, key=lambda x: x.get('score', 0), reverse=True)
-                ALL_TAB_SCAN_STATUS["stage2_results"] = s2_res
+                st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"] = s2_res
                 try: database.save_stage2_only(today_str, s2_res)
                 except Exception: pass
 
-            ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans complete!"
-            ALL_TAB_SCAN_STATUS["progress"] = 1.0
-            ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
-            ALL_TAB_SCAN_STATUS["is_running"] = False
+            st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans complete!"
+            st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 1.0
+            st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
+            st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = False
             print("[BG All-Tab] All background tab scans complete!")
 
         except Exception as err:
-            ALL_TAB_SCAN_STATUS["status_text"] = f"Background scan error: {err}"
-            ALL_TAB_SCAN_STATUS["is_running"] = False
+            st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = f"Background scan error: {err}"
+            st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = False
             print(f"[BG All-Tab] Fatal error: {err}")
 
     t = threading.Thread(target=thread_runner, name="Background_All_Tab_Scans", daemon=True)
@@ -1086,10 +1085,10 @@ if enable_background_scans:
     if (st.session_state.monthly_momentum_results is None or st.session_state.weekly_momentum_results is None) and not MOMENTUM_SCAN_STATUS["is_running"]:
         run_background_momentum_scans()
     # Auto-trigger all remaining tab scans (WaveTrend, VCS, Stage-2, VPA, Volume Profile)
-    if not ALL_TAB_SCAN_STATUS["is_running"]:
+    if not st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
         run_background_all_tab_scans()
     # Auto-trigger BB Squeeze
-    if not ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
+    if not st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
         run_background_ema_support_scan()
 
 # --- Automatic Daily Database Cache Loader ---

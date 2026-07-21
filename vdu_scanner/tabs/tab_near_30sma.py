@@ -61,8 +61,8 @@ def render():
     st.markdown("### 📉 Near 30 SMA")
     st.info("Finds stocks where the price is within +/- 3% of the 30-day SMA (can be slightly above or below it).")
     
-    if not st.session_state.get('near_30sma_results') and ALL_TAB_SCAN_STATUS.get("near_30sma_results") is not None:
-        st.session_state.near_30sma_results = ALL_TAB_SCAN_STATUS["near_30sma_results"]
+    if not st.session_state.get('near_30sma_results') and st.session_state.ALL_TAB_SCAN_STATUS.get("near_30sma_results") is not None:
+        st.session_state.near_30sma_results = st.session_state.ALL_TAB_SCAN_STATUS["near_30sma_results"]
         
     if "near_30sma_weekly_results" not in st.session_state:
         st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str) if is_startup and latest_date_str else []

@@ -62,8 +62,8 @@ def render():
     st.info("Scans ALL NSE listed stocks. Filters: Price > ₹100. Shows Major, Mid, and Minor trends across timeframes.")
     
     # Pick up background scan results if available
-    if not st.session_state.get('vpa_results') and ALL_TAB_SCAN_STATUS["vpa_results"] is not None:
-        st.session_state.vpa_results = ALL_TAB_SCAN_STATUS["vpa_results"]
+    if not st.session_state.get('vpa_results') and st.session_state.ALL_TAB_SCAN_STATUS["vpa_results"] is not None:
+        st.session_state.vpa_results = st.session_state.ALL_TAB_SCAN_STATUS["vpa_results"]
 
     col1, col2 = st.columns([3, 7])
     with col1:
@@ -168,10 +168,10 @@ def render():
                 
     if not st.session_state.get('vpa_results'):
         # Background scan progress indicator
-        if ALL_TAB_SCAN_STATUS["is_running"]:
-            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
-            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
-            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+        if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
+            _bg_scanner = st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"]
+            _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
+            _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
             st.markdown(f"""
             <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
                 <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">

@@ -65,8 +65,8 @@ def render():
         st.session_state.stage2_results = None
 
     # Pick up background scan results if available
-    if st.session_state.stage2_results is None and ALL_TAB_SCAN_STATUS["stage2_results"] is not None:
-        st.session_state.stage2_results = ALL_TAB_SCAN_STATUS["stage2_results"]
+    if st.session_state.stage2_results is None and st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"] is not None:
+        st.session_state.stage2_results = st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"]
         # Try loading from DB
         today_str = get_market_date(for_display=True)
         try:
@@ -164,10 +164,10 @@ def render():
     
     if st.session_state.stage2_results is None:
         # Background scan progress indicator
-        if ALL_TAB_SCAN_STATUS["is_running"]:
-            _bg_scanner = ALL_TAB_SCAN_STATUS["current_scanner"]
-            _bg_status = ALL_TAB_SCAN_STATUS["status_text"]
-            _bg_progress = ALL_TAB_SCAN_STATUS["progress"]
+        if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
+            _bg_scanner = st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"]
+            _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
+            _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
             st.markdown(f"""
             <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
                 <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
