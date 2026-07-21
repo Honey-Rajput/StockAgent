@@ -25,12 +25,12 @@ def get_market_date(for_display=False):
     else:
         target_date = today.strftime('%Y-%m-%d')
         
-    # if for_display:
-    #     import database
-    #     if not database.has_scanned_today(target_date):
-    #         avail = database.get_available_scan_dates()
-    #         if avail:
-    #             return avail[0]
+    if for_display:
+        import database
+        if not database.has_scanned_today(target_date):
+            avail = database.get_available_scan_dates()
+            if avail:
+                return avail[0]
                 
     return target_date
 
@@ -265,7 +265,7 @@ if "sort_col" in st.query_params:
 # --- Initialize Session State ---
 import database
 latest_dates = database.get_available_scan_dates()
-latest_date_str = get_market_date(for_display=False)
+latest_date_str = latest_dates[0] if latest_dates else None
 
 # Clean up data older than 30 days automatically
 try:

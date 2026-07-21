@@ -1083,6 +1083,14 @@ def get_available_scan_dates() -> list[str]:
         SELECT scan_date FROM scanned_zanger
         UNION
         SELECT scan_date FROM scanned_volume_profile
+        UNION
+        SELECT scan_date FROM scanned_breakouts
+        UNION
+        SELECT scan_date FROM scanned_squeezes
+        UNION
+        SELECT scan_date FROM scanned_gapups
+        UNION
+        SELECT scan_date FROM scanned_wt_cross
     ) AS all_dates
     GROUP BY scan_date
     ORDER BY scan_date DESC;
