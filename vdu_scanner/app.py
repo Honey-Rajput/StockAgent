@@ -1518,50 +1518,49 @@ if run_full or run_sma:
                 low_price_map = {}
     
                 # ── Smart Phase 1: Check Turso DB first ─────────────────────────────
-                # NSE market hours: 9:15 AM – 3:30 PM IST on weekdays
-                from datetime import time as _time
-                _now_ist = datetime.now(IST_TIMEZONE)
-                _market_open = (
-                    _now_ist.weekday() < 5
-                    and _time(9, 15) <= _now_ist.time() <= _time(15, 30)
-                )
-    
                 _db_quotes = {}
-                if not _market_open:
-                    # Market is closed — check if today's data is already in the database
-                    status_box.text("Phase 1/3: Checking Local Database for today's cached quotes...")
-                    try:
-                        import concurrent.futures as _p1_cf
-                        with _p1_cf.ThreadPoolExecutor(max_workers=1) as _p1_tex:
-                            _fut = _p1_tex.submit(database.get_today_quotes, raw_symbols, today_date_str)
-                            try:
-                                _db_quotes = _fut.result(timeout=10)  # 10s timeout — don't hang the UI
-                            except _p1_cf.TimeoutError:
-                                print("Phase 1 DB check timed out after 10s — falling back to Yahoo")
-                                _db_quotes = {}
-                    except Exception as _dq_err:
-                        print(f"Phase 1 DB check error: {_dq_err}")
-                        _db_quotes = {}
+                # Always check if today's data is already in the database to avoid redundant downloads
+                status_box.text("Phase 1/3: Checking Local Database for today's cached quotes...")
+                try:
+                    import concurrent.futures as _p1_cf
+                    with _p1_cf.ThreadPoolExecutor(max_workers=1) as _p1_tex:
+                        _fut = _p1_tex.submit(database.get_today_quotes, raw_symbols, today_date_str)
+                        try:
+                            _db_quotes = _fut.result(timeout=10)  # 10s timeout — don't hang the UI
+                        except _p1_cf.TimeoutError:
+                            print("Phase 1 DB check timed out after 10s — falling back to Yahoo")
+                            _db_quotes = {}
+                except Exception as _dq_err:
+                    print(f"Phase 1 DB check error: {_dq_err}")
+                    _db_quotes = {}
     
                 _coverage = len(_db_quotes) / max(len(raw_symbols), 1)
     
-                if _coverage >= 0.90:
-                    # ✅ Turso has today's data — skip Yahoo entirely!
-                    for _sym, _q in _db_quotes.items():
-                        if _q["close"] > 0:
-                            close_price_map[_sym]  = _q["close"]
-                            open_price_map[_sym]   = _q["open"]
-                            high_price_map[_sym]   = _q["high"]
-                            low_price_map[_sym]    = _q["low"]
-                            volume_map[_sym]       = _q["volume"]
+                # ✅ Always load whatever we have in the local DB to save time!
+                for _sym, _q in _db_quotes.items():
+                    if _q["close"] > 0:
+                        close_price_map[_sym]  = _q["close"]
+                        open_price_map[_sym]   = _q["open"]
+                        high_price_map[_sym]   = _q["high"]
+                        low_price_map[_sym]    = _q["low"]
+                        volume_map[_sym]       = _q["volume"]
+                
+                # Find which symbols are STILL missing
+                missing_ns = []
+                for s in raw_symbols:
+                    clean_s = s.strip().upper()
+                    if clean_s not in close_price_map:
+                        missing_ns.append(f"{clean_s}.NS")
+
+                if len(missing_ns) == 0:
                     status_box.text(f"Phase 1/3: ✅ Loaded {len(close_price_map)} quotes from Local Database (skipped Yahoo Finance!)")
                     prog_bar.progress(1.0)
                 else:
-                    # ⬇️ Download from Yahoo Finance (first scan of the day / market open)
-                    status_box.text("Phase 1/3: Downloading real-time quotes for selected universe...")
+                    # ⬇️ Download from Yahoo Finance ONLY for the missing symbols
+                    status_box.text(f"Phase 1/3: Downloading {len(missing_ns)} missing quotes from Yahoo...")
                     import time
-                    chunk_size = 35  # 35 tickers per chunk → ~51 chunks for 1795 symbols (was 72)
-                    ticker_chunks = [all_tickers_ns[i:i + chunk_size] for i in range(0, len(all_tickers_ns), chunk_size)]
+                    chunk_size = 35  # 35 tickers per chunk
+                    ticker_chunks = [missing_ns[i:i + chunk_size] for i in range(0, len(missing_ns), chunk_size)]
                     
                     # Thread-safe accumulators for parallel quote downloads
                     import threading as _p1_threading
