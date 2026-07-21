@@ -195,12 +195,19 @@ def ensure_minervini_fields(m_list):
 
 # --- Page Configurations ---
 st.set_page_config(
-    page_title="Volume Surge Scanner",
+    page_title="VDU Breakout Scanner",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
+# Ensure database tables exist (fixes scan_logs SQLite missing table error on cloud)
+import database
+database.init_db()
+
+# =============================================================================
+# Custom CSS for UI Elegance & Readability
+# =============================================================================
 # Inject modern Outfit typography, glassmorphism card layouts and custom color styles
 inject_premium_css()
 
@@ -1212,8 +1219,11 @@ st.markdown('<p class="gradient-subtitle">Scan NSE-listed stocks for institution
 
 # --- SIDEBAR CONTROLS ---
 st.sidebar.markdown('### ⚙️ Scan Universe')
-universe_selection = "Top 1000 NSE Stocks (By Market Cap)"
-st.sidebar.info("🔍 **Scan Universe:** Top 1000 NSE Stocks (By Market Cap)")
+universe_selection = st.sidebar.selectbox(
+    "Select Universe",
+    ["Nifty 500 (Broad Market)", "Nifty 200 (Mid-Large)", "Top 1000 NSE Stocks (By Market Cap)", "F&O Stocks Only"],
+    index=2
+)
 
 # =============================================================================
 # MARKET CONDITION WIDGET — Nifty 50 Breadth Filter
@@ -1474,10 +1484,20 @@ if run_full or run_sma:
         yf_period = "2y"
         yf_interval = "1d"
 
-    # Universe is hardcoded to Top 1000 NSE stocks
-    universe_key = "TOP 1000"
-    from data_fetcher import get_top1000_nse_symbols
-    raw_symbols = get_top1000_nse_symbols()
+    # Select Universe dynamically based on user selection
+    if "500" in universe_selection:
+        universe_key = "NIFTY 500"
+        raw_symbols = get_index_stocks("NIFTY 500")
+    elif "200" in universe_selection:
+        universe_key = "NIFTY 200"
+        raw_symbols = get_index_stocks("NIFTY 200")
+    elif "F&O" in universe_selection:
+        universe_key = "F&O"
+        raw_symbols = get_index_stocks("F&O")
+    else:
+        universe_key = "TOP 1000"
+        from data_fetcher import get_top1000_nse_symbols
+        raw_symbols = get_top1000_nse_symbols()
         
     if not raw_symbols:
         st.sidebar.error("❌ No symbols found to scan.")
