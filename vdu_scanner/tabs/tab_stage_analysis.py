@@ -67,7 +67,7 @@ def render():
     if run_sa_btn:
         st.session_state.stage_analysis_results = None
         
-        with st.spinner(f"Running Stage Analysis Scan on {universe_selection}..."):
+        with st.spinner(f"Running Stage Analysis Scan on {st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)')}..."):
             import yfinance as yf
             import concurrent.futures
            
@@ -88,10 +88,10 @@ def render():
                 bRet = 0.0
                 
             sa_universe = "ALL NSE"
-            if "NIFTY 500" in universe_selection: sa_universe = "NIFTY 500"
-            elif "NIFTY 100" in universe_selection: sa_universe = "NIFTY 100"
-            elif "NIFTY 50" in universe_selection: sa_universe = "NIFTY 50"
-            elif "WATCHLIST" in universe_selection.upper(): sa_universe = "WATCHLIST"
+            if "NIFTY 500" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): sa_universe = "NIFTY 500"
+            elif "NIFTY 100" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): sa_universe = "NIFTY 100"
+            elif "NIFTY 50" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): sa_universe = "NIFTY 50"
+            elif "WATCHLIST" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)').upper(): sa_universe = "WATCHLIST"
             
             raw_symbols = get_index_stocks(sa_universe) if sa_universe != "ALL NSE" else get_all_nse_symbols()
             all_syms = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
@@ -156,13 +156,13 @@ def render():
         sa_list = st.session_state.stage_analysis_results
         
         # Apply Universe Filter
-        if "ALL NSE" not in universe_selection.upper() and len(sa_list) > 0:
+        if "ALL NSE" not in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)').upper() and len(sa_list) > 0:
             from data_fetcher import get_index_stocks
             resolved_univ = "ALL NSE"
-            if "NIFTY 500" in universe_selection: resolved_univ = "NIFTY 500"
-            elif "NIFTY 100" in universe_selection: resolved_univ = "NIFTY 100"
-            elif "NIFTY 50" in universe_selection: resolved_univ = "NIFTY 50"
-            elif "WATCHLIST" in universe_selection.upper(): resolved_univ = "WATCHLIST"
+            if "NIFTY 500" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): resolved_univ = "NIFTY 500"
+            elif "NIFTY 100" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): resolved_univ = "NIFTY 100"
+            elif "NIFTY 50" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): resolved_univ = "NIFTY 50"
+            elif "WATCHLIST" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)').upper(): resolved_univ = "WATCHLIST"
             if resolved_univ != "ALL NSE":
                 raw_symbols = get_index_stocks(resolved_univ)
                 valid_set = set([str(s).replace('.NS', '').strip().upper() for s in raw_symbols if str(s).strip()])

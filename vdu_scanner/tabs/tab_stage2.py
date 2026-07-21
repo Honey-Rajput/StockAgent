@@ -83,8 +83,8 @@ def render():
         run_stage2_btn = st.button("🔍 Run Stage 2 Scan", width="stretch", type="primary")
         
     if run_stage2_btn:
-        with st.spinner(f"Running Monthly Stage 2 Scan on {universe_selection}..."):
-            s2_universe = universe_selection
+        with st.spinner(f"Running Monthly Stage 2 Scan on {st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)')}..."):
+            s2_universe = st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)')
             if "NIFTY 50" in s2_universe:
                 s2_key = "NIFTY 50"
             elif "NIFTY 100" in s2_universe:
@@ -184,7 +184,7 @@ def render():
                 
         st.info("💡 Adjust parameters and click 'Run Stage 2 Scan' to find long-term breakouts.")
     elif len(st.session_state.stage2_results) == 0:
-        st.info(f"ℹ️ No early Stage 2 setups found in {universe_selection} today.")
+        st.info(f"ℹ️ No early Stage 2 setups found in {st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)')} today.")
     else:
         dl_btn, _ = st.columns([2, 8])
         with dl_btn:

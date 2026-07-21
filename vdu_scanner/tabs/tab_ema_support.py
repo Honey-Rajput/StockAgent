@@ -77,13 +77,13 @@ def render():
         ema_list = st.session_state.ema_support_results
         
         # Apply Universe Filter
-        if "ALL NSE" not in universe_selection.upper() and len(ema_list) > 0:
+        if "ALL NSE" not in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)').upper() and len(ema_list) > 0:
             from data_fetcher import get_index_stocks
             resolved_univ = "ALL NSE"
-            if "NIFTY 500" in universe_selection: resolved_univ = "NIFTY 500"
-            elif "NIFTY 100" in universe_selection: resolved_univ = "NIFTY 100"
-            elif "NIFTY 50" in universe_selection: resolved_univ = "NIFTY 50"
-            elif "WATCHLIST" in universe_selection.upper(): resolved_univ = "WATCHLIST"
+            if "NIFTY 500" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): resolved_univ = "NIFTY 500"
+            elif "NIFTY 100" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): resolved_univ = "NIFTY 100"
+            elif "NIFTY 50" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)'): resolved_univ = "NIFTY 50"
+            elif "WATCHLIST" in st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)').upper(): resolved_univ = "WATCHLIST"
             if resolved_univ != "ALL NSE":
                 raw_symbols = get_index_stocks(resolved_univ)
                 valid_set = set([str(s).replace('.NS', '').strip().upper() for s in raw_symbols if str(s).strip()])
