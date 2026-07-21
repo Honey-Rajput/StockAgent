@@ -30,7 +30,7 @@ def safe_date_str(val):
         return None
     return s
 
-DB_PATH = os.path.join(parent_dir, "scanner_data.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner_data.db")
 _conn = None
 _conn_lock = threading.Lock()
 
@@ -743,135 +743,131 @@ def init_db() -> bool:
             
         conn.commit() # Save tables before attempting migrations
             
-        # Safely migrate existing tables if columns are missing
-        migrations = [
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS setup_type VARCHAR(50);",
-            
-            "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_squeezes ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            
-            "ALTER TABLE scanned_gapups ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_gapups ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_gapups ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_gapups ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_gapups ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS run_up_200 DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS run_up_52w DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS is_early BOOLEAN;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_20sma_pct DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_50sma_pct DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_65sma_pct DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS dist_200sma_pct DOUBLE PRECISION;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS passes_daily BOOLEAN;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS passes_weekly BOOLEAN;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS passes_monthly BOOLEAN;",
-            "ALTER TABLE scanned_trend_setups ADD COLUMN IF NOT EXISTS near_breakout BOOLEAN;",
-            "ALTER TABLE scanned_breakouts ADD COLUMN IF NOT EXISTS above_200dma BOOLEAN DEFAULT FALSE;",
-            
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS wt2_value DOUBLE PRECISION;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS buy_signal BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS wt_diff DOUBLE PRECISION;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS above_20sma BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS above_50sma BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS above_200sma BOOLEAN DEFAULT FALSE;",
-            "ALTER TABLE scanned_wt_cross ADD COLUMN IF NOT EXISTS volume BIGINT;",
-            
-            # Scanned Monthly Momentum Table Migrations
-            "ALTER TABLE scanned_monthly_momentum ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_monthly_momentum ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_monthly_momentum ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_monthly_momentum ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_monthly_momentum ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            "ALTER TABLE scanned_monthly_momentum ADD COLUMN IF NOT EXISTS return_1m DOUBLE PRECISION;",
-            
-            # Scanned Weekly Momentum Table Migrations
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            "ALTER TABLE scanned_weekly_momentum ADD COLUMN IF NOT EXISTS return_1m DOUBLE PRECISION;",
-
-            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_vcs ADD COLUMN IF NOT EXISTS recommendation TEXT;",
-            
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_rsi DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_cci DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_rsi DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_cci DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_rsi DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_cci DOUBLE PRECISION;",
-            
-            # VPA raw RWI value columns for action signal logic
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_major_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_mid_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS daily_minor_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_major_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_mid_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS weekly_minor_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_major_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_mid_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_vpa ADD COLUMN IF NOT EXISTS monthly_minor_val DOUBLE PRECISION;",
-            
-            # Volume Profile level columns (POC, VAL, VAH per timeframe)
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS daily_poc DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS daily_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS daily_vah DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS weekly_poc DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS weekly_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS weekly_vah DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS monthly_poc DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS monthly_val DOUBLE PRECISION;",
-            "ALTER TABLE scanned_volume_profile ADD COLUMN IF NOT EXISTS monthly_vah DOUBLE PRECISION;",
-
-            # BB Squeeze: score, confidence, score_breakdown columns
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS squeeze_score INTEGER;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS confidence VARCHAR(50);",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS score_breakdown TEXT;",
-            # EMA Support alias columns
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS setup VARCHAR(100);",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS dist_9ema DOUBLE PRECISION;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS dist_21ema DOUBLE PRECISION;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS crossover BOOLEAN;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS score DOUBLE PRECISION;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS buy_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS exit_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS target_price DOUBLE PRECISION;",
-            "ALTER TABLE scanned_ema_support ADD COLUMN IF NOT EXISTS recommendation TEXT;"
-        ]
-        for m in migrations:
+        # SQLite does NOT support "ALTER TABLE ... ADD COLUMN IF NOT EXISTS"
+        # Use a helper that checks PRAGMA table_info first.
+        def add_col(table, col, col_type):
             try:
-                cur.execute(m)
+                existing = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+                if col not in existing:
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
             except Exception as mig_ex:
-                print(f"Migration column note/error: {mig_ex}")
-                conn.rollback() # in case statement fails, rollback transaction so we can continue
-                
+                pass  # column already exists or table doesn't exist yet – safe to ignore
+
+        add_col("scanned_breakouts", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_breakouts", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_breakouts", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_breakouts", "confidence", "VARCHAR(50)")
+        add_col("scanned_breakouts", "recommendation", "TEXT")
+        add_col("scanned_breakouts", "setup_type", "VARCHAR(50)")
+        add_col("scanned_breakouts", "above_200dma", "BOOLEAN DEFAULT FALSE")
+
+        add_col("scanned_squeezes", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_squeezes", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_squeezes", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_squeezes", "confidence", "VARCHAR(50)")
+        add_col("scanned_squeezes", "recommendation", "TEXT")
+
+        add_col("scanned_gapups", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_gapups", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_gapups", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_gapups", "confidence", "VARCHAR(50)")
+        add_col("scanned_gapups", "recommendation", "TEXT")
+
+        add_col("scanned_trend_setups", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "confidence", "VARCHAR(50)")
+        add_col("scanned_trend_setups", "recommendation", "TEXT")
+        add_col("scanned_trend_setups", "run_up_200", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "run_up_52w", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "is_early", "BOOLEAN")
+        add_col("scanned_trend_setups", "dist_20sma_pct", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "dist_50sma_pct", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "dist_65sma_pct", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "dist_200sma_pct", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "passes_daily", "BOOLEAN")
+        add_col("scanned_trend_setups", "passes_weekly", "BOOLEAN")
+        add_col("scanned_trend_setups", "passes_monthly", "BOOLEAN")
+        add_col("scanned_trend_setups", "near_breakout", "BOOLEAN")
+
+        add_col("scanned_wt_cross", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_wt_cross", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_wt_cross", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_wt_cross", "confidence", "VARCHAR(50)")
+        add_col("scanned_wt_cross", "recommendation", "TEXT")
+        add_col("scanned_wt_cross", "wt2_value", "DOUBLE PRECISION")
+        add_col("scanned_wt_cross", "buy_signal", "BOOLEAN DEFAULT FALSE")
+        add_col("scanned_wt_cross", "wt_diff", "DOUBLE PRECISION")
+        add_col("scanned_wt_cross", "above_20sma", "BOOLEAN DEFAULT FALSE")
+        add_col("scanned_wt_cross", "above_50sma", "BOOLEAN DEFAULT FALSE")
+        add_col("scanned_wt_cross", "above_200sma", "BOOLEAN DEFAULT FALSE")
+        add_col("scanned_wt_cross", "volume", "BIGINT")
+
+        add_col("scanned_monthly_momentum", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_monthly_momentum", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_monthly_momentum", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_monthly_momentum", "confidence", "VARCHAR(50)")
+        add_col("scanned_monthly_momentum", "recommendation", "TEXT")
+        add_col("scanned_monthly_momentum", "return_1m", "DOUBLE PRECISION")
+
+        add_col("scanned_weekly_momentum", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_weekly_momentum", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_weekly_momentum", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_weekly_momentum", "confidence", "VARCHAR(50)")
+        add_col("scanned_weekly_momentum", "recommendation", "TEXT")
+        add_col("scanned_weekly_momentum", "return_1m", "DOUBLE PRECISION")
+
+        add_col("scanned_vcs", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_vcs", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_vcs", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_vcs", "confidence", "VARCHAR(50)")
+        add_col("scanned_vcs", "recommendation", "TEXT")
+
+        add_col("scanned_vpa", "daily_rsi", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "daily_cci", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "weekly_rsi", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "weekly_cci", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "monthly_rsi", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "monthly_cci", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "daily_major_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "daily_mid_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "daily_minor_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "weekly_major_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "weekly_mid_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "weekly_minor_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "monthly_major_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "monthly_mid_val", "DOUBLE PRECISION")
+        add_col("scanned_vpa", "monthly_minor_val", "DOUBLE PRECISION")
+
+        add_col("scanned_volume_profile", "daily_poc", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "daily_val", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "daily_vah", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "weekly_poc", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "weekly_val", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "weekly_vah", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "monthly_poc", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "monthly_val", "DOUBLE PRECISION")
+        add_col("scanned_volume_profile", "monthly_vah", "DOUBLE PRECISION")
+
+        add_col("scanned_ema_support", "squeeze_score", "INTEGER")
+        add_col("scanned_ema_support", "confidence", "VARCHAR(50)")
+        add_col("scanned_ema_support", "score_breakdown", "TEXT")
+        add_col("scanned_ema_support", "setup", "VARCHAR(100)")
+        add_col("scanned_ema_support", "dist_9ema", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "dist_21ema", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "crossover", "BOOLEAN")
+        add_col("scanned_ema_support", "score", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "buy_price", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "exit_price", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "target_price", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "recommendation", "TEXT")
+
         conn.commit()
         cur.close()
         print("Database initialized and migrated successfully.")
         return True
+
+
     except Exception as e:
         print(f"Error initializing SQLite database: {e}")
         return False

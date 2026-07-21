@@ -5,3 +5,9 @@ __pycache__/
 .env
 local_data_cache/
 .pytest_cache/
+# SQLite database files — ignored so git doesn't lock on them while Streamlit is running
+*.db
+*.db-shm
+*.db-wal
+# Test scripts
+test_full.py

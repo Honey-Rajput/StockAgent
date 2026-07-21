@@ -1198,16 +1198,11 @@ if not st.session_state.get('db_cache_checked', False):
                 st.session_state.failed_count = 0
                 st.session_state.last_scanned = "Never"
 
-        # Auto-resume background AI scan for flagged symbols
-        all_syms = []
-        if st.session_state.scan_results:
-            all_syms.extend([r['symbol'] for r in st.session_state.scan_results])
-        all_syms = list(set(all_syms))
-        if all_syms and enable_background_scans:
-            try:
-                run_background_ai_scan(all_syms, latest_date_str if available_dates else get_market_date())
-            except Exception as auto_scan_err:
-                print(f"Failed to auto-resume background AI scan on boot: {auto_scan_err}")
+        # NOTE: Auto background AI scan on boot is DISABLED.
+        # It was triggering Groq API calls for all 1000 stocks on every page refresh,
+        # burning through API quota and significantly slowing down the app.
+        # AI scans now only run from the AI Pattern tab (on demand).
+
 
     except Exception as cache_err:
         print(f"Error loading daily database scan cache on boot: {cache_err}")
@@ -1495,7 +1490,10 @@ if run_full or run_sma:
             status_box = st.empty()
             prog_bar = st.progress(0)
             
-            # Step A: Perform high-speed parallel bulk download of today's quotes to filter Price > 200 instantly
+            # Known-delisted / permanently broken symbols — skip entirely to avoid wasted retries
+            BLACKLISTED_SYMBOLS = {"GANGAFO-RE", "AMIRCHAND"}
+            raw_symbols = [s for s in raw_symbols if s.strip().upper() not in BLACKLISTED_SYMBOLS]
+
             all_tickers_ns = []
             for s in raw_symbols:
                 formatted = s.strip().upper()
