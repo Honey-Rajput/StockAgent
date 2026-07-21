@@ -183,9 +183,6 @@ def get_latest_signal(df_result: pd.DataFrame) -> dict:
         "suggested_stop": round(row["suggested_stop"], 2) if pd.notna(row["suggested_stop"]) else None,
         "risk_pct": round(risk_pct, 2) if risk_pct is not None else None,
         "target_price": round(row["target_price"], 2) if pd.notna(row.get("target_price")) else None,
-        "score": round(row.get("score"), 1) if "score" in row and pd.notna(row.get("score")) else None,
-        "confidence_level": row.get("confidence_level", None),
-        "breakout_status": row.get("breakout_status", None),
     }
 
 
