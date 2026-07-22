@@ -1312,7 +1312,43 @@ def get_cached_vcs(date_str: str) -> list[dict]:
     return _get_cached_scan('scanned_vcs', date_str)
 
 def get_cached_vpa(date_str: str) -> list[dict]:
-    return _get_cached_scan('scanned_vpa', date_str)
+    results = _get_cached_scan('scanned_vpa', date_str)
+    unflattened_results = []
+    for r in results:
+        r_copy = dict(r)
+        # Reconstruct nested dictionaries expected by the UI
+        r_copy['daily'] = {
+            'major': r.get('daily_major', 0),
+            'mid': r.get('daily_mid', 0),
+            'minor': r.get('daily_minor', 0),
+            'rsi': r.get('daily_rsi', 0.0),
+            'cci': r.get('daily_cci', 0.0),
+            'major_val': r.get('daily_major_val', 0.0),
+            'mid_val': r.get('daily_mid_val', 0.0),
+            'minor_val': r.get('daily_minor_val', 0.0),
+        }
+        r_copy['weekly'] = {
+            'major': r.get('weekly_major', 0),
+            'mid': r.get('weekly_mid', 0),
+            'minor': r.get('weekly_minor', 0),
+            'rsi': r.get('weekly_rsi', 0.0),
+            'cci': r.get('weekly_cci', 0.0),
+            'major_val': r.get('weekly_major_val', 0.0),
+            'mid_val': r.get('weekly_mid_val', 0.0),
+            'minor_val': r.get('weekly_minor_val', 0.0),
+        }
+        r_copy['monthly'] = {
+            'major': r.get('monthly_major', 0),
+            'mid': r.get('monthly_mid', 0),
+            'minor': r.get('monthly_minor', 0),
+            'rsi': r.get('monthly_rsi', 0.0),
+            'cci': r.get('monthly_cci', 0.0),
+            'major_val': r.get('monthly_major_val', 0.0),
+            'mid_val': r.get('monthly_mid_val', 0.0),
+            'minor_val': r.get('monthly_minor_val', 0.0),
+        }
+        unflattened_results.append(r_copy)
+    return unflattened_results
 
 def save_vcs_only(date_str: str, vcs_results: list[dict]) -> bool:
     """
