@@ -61,6 +61,25 @@ def render():
     st.markdown("### 🎯 Minervini Ultimate +VCP")
     st.markdown("Scans for stocks passing the Minervini Trend Template with Volatility Contraction Pattern (VCP) squeeze.")
 
+    # Auto-load cached results from DB on first page visit
+    if 'vcp_minervini_results' not in st.session_state:
+        try:
+            import database
+            today_str = get_market_date()
+            cached = database.get_cached_vcp_minervini(today_str)
+            if cached:
+                st.session_state.vcp_minervini_results = cached
+            else:
+                # fallback: check last 10 days
+                from datetime import timedelta
+                for days_back in range(1, 10):
+                    check_date = (datetime.now(IST_TIMEZONE) - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                    cached = database.get_cached_vcp_minervini(check_date)
+                    if cached:
+                        st.session_state.vcp_minervini_results = cached
+                        break
+        except Exception:
+            pass
     col_v1, col_v2, col_v3 = st.columns(3)
     vcp_thresh = col_v1.number_input("Max VCP Range (%)", value=2.5, step=0.5, help="Maximum percentage range over lookback to be considered a squeeze")
     vcp_lookback = col_v2.number_input("VCP Lookback (Bars)", value=5, step=1)
@@ -206,7 +225,7 @@ def render():
         with col1:
             show_buyable = st.checkbox("Show Buyable Only (Buying Pressure, Low Risk, PASSED Trend)", value=False)
         with col2:
-            show_squeeze = st.checkbox("Show 'Squeeze' / Entry Signals Only", value=True)
+            show_squeeze = st.checkbox("Show 'Squeeze' / Entry Signals Only", value=False)
 
         # Reorder columns for display
         display_cols = ['Rank', 'Score', 'symbol', 'Sector', 'close', 'Entry Signal', 'Trend (TPR)', 

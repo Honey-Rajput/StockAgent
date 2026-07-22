@@ -72,13 +72,13 @@ from indicators import build_rich_analysis_from_indicators
 
 
 # --- config knobs (optimized VDU logic) ---
-BASELINE_EXCLUDE_BARS = 0
-BASELINE_LOOKBACK_BARS = 90
-RECENT_SEARCH_BARS = 10
+BASELINE_EXCLUDE_BARS = 0          # No exclusion: baseline uses last 90 bars
+BASELINE_LOOKBACK_BARS = 90        # Baseline window size
+RECENT_SEARCH_BARS = 60            # Search back up to 60 calendar bars (covers 50-day dry zone)
 RECENCY_WEIGHT = 0.01
-MIN_RANGE_PCT = 0.07
+MIN_RANGE_PCT = 0.07               # 7% price range in dry zone required
 MIN_AVG_DOLLAR_VOL = None
-PRICE_CHANGE_MODE = "either"  # Compatible with older logic
+PRICE_CHANGE_MODE = "either"       # Compatible with older logic
 
 def scan_stock(
     symbol: str, 
