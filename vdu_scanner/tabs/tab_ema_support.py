@@ -93,7 +93,6 @@ def render():
             st.markdown("### 📊 9/21 EMA Support Setups")
             
             # --- Download Button Logic ---
-            import pandas as pd
             from datetime import datetime
             today_str = get_market_date()
             df_ema = pd.DataFrame([{

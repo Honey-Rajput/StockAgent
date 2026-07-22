@@ -94,7 +94,6 @@ def render():
                 
                 from data_fetcher import get_all_nse_symbols
                 import yfinance as yf
-                import pandas as pd
                 import concurrent.futures
                 from scanner import scan_volume_profile
                 
@@ -240,7 +239,6 @@ def render():
             return {'zone': '', 'va_pct': None, 'poc': None, 'val': None, 'vah': None}
         
         # Format for Dataframe
-        import pandas as pd
         vp_export = []
         rank = 1
         

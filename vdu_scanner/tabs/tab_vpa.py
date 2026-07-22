@@ -75,7 +75,6 @@ def render():
             try:
                 from data_fetcher import get_all_nse_symbols
                 import yfinance as yf
-                import pandas as pd
                 from concurrent.futures import ThreadPoolExecutor
                 import time
                 
@@ -194,7 +193,6 @@ def render():
         vpa_data = sorted(vpa_data, key=lambda x: x.get('score', 0), reverse=True)
         
         # Download Button
-        import pandas as pd
         
         def get_action_signal_text(short, mid, max_t, max_val, rsi=0, cci=0):
             # Issue #3: RSI/CCI overbought guard

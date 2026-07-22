@@ -165,7 +165,6 @@ def render():
                     pass
             
             if len(zanger_results) > 0:
-                import pandas as pd
                 hits_df = pd.DataFrame(zanger_results)
                 ranked_df = rank_signals(hits_df, cfg)
                 # Convert back to dicts for session_state to be consistent
@@ -181,7 +180,6 @@ def render():
                 
     if st.session_state.get('zanger_results') is not None:
         if len(st.session_state.zanger_results) > 0:
-            import pandas as pd
             z_df = pd.DataFrame(st.session_state.zanger_results)
             # Reorder columns to put rank and symbol first
             cols = list(z_df.columns)

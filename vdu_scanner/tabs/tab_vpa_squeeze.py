@@ -86,9 +86,6 @@ def render():
                 from data_fetcher import get_all_nse_symbols
                 from scanner import scan_vpa_ma_squeeze
                 from local_cache_manager import bulk_get_cached_ohlcv
-                import pandas as pd
-
-                import database
                 
                 raw_symbols = get_all_nse_symbols()
                 symbols_to_scan = [s.strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]

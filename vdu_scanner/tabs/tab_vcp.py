@@ -76,7 +76,6 @@ def render():
             from vcp_minervini import VCPConfig, MinerviniVCPAnalyzer
             from data_fetcher import get_all_nse_symbols, get_stock_sector
             import yfinance as yf
-            import pandas as pd
             
             # Use all NSE symbols (capped at 1800)
             raw_symbols = get_all_nse_symbols()
@@ -186,7 +185,6 @@ def render():
 
     # Display results
     if st.session_state.get('vcp_minervini_results'):
-        import pandas as pd
         v_df = pd.DataFrame(st.session_state.vcp_minervini_results)
         
         vcp_count = len(v_df)
