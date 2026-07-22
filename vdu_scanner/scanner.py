@@ -72,8 +72,8 @@ from indicators import build_rich_analysis_from_indicators
 
 
 # --- config knobs (optimized VDU logic) ---
-BASELINE_EXCLUDE_BARS = 90
-BASELINE_LOOKBACK_BARS = 150
+BASELINE_EXCLUDE_BARS = 0
+BASELINE_LOOKBACK_BARS = 90
 RECENT_SEARCH_BARS = 10
 RECENCY_WEIGHT = 0.01
 MIN_RANGE_PCT = 0.07
@@ -1771,8 +1771,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
     try:
         # Check Daily VPA
         daily_trends = calc_vpa_trends(df)
-        if daily_trends['major'] != 1 or (daily_trends['mid'] != 1 and daily_trends['minor'] != 1):
-            return None # Must be green for Major, and at least one of Mid/Minor must be green.
+        if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] != 1:
+            return None # Must be green for Major, Mid, and Minor.
             
         # Calculate SMAs
         close_series = df['Close']
@@ -1790,8 +1790,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         max_ma = max(ma_list)
         min_ma = min(ma_list)
         
-        # Squeeze: (max - min) / min < 0.08
-        if (max_ma - min_ma) / min_ma > 0.08:
+        # Squeeze: (max - min) / min < 0.06
+        if (max_ma - min_ma) / min_ma > 0.06:
             return None
             
         # Ensure price hasn't already broken out (price should be near the squeeze)

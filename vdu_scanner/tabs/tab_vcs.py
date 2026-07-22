@@ -61,6 +61,16 @@ def render():
     st.markdown("### 📉 Dan Zanger Breakout Scanner")
     st.markdown("Identifies stocks meeting Dan Zanger's criteria: Uptrend stack, prior massive run, shallow base, and high-volume breakout.")
     
+    if "zanger_results" not in st.session_state:
+        import database
+        zanger_dates = database.get_zanger_scan_dates()
+        if zanger_dates:
+            try:
+                st.session_state.zanger_results = database.get_cached_zanger(zanger_dates[0], timeframe="Daily")
+                st.session_state.zanger_tf = "Daily"
+            except Exception:
+                st.session_state.zanger_results = []
+                
     st.markdown("#### Scanner Parameters (Tweak if 0 results)")
     col_z1, col_z2, col_z3 = st.columns(3)
     z_min_run_pct = col_z1.number_input("Min Prior Run (%)", value=25.0, step=5.0)
@@ -214,9 +224,17 @@ def render():
             st.dataframe(z_df, use_container_width=True, column_config={
                 "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
                 "date": st.column_config.TextColumn("Date"),
+                "close": st.column_config.NumberColumn("CMP", format="%.2f"),
                 "score": st.column_config.NumberColumn("Score (Out of 100)", format="%.1f"),
                 "confidence_level": st.column_config.TextColumn("Confidence Level"),
-                "breakout_status": st.column_config.TextColumn("Breakout Status")
+                "breakout_status": st.column_config.TextColumn("Breakout Status"),
+                "prior_run_pct": st.column_config.NumberColumn("Prior Run %", format="%.1f"),
+                "base_depth_pct": st.column_config.NumberColumn("Base Depth %", format="%.1f"),
+                "breakout_volume_ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2fx"),
+                "suggested_stop": st.column_config.NumberColumn("Stop Loss", format="%.2f"),
+                "risk_pct": st.column_config.NumberColumn("Risk %", format="%.1f"),
+                "target_price": st.column_config.NumberColumn("Target Price", format="%.2f"),
+                "setup_type": st.column_config.TextColumn("Setup Type")
             })
         else:
             st.info("No Dan Zanger setups found.")

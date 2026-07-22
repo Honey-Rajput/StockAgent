@@ -131,7 +131,7 @@ def render():
                             analyzer._trend_template()
                             analyzer._buy_risk()
                             analyzer._pressure()
-                            analyzer._relative_price_strength()
+                            analyzer._rpr()
                             analyzer._vcp()
                             analyzer._entry_signals()
                             

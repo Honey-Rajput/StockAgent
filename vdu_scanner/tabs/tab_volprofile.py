@@ -296,11 +296,28 @@ def render():
         # Timeframe Tabs
         tab_all, tab_daily, tab_weekly, tab_monthly = st.tabs(["📊 All Stocks", "📅 Daily", "📅 Weekly", "📅 Monthly"])
         
+        vp_col_config = {
+            "Symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
+            "CMP": st.column_config.NumberColumn("CMP (₹)", format="%.2f"),
+            "D Buy Range (VAL)": st.column_config.NumberColumn("Buy Range (VAL)", format="%.2f"),
+            "D Target (POC)": st.column_config.NumberColumn("Target (POC)", format="%.2f"),
+            "D Resistance (VAH)": st.column_config.NumberColumn("Resistance (VAH)", format="%.2f"),
+            "D VA%": st.column_config.NumberColumn("VA%", format="%.1f"),
+            "W Buy Range (VAL)": st.column_config.NumberColumn("Buy Range (VAL)", format="%.2f"),
+            "W Target (POC)": st.column_config.NumberColumn("Target (POC)", format="%.2f"),
+            "W Resistance (VAH)": st.column_config.NumberColumn("Resistance (VAH)", format="%.2f"),
+            "W VA%": st.column_config.NumberColumn("VA%", format="%.1f"),
+            "M Buy Range (VAL)": st.column_config.NumberColumn("Buy Range (VAL)", format="%.2f"),
+            "M Target (POC)": st.column_config.NumberColumn("Target (POC)", format="%.2f"),
+            "M Resistance (VAH)": st.column_config.NumberColumn("Resistance (VAH)", format="%.2f"),
+            "M VA%": st.column_config.NumberColumn("VA%", format="%.1f")
+        }
+        
         with tab_all:
             disp_vp = df_vp.copy()
-            if 'symbol' in disp_vp.columns:
-                disp_vp['symbol'] = disp_vp['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
-            st.dataframe(disp_vp, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
+            if 'Symbol' in disp_vp.columns:
+                disp_vp['Symbol'] = disp_vp['Symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_vp, width="stretch", hide_index=True, column_config=vp_col_config)
             csv_all = df_vp.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download All Stocks (CSV)",
@@ -319,9 +336,9 @@ def render():
             st.markdown(f"**{len(buy_daily)}** stocks in Daily Buy Zone | **{len(df_daily)}** total with daily data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             disp_daily = df_daily.copy()
-            if 'symbol' in disp_daily.columns:
-                disp_daily['symbol'] = disp_daily['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
-            st.dataframe(disp_daily, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
+            if 'Symbol' in disp_daily.columns:
+                disp_daily['Symbol'] = disp_daily['Symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_daily, width="stretch", hide_index=True, column_config=vp_col_config)
             csv_daily = df_daily.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Daily Timeframe (CSV)",
@@ -340,9 +357,9 @@ def render():
             st.markdown(f"**{len(buy_weekly)}** stocks in Weekly Buy Zone | **{len(df_weekly)}** total with weekly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             disp_weekly = df_weekly.copy()
-            if 'symbol' in disp_weekly.columns:
-                disp_weekly['symbol'] = disp_weekly['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
-            st.dataframe(disp_weekly, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
+            if 'Symbol' in disp_weekly.columns:
+                disp_weekly['Symbol'] = disp_weekly['Symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_weekly, width="stretch", hide_index=True, column_config=vp_col_config)
             csv_weekly = df_weekly.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Weekly Timeframe (CSV)",
@@ -361,9 +378,9 @@ def render():
             st.markdown(f"**{len(buy_monthly)}** stocks in Monthly Buy Zone | **{len(df_monthly)}** total with monthly data")
             st.caption("💡 **Buy Range (VAL)** = Support level to buy near | **Target (POC)** = High-volume fair value | **Resistance (VAH)** = Upper boundary")
             disp_monthly = df_monthly.copy()
-            if 'symbol' in disp_monthly.columns:
-                disp_monthly['symbol'] = disp_monthly['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
-            st.dataframe(disp_monthly, width="stretch", hide_index=True, column_config={"symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)")})
+            if 'Symbol' in disp_monthly.columns:
+                disp_monthly['Symbol'] = disp_monthly['Symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
+            st.dataframe(disp_monthly, width="stretch", hide_index=True, column_config=vp_col_config)
             csv_monthly = df_monthly.to_csv(index=False).encode('utf-8-sig')
             st.download_button(
                 label="📥 Download Monthly Timeframe (CSV)",
