@@ -202,10 +202,10 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 cond_50_gap = abs(d_close - d_sma50) / d_sma50 <= max_50_gap if pd.notna(d_sma50) else False
                 cond_200_gap = True  # Relaxed for strong uptrends
                 
-                # 3. Tightness over last 5 bars (10% for daily, 20% for rounding)
+                # 3. Tightness over last 5 bars (20% for daily, 30% for rounding)
                 high_5 = d_frame['High'].iloc[-5:].max()
                 low_5 = d_frame['Low'].iloc[-5:].min()
-                max_tightness = 0.20 if is_rounding else 0.10
+                max_tightness = 0.30 if is_rounding else 0.20
                 tightness_ok = ((high_5 - low_5) / low_5) <= max_tightness if low_5 > 0 else False
                 
                 # 2. Upward slope over 5 bars (not just 1)

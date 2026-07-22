@@ -1773,7 +1773,8 @@ def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
 def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict], gapups: list[dict], trend_setups: list[dict], wt_cross: list[dict], total_scanned: int, vcs_results: list[dict] = None, vpa_results: list[dict] = None, near_30sma_list: list[dict] = None) -> bool:
     """
     Saves the full market scan results and logs the completion.
-    Uses clean transactions to perform daily upsert overrides.
+    Resilient: each table is committed independently so a bad record in one
+    table does not block the scan_logs entry from being written.
     """
     if vcs_results is None:
         vcs_results = []
@@ -1782,7 +1783,6 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
     conn = None
     try:
         conn = get_connection()
-        conn.autocommit = False  # Start a single transaction for speed and safety
         cur = conn.cursor()
         
         # Check if existing scan is more complete
@@ -1791,19 +1791,17 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         if existing_log and existing_log['total_scanned'] is not None:
             if existing_log['total_scanned'] > total_scanned:
                 print(f"Skipping save: existing scan for {date_str} has {existing_log['total_scanned']} stocks, but current scan only has {total_scanned}.")
-                conn.rollback()
                 return False
         
         # 1. Clean existing records for this date
-        cur.execute("DELETE FROM scanned_breakouts WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_squeezes WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_gapups WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_wt_cross WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_vcs WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_vpa WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = ?;", (date_str,))
-        cur.execute("DELETE FROM scan_logs WHERE scan_date = ?;", (date_str,))
+        for tbl in ['scanned_breakouts', 'scanned_squeezes', 'scanned_gapups',
+                    'scanned_trend_setups', 'scanned_wt_cross', 'scanned_vcs',
+                    'scanned_vpa', 'scanned_near_30sma', 'scan_logs']:
+            try:
+                cur.execute(f"DELETE FROM {tbl} WHERE scan_date = ?;", (date_str,))
+            except Exception as _de:
+                print(f"Warning: could not delete from {tbl}: {_de}")
+        conn.commit()
         
         # 2. Insert new breakouts
         insert_breakout_query = """
@@ -1814,31 +1812,37 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                       confidence, recommendation, setup_type)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
+        breakouts_saved = 0
         for r in breakouts:
-            cur.execute(insert_breakout_query, (
-                str(r['symbol']), 
-                str(r.get('company_name', '')), 
-                float(r['cmp']), 
-                float(r['day_change_pct']), 
-                int(r['today_volume']),
-                float(r['dry_avg_vol']), 
-                float(r['volume_ratio']), 
-                int(r['dry_days_count']), 
-                int(r['dry_spikes']),
-                float(r['market_cap_cr']), 
-                float(r['signal_strength']), 
-                bool(r.get('above_50dma', False)),
-                bool(r.get('above_200dma', False)),
-                safe_date_str(r.get('dry_start_date')), 
-                safe_date_str(r.get('dry_end_date')),
-                date_str,
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
-                str(r['setup_type']) if r.get('setup_type') is not None else 'VDU Breakout'
-            ))
+            try:
+                cur.execute(insert_breakout_query, (
+                    str(r['symbol']), 
+                    str(r.get('company_name', '')), 
+                    float(r['cmp']), 
+                    float(r['day_change_pct']), 
+                    int(r['today_volume']),
+                    float(r['dry_avg_vol']), 
+                    float(r['volume_ratio']), 
+                    int(r['dry_days_count']), 
+                    int(r['dry_spikes']),
+                    float(r['market_cap_cr']), 
+                    float(r['signal_strength']), 
+                    bool(r.get('above_50dma', False)),
+                    bool(r.get('above_200dma', False)),
+                    safe_date_str(r.get('dry_start_date')), 
+                    safe_date_str(r.get('dry_end_date')),
+                    date_str,
+                    float(r['buy_price']) if r.get('buy_price') is not None else None,
+                    float(r['exit_price']) if r.get('exit_price') is not None else None,
+                    float(r['target_price']) if r.get('target_price') is not None else None,
+                    str(r['confidence']) if r.get('confidence') else None,
+                    str(r['recommendation']) if r.get('recommendation') is not None else None,
+                    str(r['setup_type']) if r.get('setup_type') is not None else 'VDU Breakout'
+                ))
+                breakouts_saved += 1
+            except Exception as _be:
+                print(f"Warning: failed to insert breakout {r.get('symbol','?')}: {_be}")
+        conn.commit()
             
         # 3. Insert new squeezes (EMA Support)
         insert_squeeze_query = """
@@ -1848,23 +1852,27 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in squeezes:
-            cur.execute(insert_squeeze_query, (
-                str(r['symbol']), 
-                str(r.get('company_name', '')), 
-                float(r['cmp']), 
-                float(r.get('day_change_pct', 0.0)),
-                str(r.get('setup', '')),
-                float(r.get('dist_9ema', 0.0)), 
-                float(r.get('dist_21ema', 0.0)), 
-                bool(r.get('crossover', False)), 
-                float(r.get('score', 0.0)), 
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
-                date_str
-            ))
+            try:
+                cur.execute(insert_squeeze_query, (
+                    str(r['symbol']), 
+                    str(r.get('company_name', '')), 
+                    float(r['cmp']), 
+                    float(r.get('day_change_pct', 0.0)),
+                    str(r.get('setup', '')),
+                    float(r.get('dist_9ema', 0.0)), 
+                    float(r.get('dist_21ema', 0.0)), 
+                    bool(r.get('crossover', False)), 
+                    float(r.get('score', 0.0)), 
+                    float(r['buy_price']) if r.get('buy_price') is not None else None,
+                    float(r['exit_price']) if r.get('exit_price') is not None else None,
+                    float(r['target_price']) if r.get('target_price') is not None else None,
+                    str(r['confidence']) if r.get('confidence') is not None else None,
+                    str(r['recommendation']) if r.get('recommendation') is not None else None,
+                    date_str
+                ))
+            except Exception as _se:
+                print(f"Warning: failed to insert squeeze {r.get('symbol','?')}: {_se}")
+        conn.commit()
             
         # 3.5. Insert new gapups
         insert_gapup_query = """
@@ -1874,22 +1882,26 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in gapups:
-            cur.execute(insert_gapup_query, (
-                str(r['symbol']), 
-                str(r.get('company_name', '')), 
-                float(r['prev_close']),
-                float(r['open_price']),
-                float(r['cmp']), 
-                float(r['gap_pct']),
-                int(r['volume']), 
-                float(r['day_change_pct']), 
-                date_str,
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None
-            ))
+            try:
+                cur.execute(insert_gapup_query, (
+                    str(r['symbol']), 
+                    str(r.get('company_name', '')), 
+                    float(r['prev_close']),
+                    float(r['open_price']),
+                    float(r['cmp']), 
+                    float(r['gap_pct']),
+                    int(r['volume']), 
+                    float(r['day_change_pct']), 
+                    date_str,
+                    float(r['buy_price']) if r.get('buy_price') is not None else None,
+                    float(r['exit_price']) if r.get('exit_price') is not None else None,
+                    float(r['target_price']) if r.get('target_price') is not None else None,
+                    str(r['confidence']) if r.get('confidence') is not None else None,
+                    str(r['recommendation']) if r.get('recommendation') is not None else None
+                ))
+            except Exception as _ge:
+                print(f"Warning: failed to insert gapup {r.get('symbol','?')}: {_ge}")
+        conn.commit()
             
         # 3.8. Insert new trend setups (above_ma, support_ma, crossover_ma)
         insert_trend_query = """
@@ -1900,36 +1912,42 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                          passes_daily, passes_weekly, passes_monthly, near_breakout)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
-            passes_daily = EXCLUDED.passes_daily,
-            passes_weekly = EXCLUDED.passes_weekly,
-            passes_monthly = EXCLUDED.passes_monthly,
-            near_breakout = EXCLUDED.near_breakout;
+            passes_daily = excluded.passes_daily,
+            passes_weekly = excluded.passes_weekly,
+            passes_monthly = excluded.passes_monthly,
+            near_breakout = excluded.near_breakout;
         """
+        trend_saved = 0
         for r in trend_setups:
-            cur.execute(insert_trend_query, (
-                str(r['symbol']),
-                str(r.get('company_name', '')),
-                float(r['cmp']),
-                float(r['day_change_pct']),
-                str(r['setup_type']),
-                date_str,
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
-                float(r['run_up_200']) if r.get('run_up_200') is not None else None,
-                float(r['run_up_52w']) if r.get('run_up_52w') is not None else None,
-                bool(r['is_early']) if r.get('is_early') is not None else None,
-                float(r['dist_20sma_pct']) if r.get('dist_20sma_pct') is not None else None,
-                float(r['dist_50sma_pct']) if r.get('dist_50sma_pct') is not None else None,
-                float(r['dist_65sma_pct']) if r.get('dist_65sma_pct') is not None else None,
-                float(r['dist_200sma_pct']) if r.get('dist_200sma_pct') is not None else None,
-                bool(r['passes_daily']) if r.get('passes_daily') is not None else None,
-                bool(r['passes_weekly']) if r.get('passes_weekly') is not None else None,
-                bool(r['passes_monthly']) if r.get('passes_monthly') is not None else None,
-                bool(r['near_breakout']) if r.get('near_breakout') is not None else None,
-            ))
+            try:
+                cur.execute(insert_trend_query, (
+                    str(r['symbol']),
+                    str(r.get('company_name', '')),
+                    float(r['cmp']),
+                    float(r['day_change_pct']),
+                    str(r['setup_type']),
+                    date_str,
+                    float(r['buy_price']) if r.get('buy_price') is not None else None,
+                    float(r['exit_price']) if r.get('exit_price') is not None else None,
+                    float(r['target_price']) if r.get('target_price') is not None else None,
+                    str(r['confidence']) if r.get('confidence') else None,
+                    str(r['recommendation']) if r.get('recommendation') is not None else None,
+                    float(r['run_up_200']) if r.get('run_up_200') is not None else None,
+                    float(r['run_up_52w']) if r.get('run_up_52w') is not None else None,
+                    bool(r['is_early']) if r.get('is_early') is not None else None,
+                    float(r['dist_20sma_pct']) if r.get('dist_20sma_pct') is not None else None,
+                    float(r['dist_50sma_pct']) if r.get('dist_50sma_pct') is not None else None,
+                    float(r['dist_65sma_pct']) if r.get('dist_65sma_pct') is not None else None,
+                    float(r['dist_200sma_pct']) if r.get('dist_200sma_pct') is not None else None,
+                    bool(r['passes_daily']) if r.get('passes_daily') is not None else None,
+                    bool(r['passes_weekly']) if r.get('passes_weekly') is not None else None,
+                    bool(r['passes_monthly']) if r.get('passes_monthly') is not None else None,
+                    bool(r['near_breakout']) if r.get('near_breakout') is not None else None,
+                ))
+                trend_saved += 1
+            except Exception as _te:
+                print(f"Warning: failed to insert trend_setup {r.get('symbol','?')} {r.get('setup_type','?')}: {_te}")
+        conn.commit()
  
         # 3.9. Insert new WT Cross setups
         insert_wt_query = """
@@ -1938,30 +1956,34 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                      wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
-            above_20sma = EXCLUDED.above_20sma,
-            above_50sma = EXCLUDED.above_50sma;
+            above_20sma = excluded.above_20sma,
+            above_50sma = excluded.above_50sma;
         """
         for r in wt_cross:
-            cur.execute(insert_wt_query, (
-                str(r['symbol']),
-                str(r.get('company_name', '')),
-                float(r['cmp']),
-                float(r['day_change_pct']),
-                float(r['wt_value']),
-                date_str,
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
-                float(r['wt2_value']) if r.get('wt2_value') is not None else None,
-                bool(r.get('buy_signal', False)),
-                float(r['wt_diff']) if r.get('wt_diff') is not None else None,
-                bool(r.get('above_20sma', False)),
-                bool(r.get('above_50sma', False)),
-                bool(r.get('above_200sma', False)),
-                int(r.get('volume', 0))
-            ))
+            try:
+                cur.execute(insert_wt_query, (
+                    str(r['symbol']),
+                    str(r.get('company_name', '')),
+                    float(r['cmp']),
+                    float(r['day_change_pct']),
+                    float(r['wt_value']),
+                    date_str,
+                    float(r['buy_price']) if r.get('buy_price') is not None else None,
+                    float(r['exit_price']) if r.get('exit_price') is not None else None,
+                    float(r['target_price']) if r.get('target_price') is not None else None,
+                    str(r['confidence']) if r.get('confidence') is not None else None,
+                    str(r['recommendation']) if r.get('recommendation') is not None else None,
+                    float(r['wt2_value']) if r.get('wt2_value') is not None else None,
+                    bool(r.get('buy_signal', False)),
+                    float(r['wt_diff']) if r.get('wt_diff') is not None else None,
+                    bool(r.get('above_20sma', False)),
+                    bool(r.get('above_50sma', False)),
+                    bool(r.get('above_200sma', False)),
+                    int(r.get('volume', 0))
+                ))
+            except Exception as _wte:
+                print(f"Warning: failed to insert wt_cross {r.get('symbol','?')}: {_wte}")
+        conn.commit()
             
         # 3.10. Insert new VCS setups
         insert_vcs_query = """
@@ -1970,20 +1992,24 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in vcs_results:
-            cur.execute(insert_vcs_query, (
-                str(r['symbol']),
-                str(r.get('company_name', '')),
-                float(r['cmp']),
-                float(r['day_change_pct']),
-                float(r['vcs_score']),
-                int(r.get('volume', 0)),
-                date_str,
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None
-            ))
+            try:
+                cur.execute(insert_vcs_query, (
+                    str(r['symbol']),
+                    str(r.get('company_name', '')),
+                    float(r['cmp']),
+                    float(r['day_change_pct']),
+                    float(r['vcs_score']),
+                    int(r.get('volume', 0)),
+                    date_str,
+                    float(r['buy_price']) if r.get('buy_price') is not None else None,
+                    float(r['exit_price']) if r.get('exit_price') is not None else None,
+                    float(r['target_price']) if r.get('target_price') is not None else None,
+                    str(r['confidence']) if r.get('confidence') is not None else None,
+                    str(r['recommendation']) if r.get('recommendation') is not None else None
+                ))
+            except Exception as _vcse:
+                print(f"Warning: failed to insert vcs {r.get('symbol','?')}: {_vcse}")
+        conn.commit()
             
         # 3.11. Insert new VPA setups
         insert_vpa_query = """
@@ -1998,39 +2024,43 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in vpa_results:
-            cur.execute(insert_vpa_query, (
-                str(r['symbol']),
-                str(r.get('company_name', '')),
-                float(r['cmp']),
-                float(r['day_change_pct']),
-                int(r.get('volume', 0)),
-                int(r.get('score', 0)),
-                int(r.get('daily', {}).get('major', 0)),
-                int(r.get('daily', {}).get('mid', 0)),
-                int(r.get('daily', {}).get('minor', 0)),
-                float(r.get('daily', {}).get('rsi', 0.0)),
-                float(r.get('daily', {}).get('cci', 0.0)),
-                float(r.get('daily', {}).get('major_val', 0.0)),
-                float(r.get('daily', {}).get('mid_val', 0.0)),
-                float(r.get('daily', {}).get('minor_val', 0.0)),
-                int(r.get('weekly', {}).get('major', 0)),
-                int(r.get('weekly', {}).get('mid', 0)),
-                int(r.get('weekly', {}).get('minor', 0)),
-                float(r.get('weekly', {}).get('rsi', 0.0)),
-                float(r.get('weekly', {}).get('cci', 0.0)),
-                float(r.get('weekly', {}).get('major_val', 0.0)),
-                float(r.get('weekly', {}).get('mid_val', 0.0)),
-                float(r.get('weekly', {}).get('minor_val', 0.0)),
-                int(r.get('monthly', {}).get('major', 0)),
-                int(r.get('monthly', {}).get('mid', 0)),
-                int(r.get('monthly', {}).get('minor', 0)),
-                float(r.get('monthly', {}).get('rsi', 0.0)),
-                float(r.get('monthly', {}).get('cci', 0.0)),
-                float(r.get('monthly', {}).get('major_val', 0.0)),
-                float(r.get('monthly', {}).get('mid_val', 0.0)),
-                float(r.get('monthly', {}).get('minor_val', 0.0)),
-                date_str
-            ))
+            try:
+                cur.execute(insert_vpa_query, (
+                    str(r['symbol']),
+                    str(r.get('company_name', '')),
+                    float(r['cmp']),
+                    float(r['day_change_pct']),
+                    int(r.get('volume', 0)),
+                    int(r.get('score', 0)),
+                    int(r.get('daily', {}).get('major', 0)),
+                    int(r.get('daily', {}).get('mid', 0)),
+                    int(r.get('daily', {}).get('minor', 0)),
+                    float(r.get('daily', {}).get('rsi', 0.0)),
+                    float(r.get('daily', {}).get('cci', 0.0)),
+                    float(r.get('daily', {}).get('major_val', 0.0)),
+                    float(r.get('daily', {}).get('mid_val', 0.0)),
+                    float(r.get('daily', {}).get('minor_val', 0.0)),
+                    int(r.get('weekly', {}).get('major', 0)),
+                    int(r.get('weekly', {}).get('mid', 0)),
+                    int(r.get('weekly', {}).get('minor', 0)),
+                    float(r.get('weekly', {}).get('rsi', 0.0)),
+                    float(r.get('weekly', {}).get('cci', 0.0)),
+                    float(r.get('weekly', {}).get('major_val', 0.0)),
+                    float(r.get('weekly', {}).get('mid_val', 0.0)),
+                    float(r.get('weekly', {}).get('minor_val', 0.0)),
+                    int(r.get('monthly', {}).get('major', 0)),
+                    int(r.get('monthly', {}).get('mid', 0)),
+                    int(r.get('monthly', {}).get('minor', 0)),
+                    float(r.get('monthly', {}).get('rsi', 0.0)),
+                    float(r.get('monthly', {}).get('cci', 0.0)),
+                    float(r.get('monthly', {}).get('major_val', 0.0)),
+                    float(r.get('monthly', {}).get('mid_val', 0.0)),
+                    float(r.get('monthly', {}).get('minor_val', 0.0)),
+                    date_str
+                ))
+            except Exception as _vpae:
+                print(f"Warning: failed to insert vpa {r.get('symbol','?')}: {_vpae}")
+        conn.commit()
             
         
         # Insert Near 30 SMA
@@ -2040,42 +2070,61 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
             for r in near_30sma_list:
-                cur.execute(near_30sma_query, (
-                    str(r['symbol']),
-                    str(r.get('company_name', '')),
-                    float(r['cmp']),
-                    float(r['day_change_pct']),
-                    int(r.get('volume', 0)),
-                    float(r['sma30']),
-                    float(r['dist_pct']),
-                    date_str
-                ))
+                try:
+                    cur.execute(near_30sma_query, (
+                        str(r['symbol']),
+                        str(r.get('company_name', '')),
+                        float(r['cmp']),
+                        float(r['day_change_pct']),
+                        int(r.get('volume', 0)),
+                        float(r['sma30']),
+                        float(r['dist_pct']),
+                        date_str
+                    ))
+                except Exception as _n30e:
+                    print(f"Warning: failed to insert near_30sma {r.get('symbol','?')}: {_n30e}")
+            conn.commit()
 
-        # 4. Insert execution log
-        cur.execute("""
-        INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT (scan_date) DO UPDATE SET
-            total_scanned = EXCLUDED.total_scanned,
-            breakouts_found = EXCLUDED.breakouts_found,
-            squeezes_found = EXCLUDED.squeezes_found,
-            completed_at = CURRENT_TIMESTAMP;
-        """, (date_str, total_scanned, len(breakouts), len(squeezes)))
+        # 4. ALWAYS insert execution log — this MUST succeed even if data inserts above had errors
+        try:
+            cur.execute("""
+            INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (scan_date) DO UPDATE SET
+                total_scanned = excluded.total_scanned,
+                breakouts_found = excluded.breakouts_found,
+                squeezes_found = excluded.squeezes_found,
+                completed_at = CURRENT_TIMESTAMP;
+            """, (date_str, total_scanned, len(breakouts), len(squeezes)))
+            conn.commit()
+        except Exception as _loge:
+            print(f"CRITICAL: Could not write scan_logs for {date_str}: {_loge}")
         
-        conn.commit()
         cur.close()
-        print(f"Cached {len(breakouts)} breakouts, {len(squeezes)} squeezes, {len(gapups)} gapups, {len(trend_setups)} trend setups, {len(wt_cross)} WT Cross setups, {len(vcs_results)} VCS setups, and {len(vpa_results)} VPA setups in Neon for {date_str}.")
+        print(f"Cached {len(breakouts)} breakouts, {len(squeezes)} squeezes, {len(gapups)} gapups, {len(trend_setups)} trend setups, {len(wt_cross)} WT Cross setups, {len(vcs_results)} VCS setups, and {len(vpa_results)} VPA setups in DB for {date_str}.")
         return True
     except Exception as e:
-        print(f"Error saving daily scan results to PostgreSQL: {e}")
+        print(f"Error saving daily scan results to database: {e}")
+        # Even on total failure, try to write the scan_log so we don't lose the scan record
+        try:
+            if conn:
+                conn.execute("""
+                    INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
+                    VALUES (?, ?, 0, 0)
+                    ON CONFLICT (scan_date) DO UPDATE SET total_scanned = excluded.total_scanned;
+                """, (date_str, total_scanned))
+                conn.commit()
+        except Exception:
+            pass
         return False
     finally:
         if conn:
             try:
-                conn.autocommit = True  # Restore autocommit before returning to pool
+                conn.autocommit = True
             except Exception:
                 pass
             conn.close()
+
 
 def save_monthly_momentum_results(date_str: str, results: list[dict]) -> bool:
     """
