@@ -71,6 +71,15 @@ except ImportError:
 from indicators import build_rich_analysis_from_indicators
 
 
+# --- config knobs (optimized VDU logic) ---
+BASELINE_EXCLUDE_BARS = 90
+BASELINE_LOOKBACK_BARS = 150
+RECENT_SEARCH_BARS = 10
+RECENCY_WEIGHT = 0.01
+MIN_RANGE_PCT = 0.07
+MIN_AVG_DOLLAR_VOL = None
+PRICE_CHANGE_MODE = "either"  # Compatible with older logic
+
 def scan_stock(
     symbol: str, 
     df: pd.DataFrame, 
@@ -81,94 +90,123 @@ def scan_stock(
     min_dry_spikes: int = 2,
     indicators: dict = None
 ) -> dict | None:
-    """
-    Evaluates a stock's OHLCV history for the Volume Dry-Up (VDU) Breakout pattern.
-    
-    STEP 1: Calculate baseline average volume over available history (up to last 90 days).
-    STEP 2: Exclude today's breakout day and search backward for the most recent 
-            Dry Zone of length between min_dry_days and max_dry_days, requiring at least 
-            min_dry_spikes where volume exceeds 40% of baseline volume (accumulation spikes).
-    STEP 3: Evaluate today's candle for the breakout pattern (Volume surge, bullish candle, minimum price change).
-    STEP 4: Calculate the Signal Strength Score (0 to 100).
-    
-    Returns a dictionary of scan metrics and modified DataFrame if matched, otherwise None.
-    """
-    if df is None or len(df) < 50:
-        # We need at least 50 trading days to compute standard indicators (like 50 DMA) and scan for VDU
+    min_required_len = max(50, BASELINE_EXCLUDE_BARS + BASELINE_LOOKBACK_BARS // 2)
+    if df is None or len(df) < min_required_len:
         return None
-        
-    # --- STEP 1: Baseline Volume ---
-    # Take the last 90 trading days to compute the baseline average volume
-    baseline_subset = df.iloc[-90:] if len(df) >= 90 else df
-    baseline_avg_vol = baseline_subset['Volume'].mean()
-    
-    if baseline_avg_vol <= 0:
-        return None
-        
-    # Enforce at least 1 day of dry consolidation to prevent division by zero or NaN average volumes
+
+    df = df.reset_index(drop=True)
+    n = len(df)
     min_dry_days = max(1, min_dry_days)
-    
-    # --- STEP 2: Find Dry Zone (Exclude Today) ---
-    # Exclude the latest day (today's candle) to scan historical dry period
-    history_df = df.iloc[:-1].reset_index(drop=True)
-    
-    # Identify indices that DO NOT qualify as dry days (Volume > 40% of baseline volume)
-    is_not_dry_mask = history_df['Volume'] > (DRY_VOLUME_THRESHOLD * baseline_avg_vol)
-    
-    best_window = None  # Format: (start_idx, end_idx, length, not_dry_count, dry_avg_vol)
-    min_found_avg_vol = float('inf')
-    
-    # Scan only recent days (at most 10 trading days back) to guarantee the consolidation ended recently
-    search_start_idx = len(history_df) - 1
-    search_end_idx = max(0, len(history_df) - 10)
-    
-    for idx in range(search_start_idx, search_end_idx - 1, -1):
-        # Check window lengths from min_dry_days up to max_dry_days to find the best tight dry zone
-        for L in range(min_dry_days, max_dry_days + 1):
-            start_idx = idx - L + 1
-            if start_idx < 0:
-                continue
-                
-            # Calculate average volume of this candidate dry zone window
-            dry_zone_df = history_df.iloc[start_idx : idx + 1]
-            dry_avg_vol = dry_zone_df['Volume'].mean()
-            
-            # Enforce quality filter: consolidation zone average volume MUST be dry (<= 90% of baseline average)
-            if dry_avg_vol > 0 and dry_avg_vol <= (0.90 * baseline_avg_vol):
-                # Enforce price difference requirement: (High - Low) / Low >= 7%
-                zone_high = dry_zone_df['High'].max()
-                zone_low = dry_zone_df['Low'].min()
-                if zone_low > 0 and ((zone_high - zone_low) / zone_low >= 0.07):
-                    # Count spikes (non-dry volume days where Volume > 40% of baseline) inside the window
-                    not_dry_count = is_not_dry_mask.iloc[start_idx : idx + 1].sum()
-                    if not_dry_count >= min_dry_spikes:
-                        # We found a valid dry window! Select the driest one to represent the highest quality contraction
-                        if dry_avg_vol < min_found_avg_vol:
-                            min_found_avg_vol = dry_avg_vol
-                            best_window = (start_idx, idx, L, int(not_dry_count), dry_avg_vol)
-                        
-    if best_window is None:
-        return None
-        
-    start_idx, end_idx, dry_days_count, dry_spikes, dry_avg_vol = best_window
-        
-    # --- STEP 3: Today's Breakout Check ---
+
+    # --- STEP 0: guards on today's row ---
     today = df.iloc[-1]
-    yesterday = df.iloc[-2] if len(df) >= 2 else today
+    yesterday = df.iloc[-2] if n >= 2 else today
+
+    if pd.isna(today['Open']) or today['Open'] <= 0:
+        return None
+    if pd.isna(today['Close']) or pd.isna(today['Volume']):
+        return None
+
+    # --- STEP 1: Baseline volume — computed BEFORE the dry-zone search range,
+    # so it can't be dragged down by the very window it's benchmarking. ---
+    baseline_end = n - 1 - BASELINE_EXCLUDE_BARS
+    baseline_start = max(0, baseline_end - BASELINE_LOOKBACK_BARS)
+    if baseline_end <= baseline_start:
+        # not enough history to build a clean, non-overlapping baseline
+        baseline_subset = df.iloc[:-1].iloc[-90:]  # fallback to original behavior
+    else:
+        baseline_subset = df.iloc[baseline_start:baseline_end]
+
+    baseline_avg_vol = baseline_subset['Volume'].mean()
+    if not baseline_avg_vol or baseline_avg_vol <= 0 or pd.isna(baseline_avg_vol):
+        return None
+
+    if MIN_AVG_DOLLAR_VOL is not None:
+        avg_dollar_vol = (baseline_subset['Volume'] * baseline_subset['Close']).mean()
+        if pd.isna(avg_dollar_vol) or avg_dollar_vol < MIN_AVG_DOLLAR_VOL:
+            return None
+
+    # --- STEP 2: Vectorized dry-zone search ---
+    history_df = df.iloc[:-1].reset_index(drop=True)
+    h_vol = history_df['Volume']
+    h_high = history_df['High']
+    h_low = history_df['Low']
+
+    is_not_dry_mask = h_vol > (0.40 * baseline_avg_vol)
+
+    search_start_idx = len(history_df) - 1
+    search_end_idx = max(0, len(history_df) - RECENT_SEARCH_BARS)
+
+    best = None  # (start_idx, end_idx, L, spikes, dry_avg_vol, score)
+
+    for L in range(min_dry_days, max_dry_days + 1):
+        roll_vol_mean = h_vol.rolling(L).mean()
+        roll_high = h_high.rolling(L).max()
+        roll_low = h_low.rolling(L).min()
+        roll_spikes = is_not_dry_mask.rolling(L).sum()
+
+        # only consider window END indices within the recent search range,
+        # and only where the window fully fits (idx - L + 1 >= 0)
+        candidate_idx = range(search_start_idx, search_end_idx - 1, -1)
+
+        for idx in candidate_idx:
+            if idx - L + 1 < 0:
+                continue
+
+            dry_avg_vol = roll_vol_mean.iloc[idx]
+            if pd.isna(dry_avg_vol) or dry_avg_vol <= 0:
+                continue
+            if dry_avg_vol > (0.90 * baseline_avg_vol):
+                continue
+
+            zone_low = roll_low.iloc[idx]
+            zone_high = roll_high.iloc[idx]
+            if pd.isna(zone_low) or zone_low <= 0:
+                continue
+            if (zone_high - zone_low) / zone_low < MIN_RANGE_PCT:
+                continue
+
+            spikes = roll_spikes.iloc[idx]
+            if pd.isna(spikes) or spikes < min_dry_spikes:
+                continue
+
+            # recency-weighted score: lower is better.
+            bars_back = search_start_idx - idx
+            score = dry_avg_vol * (1 + RECENCY_WEIGHT * bars_back)
+
+            if best is None or score < best[5]:
+                start_idx = idx - L + 1
+                best = (start_idx, idx, L, int(spikes), dry_avg_vol, score)
+
+    if best is None:
+        return None
+
+    start_idx, end_idx, dry_days_count, dry_spikes, dry_avg_vol, _ = best
+
+    # --- STEP 3: Today's breakout check ---
     volume_ratio = today['Volume'] / dry_avg_vol
-    
-    # Condition a) Volume surge
     volume_surge_ok = volume_ratio >= min_volume_ratio
-    # Condition b) Bullish candle close is higher than open OR it is a massive gap-up continuation
-    bullish_candle_ok = today['Close'] > today['Open'] or today['Close'] > yesterday['Close']
-    # Condition c) Price breakout of at least min_price_change (either Close-to-Close or Intraday Close-to-Open)
+
+    has_green_body = today['Close'] > today['Open']
+    closed_above_prior = today['Close'] > yesterday['Close']
+    bullish_candle_ok = has_green_body and closed_above_prior
+
     pct_change_intraday = (today['Close'] - today['Open']) / today['Open'] * 100
-    pct_change_close = ((today['Close'] - yesterday['Close']) / yesterday['Close'] * 100) if len(df) >= 2 else pct_change_intraday
-    price_change_ok = (pct_change_intraday >= min_price_change) or (pct_change_close >= min_price_change)
-    
+    if n >= 2 and yesterday['Close'] > 0:
+        pct_change_close = (today['Close'] - yesterday['Close']) / yesterday['Close'] * 100
+    else:
+        pct_change_close = pct_change_intraday
+
+    if PRICE_CHANGE_MODE == "close_to_close":
+        price_change_ok = pct_change_close >= min_price_change
+    elif PRICE_CHANGE_MODE == "intraday":
+        price_change_ok = pct_change_intraday >= min_price_change
+    else:
+        price_change_ok = (pct_change_intraday >= min_price_change) or (pct_change_close >= min_price_change)
+
     is_breakout = volume_surge_ok and bullish_candle_ok and price_change_ok
     is_pre_breakout = False
-    
+
     if not is_breakout:
         # Pre-breakout condition: It's NOT a breakout today, BUT the current day is STILL a dry day.
         # Specifically, if today's volume is also very dry and the price is consolidating tightly.
