@@ -1324,9 +1324,9 @@ min_dry_spikes = st.sidebar.slider(
 
 min_signal_str = st.sidebar.slider(
     "Min Signal Strength Score",
-    min_value=45,
+    min_value=0,
     max_value=100,
-    value=55,
+    value=30,
     step=5,
     key="vdu_min_signal_str_v5",
     help="Filter stocks based on overall calculated algorithmic rating"

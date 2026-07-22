@@ -269,21 +269,27 @@ def scan_stock(
 
     if setup_type == "VDU Pre-Breakout":
         # For Pre-Breakouts, reward extreme tightness and dryness instead of volume surge
-        # 1. Tightness (Max 35 points) - closer to 0% is better
+        # 1. Dryness ratio (Max 40 points) - how dry vs baseline (0.9 = 40pts, 0.5 = 22pts)
+        score += max(0.0, (1.0 - dryness_ratio) / 1.0 * 40.0)
+        
+        # 2. Tightness (Max 30 points) - closer to 0% daily move is better
         tightness = abs(pct_change_close)
-        score += max(0.0, (2.0 - tightness) / 2.0 * 35.0)
+        score += max(0.0, (3.0 - tightness) / 3.0 * 30.0)
         
-        # 2. Dry Zone Quality (Max 30 points) - how dry the consolidation was
-        score += max(0.0, (0.90 - dryness_ratio) / 0.90 * 30.0)
-        
-        # 3. Today's Dryness (Max 20 points) - ensure today is also extremely low volume
+        # 3. Today's Dryness (Max 15 points)
         today_ratio = today['Volume'] / baseline_avg_vol
-        if today_ratio <= 0.75:
-            score += max(0.0, (0.75 - today_ratio) / 0.75 * 20.0)
+        if today_ratio <= 1.0:
+            score += max(0.0, (1.0 - today_ratio) / 1.0 * 15.0)
             
-        # 4. Moving Averages Context
-        if above_50dma:
+        # 4. Dry zone depth bonus (more days = higher conviction)
+        if dry_days_count >= 30:
             score += 10.0
+        elif dry_days_count >= 20:
+            score += 5.0
+            
+        # 5. Moving Averages Context
+        if above_50dma:
+            score += 8.0
         if above_200dma:
             score += 5.0
     else:
