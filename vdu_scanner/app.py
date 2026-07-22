@@ -2075,6 +2075,7 @@ if run_full or run_sma:
             st.session_state.last_scanned = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p")
             
             # Save to database cache daily
+            db_save_succeeded = False
             try:
                 today_ist_str = get_market_date()
                 trend_setups_list = above_ma_list + support_ma_list + crossover_ma_list + minervini_list
@@ -2085,9 +2086,10 @@ if run_full or run_sma:
                         trend_setups=trend_setups_list,
                         total_scanned=n_stocks
                     )
-                    st.toast("💾 Today's SMA scan results cached in Neon PostgreSQL!", icon="✅")
+                    st.toast("💾 Today's SMA scan results cached!", icon="✅")
+                    db_save_succeeded = True
                 else:
-                    database.save_scan_results(
+                    db_save_succeeded = database.save_scan_results(
                         date_str=today_ist_str,
                         breakouts=flagged_list,
                         squeezes=[],
@@ -2100,34 +2102,45 @@ if run_full or run_sma:
                         near_30sma_list=near_30sma_list
                     )
                     try: database.save_zanger_scan(today_ist_str, "Daily", zanger_list)
-                    except Exception: pass
+                    except Exception as _ze: print(f"Zanger save error: {_ze}")
                     try: database.save_volume_profile_only(today_ist_str, vp_list)
-                    except Exception: pass
+                    except Exception as _vpe: print(f"Volume profile save error: {_vpe}")
                     try: database.save_support_rsi_only(today_ist_str, support_rsi_list)
-                    except Exception: pass
+                    except Exception as _sre: print(f"Support RSI save error: {_sre}")
                     try: database.save_ema_support_only(today_ist_str, ema_support_list)
-                    except Exception: pass
+                    except Exception as _ese: print(f"EMA support save error: {_ese}")
                     try: database.save_stage_analysis_only(today_ist_str, stage_analysis_list)
-                    except Exception: pass
+                    except Exception as _sae: print(f"Stage analysis save error: {_sae}")
                     try: database.save_stage2_only(today_ist_str, stage2_list)
-                    except Exception: pass
+                    except Exception as _s2e: print(f"Stage2 save error: {_s2e}")
                     try: database.save_monthly_momentum_results(today_ist_str, monthly_momentum_list)
-                    except Exception: pass
+                    except Exception as _mme: print(f"Monthly momentum save error: {_mme}")
                     try: database.save_weekly_momentum_results(today_ist_str, weekly_momentum_list)
-                    except Exception: pass
-                    
+                    except Exception as _wme: print(f"Weekly momentum save error: {_wme}")
+                    # Save near 30 SMA weekly and monthly (were missing)
+                    try: database.save_near_30sma_weekly_only(today_ist_str, near_30sma_weekly_list)
+                    except Exception as _n30we: print(f"Near 30 SMA weekly save error: {_n30we}")
+                    try: database.save_near_30sma_monthly_only(today_ist_str, near_30sma_monthly_list)
+                    except Exception as _n30me: print(f"Near 30 SMA monthly save error: {_n30me}")
                     # Save VCP
                     try: database.save_vcp_minervini_scan(today_ist_str, st.session_state.get('vcp_minervini_results', []))
-                    except Exception as e: print(f"Error saving VCP DB: {e}")
+                    except Exception as _vcpe: print(f"VCP save error: {_vcpe}")
                     
-                    st.toast("💾 Today's scan results cached in Neon PostgreSQL!", icon="✅")
+                    if db_save_succeeded:
+                        st.toast(f"💾 Scan saved: {len(flagged_list)} VDU, {len(trend_setups_list)} SMA setups, {len(zanger_list)} Zanger signals!", icon="✅")
+                    else:
+                        st.toast("⚠️ Scan complete but DB save had issues. Results visible in this session.", icon="⚠️")
+                        print(f"[DB SAVE] save_scan_results returned False for {today_ist_str}. Results in session state only.")
                 
                 # Trigger background AI scans automatically in the backend!
                 all_flagged_syms = [r['symbol'] for r in flagged_list]
                 if len(all_flagged_syms) > 0:
                     run_background_ai_scan(all_flagged_syms, today_ist_str)
             except Exception as db_err:
-                print(f"Failed to cache daily scan results to database: {db_err}")
+                import traceback
+                print(f"[DB SAVE ERROR] Failed to cache scan results: {db_err}")
+                print(traceback.format_exc())
+                st.sidebar.warning(f"⚠️ Results shown but DB save failed: {db_err}")
             
             # Highlight large failure rate
             if n_stocks > 0 and (failed_count / n_stocks) > 0.20:
@@ -2136,8 +2149,10 @@ if run_full or run_sma:
             st.success("✅ Scanner complete! Results have been updated.")
             import time
             time.sleep(1.5)
-            # Force a full database reload on rerun to update banner dates & state
-            st.session_state['db_cache_checked'] = False
+            # Only reset db_cache_checked if DB save succeeded so results reload from DB.
+            # If save failed, keep session state results as-is (user can still see them).
+            if db_save_succeeded:
+                st.session_state['db_cache_checked'] = False
             st.rerun()
 
       except Exception as _scan_top_err:
