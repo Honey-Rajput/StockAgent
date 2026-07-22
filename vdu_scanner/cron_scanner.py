@@ -371,7 +371,7 @@ def run_headless_scan():
 
     failed_count = 0
     gapup_list, above_ma_list, support_ma_list, crossover_ma_list = [], [], [], []
-    minervini_list, flagged_list, wt_list, vcs_list, structural_vcp_list, vpa_list = [], [], [], [], [], []
+    minervini_list, flagged_list, wt_list, vcs_list, structural_vcp_list, vpa_list, vpa_squeeze_list = [], [], [], [], [], [], []
     
     # New Scanners
     zanger_list, stage2_list, stage_analysis_list = [], [], []
@@ -393,6 +393,7 @@ def run_headless_scan():
             if res.get("vcs"): vcs_list.append(res["vcs"])
             if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
             if res.get("vpa"): vpa_list.append(res["vpa"])
+            if res.get("vpa_squeeze"): vpa_squeeze_list.append(res["vpa_squeeze"])
             
             # New Scanners Collection
             if res.get("zanger"): zanger_list.append(res["zanger"])
@@ -444,6 +445,7 @@ def run_headless_scan():
         if support_rsi_list: database.save_support_rsi_only(today_ist_str, support_rsi_list)
         if monthly_mom_list: database.save_monthly_momentum_results(today_ist_str, monthly_mom_list)
         if weekly_mom_list: database.save_weekly_momentum_results(today_ist_str, weekly_mom_list)
+        if vpa_squeeze_list: database.save_vpa_squeeze_only(today_ist_str, vpa_squeeze_list)
         
         print("✅ Scan results successfully cached in Turso PostgreSQL!")
         

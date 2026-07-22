@@ -1688,6 +1688,7 @@ if run_full or run_sma:
             wt_list = []
             vcs_list = []
             vpa_list = []
+            vpa_squeeze_list = []
             zanger_list = []
             vp_list = []
             support_rsi_list = []
@@ -1906,6 +1907,7 @@ if run_full or run_sma:
                     if res.get("vcs"): vcs_list.append(res["vcs"])
                     if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
                     if res.get("vpa"): vpa_list.append(res["vpa"])
+                    if res.get("vpa_squeeze"): vpa_squeeze_list.append(res["vpa_squeeze"])
                     if res.get("zanger"): zanger_list.append(res["zanger"])
                     if res.get("volume_profile"): vp_list.append(res["volume_profile"])
                     if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
@@ -2001,6 +2003,7 @@ if run_full or run_sma:
                             if res.get("vcs"): vcs_list.append(res["vcs"])
                             if res.get("structural_vcp"): structural_vcp_list.append(res["structural_vcp"])
                             if res.get("vpa"): vpa_list.append(res["vpa"])
+                            if res.get("vpa_squeeze"): vpa_squeeze_list.append(res["vpa_squeeze"])
                             if res.get("zanger"): zanger_list.append(res["zanger"])
                             if res.get("volume_profile"): vp_list.append(res["volume_profile"])
                             if res.get("support_rsi"): support_rsi_list.append(res["support_rsi"])
@@ -2046,6 +2049,7 @@ if run_full or run_sma:
                 st.session_state.vcp_minervini_results = []
     
             st.session_state.vpa_results = vpa_list
+            st.session_state.vpa_squeeze_results = vpa_squeeze_list
             st.session_state.near_30sma_results = near_30sma_list
             st.session_state.near_30sma_weekly_results = near_30sma_weekly_list
             st.session_state.near_30sma_monthly_results = near_30sma_monthly_list
@@ -2109,6 +2113,8 @@ if run_full or run_sma:
                     except Exception as _sre: print(f"Support RSI save error: {_sre}")
                     try: database.save_ema_support_only(today_ist_str, ema_support_list)
                     except Exception as _ese: print(f"EMA support save error: {_ese}")
+                    try: database.save_vpa_squeeze_only(today_ist_str, vpa_squeeze_list)
+                    except Exception as _vse: print(f"VPA Squeeze save error: {_vse}")
                     try: database.save_stage_analysis_only(today_ist_str, stage_analysis_list)
                     except Exception as _sae: print(f"Stage analysis save error: {_sae}")
                     try: database.save_stage2_only(today_ist_str, stage2_list)

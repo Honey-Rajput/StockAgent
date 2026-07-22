@@ -20,7 +20,8 @@ from scanner import (
     scan_support_rsi,
     scan_monthly_momentum,
     scan_weekly_momentum,
-    scan_near_30sma
+    scan_near_30sma,
+    scan_vpa_ma_squeeze
 )
 from vcp_minervini import MinerviniVCPAnalyzer, VCPConfig
 from zanger_scanner import scan_zanger, ZangerConfig
@@ -43,6 +44,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         "vcs": None,
         "structural_vcp": None,
         "vpa": None,
+        "vpa_squeeze": None,
         
         "zanger": None,
         "stage2": None,
@@ -441,6 +443,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
             res["vcs"] = scan_vcs(sym, df, indicators=ind)
             res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df=df, benchmark_df=benchmark_df).run()
             res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
+            res["vpa_squeeze"] = scan_vpa_ma_squeeze(sym, df, indicators=ind)
             
             # --- New Scanners ---
             try:
@@ -486,14 +489,10 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                             bRet = (bC - bCold) / bCold
                     res["stage_analysis"] = scan_stage_analysis(sym, df, bench_ret=bRet)
                     
-                    # Monthly Early Stage 2
-                    res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
-                    
-                    # Monthly Momentum
-                    res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
-                    
-                    # Weekly Momentum
-                    res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
+                # Evaluate Monthly Early Stage 2 and Momentum universally
+                res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
+                res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
+                res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
             except Exception as e:
                 # print(f"Error running extended background scans for {sym}: {e}")
                 pass

@@ -62,6 +62,9 @@ def run_all_tabs_scan():
     support_rsi_list = []
     stage_analysis_list = []
     stage2_list = []
+    vpa_squeeze_list = []
+    monthly_momentum_list = []
+    weekly_momentum_list = []
     
     def process(sym):
         try:
@@ -107,6 +110,9 @@ def run_all_tabs_scan():
         if get_and_fix("support_rsi"): support_rsi_list.append(res["support_rsi"])
         if get_and_fix("stage_analysis"): stage_analysis_list.append(res["stage_analysis"])
         if get_and_fix("stage2"): stage2_list.append(res["stage2"])
+        if get_and_fix("vpa_squeeze"): vpa_squeeze_list.append(res["vpa_squeeze"])
+        if get_and_fix("monthly_momentum"): monthly_momentum_list.append(res["monthly_momentum"])
+        if get_and_fix("weekly_momentum"): weekly_momentum_list.append(res["weekly_momentum"])
 
     print(f"Found {len(flagged_list)} breakouts, {len(above_ma_list)} above MA, {len(crossover_ma_list)} MA cross...")
     
@@ -136,6 +142,12 @@ def run_all_tabs_scan():
     try: database.save_stage_analysis_only(date_str, stage_analysis_list)
     except Exception: pass
     try: database.save_stage2_only(date_str, stage2_list)
+    except Exception: pass
+    try: database.save_vpa_squeeze_only(date_str, vpa_squeeze_list)
+    except Exception: pass
+    try: database.save_monthly_momentum_results(date_str, monthly_momentum_list)
+    except Exception: pass
+    try: database.save_weekly_momentum_results(date_str, weekly_momentum_list)
     except Exception: pass
     
     print("Saved all tabs successfully!")
