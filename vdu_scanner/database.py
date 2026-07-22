@@ -2188,7 +2188,7 @@ def save_monthly_momentum_results(date_str: str, results: list[dict]) -> bool:
             volume, vol_sma12, market_cap_cr, momentum_score, buy_price, exit_price, target_price, 
             confidence, recommendation, return_1m, scan_date
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
@@ -2966,6 +2966,18 @@ def get_cached_stage_analysis(date_str: str) -> list[dict]:
 def save_zanger_scan(scan_date: str, timeframe: str, results: list):
     if not results:
         return
+        
+    # If the results haven't been ranked yet (e.g. missing 'rank' or 'score'), run the ranking logic
+    if isinstance(results, list) and len(results) > 0 and 'score' not in results[0]:
+        try:
+            import pandas as pd
+            from zanger_scanner import rank_signals, ZangerConfig
+            df = pd.DataFrame(results)
+            ranked_df = rank_signals(df, ZangerConfig())
+            results = ranked_df.to_dict('records')
+        except Exception as e:
+            print(f"Error ranking Zanger signals before saving: {e}")
+
     conn = None
     try:
         conn = get_connection()
@@ -3006,19 +3018,19 @@ def save_zanger_scan(scan_date: str, timeframe: str, results: list):
             data.append((
                 r.get('symbol', ''),
                 r.get('sector', ''),
-                r.get('close', 0),
+                round(float(r.get('close', 0) or 0), 2),
                 r.get('setup_type', ''),
-                r.get('prior_run_pct', 0),
-                r.get('base_depth_pct', 0),
-                r.get('breakout_volume_ratio', 0),
-                r.get('suggested_stop', 0),
-                r.get('risk_pct', 0),
+                round(float(r.get('prior_run_pct', 0) or 0), 2) if pd.notna(r.get('prior_run_pct')) else 0,
+                round(float(r.get('base_depth_pct', 0) or 0), 2) if pd.notna(r.get('base_depth_pct')) else 0,
+                round(float(r.get('breakout_volume_ratio', 0) or 0), 2) if pd.notna(r.get('breakout_volume_ratio')) else 0,
+                round(float(r.get('suggested_stop', 0) or 0), 2) if pd.notna(r.get('suggested_stop')) else 0,
+                round(float(r.get('risk_pct', 0) or 0), 2) if pd.notna(r.get('risk_pct')) else 0,
                 scan_date,
-                r.get('target_price', 0),
+                round(float(r.get('target_price', 0) or 0), 2) if pd.notna(r.get('target_price')) else 0,
                 r.get('rank', 0),
-                r.get('score', 0),
-                r.get('risk_score', 0),
-                r.get('volume_score', 0),
+                round(float(r.get('score', 0) or 0), 2) if pd.notna(r.get('score')) else 0,
+                round(float(r.get('risk_score', 0) or 0), 2) if pd.notna(r.get('risk_score')) else 0,
+                round(float(r.get('volume_score', 0) or 0), 2) if pd.notna(r.get('volume_score')) else 0,
                 timeframe,
                 r.get('confidence_level', ''),
                 r.get('breakout_status', '')

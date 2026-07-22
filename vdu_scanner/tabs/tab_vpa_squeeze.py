@@ -125,16 +125,16 @@ def render():
 
     tf_vpa_sq = st.selectbox("Select Timeframe", ["Daily", "Weekly", "Monthly"], key="tf_vpa_sq")
     if tf_vpa_sq == "Daily":
-        results = st.session_state.get('vpa_squeeze_results', [])
+        display_results = st.session_state.get('vpa_squeeze_results', [])
     elif tf_vpa_sq == "Weekly":
-        results = st.session_state.get('vpa_squeeze_weekly_results', [])
+        display_results = st.session_state.get('vpa_squeeze_weekly_results', [])
     else:
-        results = st.session_state.get('vpa_squeeze_monthly_results', [])
+        display_results = st.session_state.get('vpa_squeeze_monthly_results', [])
 
-    if results:
-        df_res = pd.DataFrame(results)
+    if display_results:
+        df_res = pd.DataFrame(display_results)
         df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
-        st.write(f"### Found {len(results)} stocks")
+        st.write(f"### Found {len(display_results)} stocks")
         # Sort by Compression Score (Gap %) ascending so tightest squeezes appear first
         if 'ma_gap_pct' in df_res.columns:
             df_res = df_res.sort_values('ma_gap_pct', ascending=True)
