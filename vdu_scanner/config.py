@@ -6,7 +6,7 @@ IST_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
 # Default Algorithmic Thresholds
 DRY_VOLUME_THRESHOLD = 0.40    # 40% of baseline = "dry"
-MIN_VOLUME_RATIO = 2.0         # 2x surge minimum
+MIN_VOLUME_RATIO = 2.5         # 2.5x surge minimum
 MIN_PRICE_CHANGE = 1.5         # 1.5% min price move on breakout day
 DRY_ZONE_MIN_DAYS = 30
 DRY_ZONE_MAX_DAYS = 60

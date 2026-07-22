@@ -861,6 +861,13 @@ def init_db() -> bool:
         add_col("scanned_ema_support", "exit_price", "DOUBLE PRECISION")
         add_col("scanned_ema_support", "target_price", "DOUBLE PRECISION")
         add_col("scanned_ema_support", "recommendation", "TEXT")
+        add_col("scanned_zanger", "rank", "INT")
+        add_col("scanned_zanger", "score", "DOUBLE PRECISION")
+        add_col("scanned_zanger", "risk_score", "DOUBLE PRECISION")
+        add_col("scanned_zanger", "volume_score", "DOUBLE PRECISION")
+        add_col("scanned_zanger", "timeframe", "VARCHAR(20)")
+        add_col("scanned_zanger", "confidence_level", "VARCHAR(50)")
+        add_col("scanned_zanger", "breakout_status", "VARCHAR(50)")
 
         conn.commit()
         cur.close()

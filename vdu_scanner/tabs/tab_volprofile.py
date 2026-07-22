@@ -216,6 +216,7 @@ def render():
         
         # Helper to safely extract VP level data from a timeframe dict
         def _get_tf(r, tf_key):
+            # Try nested dict first (if fresh scan result)
             tf = r.get(tf_key)
             if isinstance(tf, dict) and tf:
                 return {
@@ -225,6 +226,17 @@ def render():
                     'val': round(tf['val'], 2) if tf.get('val') is not None else None,
                     'vah': round(tf['vah'], 2) if tf.get('vah') is not None else None
                 }
+            # Fallback to flat SQLite column names if cached result
+            zone = r.get(f'{tf_key}_zone')
+            if zone is not None:
+                return {
+                    'zone': zone,
+                    'va_pct': r.get(f'{tf_key}_pos'),
+                    'poc': round(r.get(f'{tf_key}_poc'), 2) if r.get(f'{tf_key}_poc') is not None else None,
+                    'val': round(r.get(f'{tf_key}_val'), 2) if r.get(f'{tf_key}_val') is not None else None,
+                    'vah': round(r.get(f'{tf_key}_vah'), 2) if r.get(f'{tf_key}_vah') is not None else None
+                }
+            
             return {'zone': '', 'va_pct': None, 'poc': None, 'val': None, 'vah': None}
         
         # Format for Dataframe

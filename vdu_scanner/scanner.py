@@ -135,13 +135,17 @@ def scan_stock(
             
             # Enforce quality filter: consolidation zone average volume MUST be dry (<= 90% of baseline average)
             if dry_avg_vol > 0 and dry_avg_vol <= (0.90 * baseline_avg_vol):
-                # Count spikes (non-dry volume days where Volume > 40% of baseline) inside the window
-                not_dry_count = is_not_dry_mask.iloc[start_idx : idx + 1].sum()
-                if not_dry_count >= min_dry_spikes:
-                    # We found a valid dry window! Select the driest one to represent the highest quality contraction
-                    if dry_avg_vol < min_found_avg_vol:
-                        min_found_avg_vol = dry_avg_vol
-                        best_window = (start_idx, idx, L, int(not_dry_count), dry_avg_vol)
+                # Enforce price difference requirement: (High - Low) / Low >= 7%
+                zone_high = dry_zone_df['High'].max()
+                zone_low = dry_zone_df['Low'].min()
+                if zone_low > 0 and ((zone_high - zone_low) / zone_low >= 0.07):
+                    # Count spikes (non-dry volume days where Volume > 40% of baseline) inside the window
+                    not_dry_count = is_not_dry_mask.iloc[start_idx : idx + 1].sum()
+                    if not_dry_count >= min_dry_spikes:
+                        # We found a valid dry window! Select the driest one to represent the highest quality contraction
+                        if dry_avg_vol < min_found_avg_vol:
+                            min_found_avg_vol = dry_avg_vol
+                            best_window = (start_idx, idx, L, int(not_dry_count), dry_avg_vol)
                         
     if best_window is None:
         return None
@@ -821,13 +825,11 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
             return None
         roc6 = (cmp - close_6m_ago) / close_6m_ago * 100.0
 
-        # Condition 4: ROC > 25% (raised from 20 — need meaningful momentum)
-        # Stocks with < 25% 6-month momentum are drifters, not leaders
-        if not (roc6 >= 25.0):
+        # Condition 4: ROC >= 10.0% (Matched UI 10-80%)
+        if not (roc6 >= 10.0):
             return None
-        # Condition 5: ROC <= 60% (tightened from 80 — avoid overextended stocks)
-        # Stocks > 60% in 6 months attract heavy profit-taking from early buyers
-        if not (roc6 <= 60.0):
+        # Condition 5: ROC <= 80.0%
+        if not (roc6 <= 80.0):
             return None
 
         # ---- RSI (14 monthly bars) ----
@@ -845,8 +847,8 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
         # Condition 6: RSI > 14 SMA RSI
         if not (rsi_val > rsi_sma_val):
             return None
-        # Condition 7: RSI < 85
-        if not (rsi_val < 85.0):
+        # Condition 7: RSI 55 to 85 (Matched UI)
+        if not (rsi_val >= 55.0 and rsi_val <= 85.0):
             return None
 
         # ---- Volume > SMA(Volume, 12) ----
@@ -1731,8 +1733,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
     try:
         # Check Daily VPA
         daily_trends = calc_vpa_trends(df)
-        if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] == -1:
-            return None # Must be green for Major/Mid. Minor can be green or yellow (0).
+        if daily_trends['major'] != 1 or (daily_trends['mid'] != 1 and daily_trends['minor'] != 1):
+            return None # Must be green for Major, and at least one of Mid/Minor must be green.
             
         # Calculate SMAs
         close_series = df['Close']
@@ -1750,8 +1752,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         max_ma = max(ma_list)
         min_ma = min(ma_list)
         
-        # Squeeze: (max - min) / min < 0.06
-        if (max_ma - min_ma) / min_ma > 0.06:
+        # Squeeze: (max - min) / min < 0.08
+        if (max_ma - min_ma) / min_ma > 0.08:
             return None
             
         # Ensure price hasn't already broken out (price should be near the squeeze)
