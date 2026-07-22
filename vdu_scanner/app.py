@@ -2017,6 +2017,18 @@ if run_full or run_sma:
                         pass
             
             # Cache results in state to allow seamless widget interactions
+            # Safety net: if fresh scan returned 0 VDU results, fall back to last good DB results
+            if len(flagged_list) == 0:
+                try:
+                    import database as _db_fb
+                    _fb_dates = _db_fb.get_available_scan_dates()
+                    if _fb_dates:
+                        _fb_results = _db_fb.get_cached_breakouts(_fb_dates[0])
+                        if _fb_results and len(_fb_results) > 0:
+                            flagged_list = _fb_results
+                            st.toast(f"⚠️ Fresh scan found 0 VDU results. Loaded {len(flagged_list)} cached results from {_fb_dates[0]}.", icon="📅")
+                except Exception:
+                    pass
             st.session_state.scan_results = flagged_list
             st.session_state.gapup_results = gapup_list
             st.session_state.above_ma_results = above_ma_list
