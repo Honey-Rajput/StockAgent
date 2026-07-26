@@ -476,6 +476,13 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
                 d50 = r.get('dist_50sma_pct', 0.0)
                 d200 = r.get('dist_200sma_pct', 0.0)
                 cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem;"><span style="color:#29b6f6;">50: {d50:+.1f}%</span><br><span style="color:#ffa000;">200: {d200:+.1f}%</span></td>')
+                
+            rsi_val = r.get("rsi", 0.0)
+            cci_val = r.get("cci", 0.0)
+            rsi_color = "#00e676" if 60 <= rsi_val <= 75 else "#ffa000"
+            cci_color = "#00e676" if cci_val >= 100 else "#ffa000" if cci_val >= 0 else "#ef4444"
+            cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{rsi_val:.1f}</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: {cci_color}; font-weight: 600;">{cci_val:.1f}</td>')
             
         elif strategy_type == "minervini":
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
@@ -573,7 +580,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
     elif strategy_type == "gapup":
         headers.extend(["Prev Close", "Open", "Gap %", "Day Chg %", "Volume"])
     elif strategy_type in ["above_ma", "support_ma", "crossover_ma"]:
-        headers.extend(["Day Chg %", "Dist to SMA"])
+        headers.extend(["Day Chg %", "Dist to SMA", "RSI", "CCI"])
     elif strategy_type == "minervini":
         headers.extend(["Day Chg %", "Run Up 200 SMA", "Run Up 52w Low", "Stage Type", "Remaining Target %"])
     elif strategy_type == "wavetrend":

@@ -342,7 +342,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 "passes_daily": passes_daily,
                 "passes_weekly": passes_weekly,
                 "passes_monthly": passes_monthly,
-                "near_breakout": near_breakout
+                "near_breakout": near_breakout,
+                "rsi": float(today_row.get('RSI', 0.0)) if 'RSI' in today_row else 0.0,
+                "cci": float(today_row.get('CCI', 0.0)) if 'CCI' in today_row else 0.0
             }
 
         yesterday_l = float(yesterday_row['Low']); yesterday_sma65 = float(yesterday_row['SMA65'])
@@ -364,7 +366,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 "day_change_pct": round(((today_close_val - yesterday_row['Close']) / yesterday_row['Close'] * 100), 2),
                 "dist_65sma_pct": round(dist_65, 2), "setup_type": "support_ma",
                 "buy_price": support_buy_price, "exit_price": support_exit_price, "target_price": support_target_price,
-                "confidence": support_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec, indicators=ind)
+                "confidence": support_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "65 SMA Support", base_support_rec, indicators=ind),
+                "rsi": float(today_row.get('RSI', 0.0)) if 'RSI' in today_row else 0.0,
+                "cci": float(today_row.get('CCI', 0.0)) if 'CCI' in today_row else 0.0
             }
             
         crossed_golden = (yesterday_row['SMA50'] <= yesterday_row['SMA200']) and (today_row['SMA50'] > today_row['SMA200'])
@@ -390,7 +394,9 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                 "dist_50sma_pct": round(cross_dist_50, 2),
                 "dist_200sma_pct": round(cross_dist_200, 2), "setup_type": "crossover_ma",
                 "buy_price": cross_buy_price, "exit_price": cross_exit_price, "target_price": cross_target_price,
-                "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec, indicators=ind)
+                "confidence": cross_confidence, "recommendation": compute_rich_analysis(df_ma, sym, "MA Crossover", base_cross_rec, indicators=ind),
+                "rsi": float(today_row.get('RSI', 0.0)) if 'RSI' in today_row else 0.0,
+                "cci": float(today_row.get('CCI', 0.0)) if 'CCI' in today_row else 0.0
             }
 
     if scan_mode in ("all", "full"):
