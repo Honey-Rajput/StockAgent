@@ -65,9 +65,9 @@ def render():
         st.session_state.near_30sma_results = st.session_state.ALL_TAB_SCAN_STATUS["near_30sma_results"]
         
     if "near_30sma_weekly_results" not in st.session_state:
-        st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str) if is_startup and latest_date_str else []
+        st.session_state.near_30sma_weekly_results = []
     if "near_30sma_monthly_results" not in st.session_state:
-        st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(latest_date_str) if is_startup and latest_date_str else []
+        st.session_state.near_30sma_monthly_results = []
 
     # Auto load from DB if missing in session
     if 'near_30sma_results' not in st.session_state or not st.session_state.near_30sma_results:
