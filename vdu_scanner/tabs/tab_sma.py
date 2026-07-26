@@ -95,6 +95,8 @@ def render():
                     "Dist to 20 SMA (%)": float(r.get('dist_20sma_pct') or 0.0),
                     "Dist to 50 SMA (%)": float(r.get('dist_50sma_pct') or 0.0),
                     "Dist to 200 SMA (%)": float(r.get('dist_200sma_pct') or 0.0),
+                    "RSI": float(r.get('rsi') or 0.0),
+                    "CCI": float(r.get('cci') or 0.0),
                     "Suggested Buy (₹)": r['buy_price'],
                     "Suggested Exit/SL (₹)": r['exit_price'],
                     "Suggested Target (₹)": r['target_price'],

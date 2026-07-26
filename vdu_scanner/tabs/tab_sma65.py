@@ -82,6 +82,8 @@ def render():
                 "Day Change %": r['day_change_pct'],
                 "Setup Type": r['setup_type'],
                 "Dist to 65 SMA (%)": r.get('dist_65sma_pct', 0.0),
+                "RSI": float(r.get('rsi') or 0.0),
+                "CCI": float(r.get('cci') or 0.0),
                 "Suggested Buy (₹)": r['buy_price'],
                 "Suggested Exit/SL (₹)": r['exit_price'],
                 "Suggested Target (₹)": r['target_price'],
