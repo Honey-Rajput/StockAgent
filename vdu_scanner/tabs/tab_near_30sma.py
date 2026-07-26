@@ -102,7 +102,9 @@ def render():
                 "day_change_pct": st.column_config.NumberColumn("Chg %", width="small"),
                 "sma30": st.column_config.NumberColumn("30 SMA (₹)", width="small"),
                 "dist_pct": st.column_config.NumberColumn("Dist to SMA %", format="%.2f %%", width="small"),
-                "volume": st.column_config.NumberColumn("Volume", width="small")
+                "volume": st.column_config.NumberColumn("Volume", width="small"),
+                "rsi": st.column_config.NumberColumn("RSI", width="small"),
+                "cci": st.column_config.NumberColumn("CCI", width="small")
             },
             hide_index=True
         )

@@ -543,6 +543,13 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cross_badge = '<span style="color:#00e676;">Yes ✅</span>' if r.get('crossover') else '<span style="color:#94a3b8;">No</span>'
             cells.append(f'<td style="padding: 10px 12px;">{cross_badge}</td>')
             
+            rsi_val = r.get("rsi", 0.0)
+            cci_val = r.get("cci", 0.0)
+            rsi_color = "#00e676" if 60 <= rsi_val <= 75 else "#ffa000"
+            cci_color = "#00e676" if cci_val >= 100 else "#ffa000" if cci_val >= 0 else "#ef4444"
+            cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{rsi_val:.1f}</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: {cci_color}; font-weight: 600;">{cci_val:.1f}</td>')
+            
         elif strategy_type == "vpa":
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
             cells.append(f'<td style="padding: 10px 12px;">{chg_badge}</td>')
@@ -590,7 +597,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
     elif strategy_type == "struct_vcp":
         headers.extend(["Day Chg %", "Contractions", "Avg Vol", "Pivot Price"])
     elif strategy_type == "ema_support":
-        headers.extend(["Setup", "Day Chg %", "Dist to 9 EMA", "Dist to 21 EMA", "Crossover"])
+        headers.extend(["Setup", "Day Chg %", "Dist to 9 EMA", "Dist to 21 EMA", "Crossover", "RSI", "CCI"])
     elif strategy_type == "vpa":
         headers.extend(["Day Chg %", "VPA Score", "Pattern", "Trend"])
     elif strategy_type == "stage2":

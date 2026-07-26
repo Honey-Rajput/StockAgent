@@ -2584,7 +2584,9 @@ def scan_ema_support(symbol: str, df: pd.DataFrame, max_dist_9ema: float = 3.0, 
             'exit_price': sl,
             'target_price': target,
             'confidence': conf,
-            'recommendation': rec
+            'recommendation': rec,
+            'rsi': float(df['RSI'].iloc[-1]) if 'RSI' in df.columns else 0.0,
+            'cci': float(df['CCI'].iloc[-1]) if 'CCI' in df.columns else 0.0
         }
     except Exception as e:
         print(f"Error in EMA Support scan for {symbol}: {e}")
@@ -2703,13 +2705,18 @@ def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 3.0) ->
             prev_close = df_copy['Close'].iloc[-2] if len(df_copy) >= 2 else today_close
             day_change_pct = ((today_close - prev_close) / prev_close) * 100.0
             
+            rsi = float(df_copy['RSI'].iloc[-1]) if 'RSI' in df_copy.columns else 0.0
+            cci = float(df_copy['CCI'].iloc[-1]) if 'CCI' in df_copy.columns else 0.0
+            
             return {
                 'symbol': symbol,
                 'cmp': round(today_close, 2),
                 'day_change_pct': round(day_change_pct, 2),
                 'volume': today_vol,
                 'sma30': round(today_sma30, 2),
-                'dist_pct': round(dist_pct, 2)
+                'dist_pct': round(dist_pct, 2),
+                'rsi': round(rsi, 2),
+                'cci': round(cci, 2)
             }
             
         return None
