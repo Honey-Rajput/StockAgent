@@ -67,6 +67,7 @@ def render():
     if run_bb_btn:
         st.session_state.ema_support_results = None
         st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"] = None
+        from app import run_background_ema_support_scan
         run_background_ema_support_scan(force=True)
         st.rerun()
         
