@@ -1085,7 +1085,7 @@ is_admin = st.session_state['authenticated']
 # -----------------------------
 
 st.sidebar.markdown('### ⚡ Performance Settings')
-enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", value=False, help="Disable this on Streamlit Cloud to prevent UI freezing due to heavy thread execution.")
+enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", value=True, help="Disable this on Streamlit Cloud to prevent UI freezing due to heavy thread execution.")
 
 # Automatically trigger scanning in background if results are missing for today
 if enable_background_scans:
