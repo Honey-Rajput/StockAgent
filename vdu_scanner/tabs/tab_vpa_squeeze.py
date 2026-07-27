@@ -135,7 +135,7 @@ def render():
         # Sort by Compression Score (Gap %) ascending so tightest squeezes appear first
         if 'ma_gap_pct' in df_res.columns:
             df_res = df_res.sort_values('ma_gap_pct', ascending=True)
-        display_cols = ['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'dist_to_200_pct']
+        display_cols = ['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'dist_to_200_pct', 'rsi', 'cci']
         # Keep only columns that actually exist (handles older cached results without the new field)
         display_cols = [c for c in display_cols if c in df_res.columns]
         st.dataframe(
@@ -148,14 +148,10 @@ def render():
                 "sma10": st.column_config.NumberColumn("10 SMA", format="%.2f", width="small"),
                 "sma21": st.column_config.NumberColumn("21 SMA", format="%.2f", width="small"),
                 "sma50": st.column_config.NumberColumn("50 SMA", format="%.2f", width="small"),
-                "ma_gap_pct": st.column_config.NumberColumn("Gap %", format="%.2f", help="(Max SMA − Min SMA) / Min SMA × 100. Lower = tighter.", width="small"),
-                "compression_score": st.column_config.NumberColumn(
-                    "Compression Score",
-                    help="Max(10,21,50 SMA) − Min(10,21,50 SMA) / Min(10,21,50 SMA). Lower = tighter squeeze = stronger breakout candidate.",
-                    format="%.2f %%",
-                    width="small"
-                ),
-                "dist_to_200_pct": st.column_config.NumberColumn("200 Dist %", format="%.2f", width="small")
+                "ma_gap_pct": st.column_config.NumberColumn("Compression (Gap %)", format="%.2f%%", width="small", help="Max distance % between the 10, 21, and 50 SMAs."),
+                "dist_to_200_pct": st.column_config.NumberColumn("Dist to 200 SMA %", format="%.2f%%", width="small"),
+                "rsi": st.column_config.NumberColumn("RSI", format="%.1f", width="small"),
+                "cci": st.column_config.NumberColumn("CCI", format="%.1f", width="small"),
             },
             hide_index=True
         )

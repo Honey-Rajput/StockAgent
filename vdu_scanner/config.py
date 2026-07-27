@@ -6,8 +6,8 @@ IST_TIMEZONE = pytz.timezone('Asia/Kolkata')
 
 # Default Algorithmic Thresholds
 DRY_VOLUME_THRESHOLD = 0.45    # 45% of baseline = "dry"
-MIN_VOLUME_RATIO = 2.2         # 2.2x surge minimum
-MIN_PRICE_CHANGE = 2.0         # 2.0% min price move on breakout day
+MIN_VOLUME_RATIO = 3.0         # 3.0x surge minimum for higher quality
+MIN_PRICE_CHANGE = 3.5         # 3.5% min price move on breakout day
 DRY_ZONE_MIN_DAYS = 30
 DRY_ZONE_MAX_DAYS = 60
 LOOKBACK_DAYS = 1100           # Fetch 1100 trading days to guarantee 200+ clean weekly trading bars

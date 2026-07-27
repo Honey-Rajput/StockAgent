@@ -230,16 +230,29 @@ def scan_stock(
         df_indicators = df.copy()
         df_indicators['MA50'] = df_indicators['Close'].rolling(window=50).mean()
         df_indicators['MA200'] = df_indicators['Close'].rolling(window=200).mean()
-    
-    today_ma = df_indicators['MA50'].iloc[-1] if 'MA50' in df_indicators.columns else np.nan
+        
+    # Handle both 'MA50' (from above) and 'SMA50' (from precompute_indicators)
+    if 'MA50' in df_indicators.columns:
+        today_ma = df_indicators['MA50'].iloc[-1]
+    elif 'SMA50' in df_indicators.columns:
+        today_ma = df_indicators['SMA50'].iloc[-1]
+    else:
+        today_ma = np.nan
+
+    if 'MA200' in df_indicators.columns:
+        today_200ma = df_indicators['MA200'].iloc[-1]
+    elif 'SMA200' in df_indicators.columns:
+        today_200ma = df_indicators['SMA200'].iloc[-1]
+    else:
+        today_200ma = np.nan
+
     above_50dma = False
     if not pd.isna(today_ma):
-        above_50dma = today['Close'] > today_ma
+        above_50dma = today['Close'] >= today_ma
         
-    today_ma200 = df_indicators['MA200'].iloc[-1] if 'MA200' in df_indicators.columns else np.nan
     above_200dma = False
-    if not pd.isna(today_ma200):
-        above_200dma = today['Close'] > today_ma200
+    if not pd.isna(today_200ma):
+        above_200dma = today['Close'] >= today_200ma
         
     # --- STEP 4b: Relative Volume (RVOL) vs 50-day avg ---
     # RVOL > 2.0 = institutional-grade breakout conviction
@@ -1810,6 +1823,9 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         
         buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df, cmp, indicators)
         
+        rsi = indicators.get("rsi") if indicators else None
+        cci = indicators.get("cci") if indicators else None
+        
         from config import get_company_name
         company_name = get_company_name(symbol)
         
@@ -1826,6 +1842,8 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
             "ma_gap_pct": round(((max_ma - min_ma) / min_ma) * 100, 2),
             "compression_score": round(((max_ma - min_ma) / min_ma) * 100, 2),
             "dist_to_200_pct": round(((sma200 - max_ma) / max_ma) * 100, 2),
+            "rsi": round(rsi, 2) if rsi is not None else 0.0,
+            "cci": round(cci, 2) if cci is not None else 0.0,
             "buy_price": buy_price,
             "exit_price": exit_price,
             "target_price": target_price

@@ -694,6 +694,8 @@ def init_db() -> bool:
             exit_price DOUBLE PRECISION,
             target_price DOUBLE PRECISION,
             scan_date DATE NOT NULL,
+            rsi DOUBLE PRECISION,
+            cci DOUBLE PRECISION,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
         );
@@ -705,6 +707,8 @@ def init_db() -> bool:
             volume BIGINT,
             ma_gap_pct REAL(10, 2),
             scan_date DATE NOT NULL,
+            rsi DOUBLE PRECISION,
+            cci DOUBLE PRECISION,
             UNIQUE(symbol, scan_date)
         );
         CREATE TABLE IF NOT EXISTS scanned_vpa_squeeze_monthly (
@@ -715,6 +719,8 @@ def init_db() -> bool:
             volume BIGINT,
             ma_gap_pct REAL(10, 2),
             scan_date DATE NOT NULL,
+            rsi DOUBLE PRECISION,
+            cci DOUBLE PRECISION,
             UNIQUE(symbol, scan_date)
         );
 
@@ -764,6 +770,13 @@ def init_db() -> bool:
         add_col("scanned_breakouts", "recommendation", "TEXT")
         add_col("scanned_breakouts", "setup_type", "VARCHAR(50)")
         add_col("scanned_breakouts", "above_200dma", "BOOLEAN DEFAULT FALSE")
+
+        add_col("scanned_vpa_squeeze", "rsi", "DOUBLE PRECISION")
+        add_col("scanned_vpa_squeeze", "cci", "DOUBLE PRECISION")
+        add_col("scanned_vpa_squeeze_weekly", "rsi", "DOUBLE PRECISION")
+        add_col("scanned_vpa_squeeze_weekly", "cci", "DOUBLE PRECISION")
+        add_col("scanned_vpa_squeeze_monthly", "rsi", "DOUBLE PRECISION")
+        add_col("scanned_vpa_squeeze_monthly", "cci", "DOUBLE PRECISION")
 
         add_col("scanned_squeezes", "buy_price", "DOUBLE PRECISION")
         add_col("scanned_squeezes", "exit_price", "DOUBLE PRECISION")
@@ -1500,8 +1513,8 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
         insert_query = """
         INSERT INTO scanned_vpa_squeeze (
             symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
-            ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price, scan_date
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ma_gap_pct, dist_to_200_pct, compression_score, buy_price, exit_price, target_price, scan_date, rsi, cci
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in results:
             cur.execute(insert_query, (
@@ -1520,7 +1533,9 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
                 float(r['buy_price']) if r.get('buy_price') is not None else None,
                 float(r['exit_price']) if r.get('exit_price') is not None else None,
                 float(r['target_price']) if r.get('target_price') is not None else None,
-                date_str
+                date_str,
+                float(r.get('rsi', 0.0)) if r.get('rsi') is not None else 0.0,
+                float(r.get('cci', 0.0)) if r.get('cci') is not None else 0.0
             ))
         conn.commit()
         cur.close()
@@ -1783,20 +1798,24 @@ def _save_vpa_squeeze_to_table(table_name: str, date_str: str, results: list[dic
         for r in results:
             cur.execute(f"""
                 INSERT INTO {table_name} (
-                    symbol, cmp, day_change_pct, volume, ma_gap_pct, scan_date
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    symbol, cmp, day_change_pct, volume, ma_gap_pct, scan_date, rsi, cci
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol, scan_date) DO UPDATE SET
                     cmp = EXCLUDED.cmp,
                     day_change_pct = EXCLUDED.day_change_pct,
                     volume = EXCLUDED.volume,
-                    ma_gap_pct = EXCLUDED.ma_gap_pct
+                    ma_gap_pct = EXCLUDED.ma_gap_pct,
+                    rsi = EXCLUDED.rsi,
+                    cci = EXCLUDED.cci
             """, (
                 r['symbol'],
                 float(r['cmp']),
                 float(r.get('day_change_pct', 0)),
                 int(r.get('volume', 0)),
                 float(r.get('ma_gap_pct', 0)),
-                date_str
+                date_str,
+                float(r.get('rsi', 0.0)) if r.get('rsi') is not None else 0.0,
+                float(r.get('cci', 0.0)) if r.get('cci') is not None else 0.0
             ))
         conn.commit()
         cur.close()
