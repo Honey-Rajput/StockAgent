@@ -789,6 +789,8 @@ def init_db() -> bool:
         add_col("scanned_trend_setups", "passes_weekly", "BOOLEAN")
         add_col("scanned_trend_setups", "passes_monthly", "BOOLEAN")
         add_col("scanned_trend_setups", "near_breakout", "BOOLEAN")
+        add_col("scanned_trend_setups", "rsi", "DOUBLE PRECISION")
+        add_col("scanned_trend_setups", "cci", "DOUBLE PRECISION")
 
         add_col("scanned_wt_cross", "buy_price", "DOUBLE PRECISION")
         add_col("scanned_wt_cross", "exit_price", "DOUBLE PRECISION")
@@ -854,6 +856,10 @@ def init_db() -> bool:
         add_col("scanned_ema_support", "score_breakdown", "TEXT")
         add_col("scanned_ema_support", "setup", "VARCHAR(100)")
         add_col("scanned_ema_support", "dist_9ema", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "rsi", "DOUBLE PRECISION")
+        add_col("scanned_ema_support", "cci", "DOUBLE PRECISION")
+        add_col("scanned_near_30sma", "rsi", "DOUBLE PRECISION")
+        add_col("scanned_near_30sma", "cci", "DOUBLE PRECISION")
         add_col("scanned_ema_support", "dist_21ema", "DOUBLE PRECISION")
         add_col("scanned_ema_support", "crossover", "BOOLEAN")
         add_col("scanned_ema_support", "score", "DOUBLE PRECISION")
@@ -1901,8 +1907,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         insert_squeeze_query = """
         INSERT INTO scanned_ema_support (symbol, company_name, cmp, day_change_pct, setup, 
                                      dist_9ema, dist_21ema, crossover, score,
-                                     buy_price, exit_price, target_price, confidence, recommendation, scan_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                                     buy_price, exit_price, target_price, confidence, recommendation, rsi, cci, scan_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         for r in squeezes:
             try:
@@ -1921,6 +1927,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                     float(r['target_price']) if r.get('target_price') is not None else None,
                     str(r['confidence']) if r.get('confidence') is not None else None,
                     str(r['recommendation']) if r.get('recommendation') is not None else None,
+                    float(r.get('rsi', 0.0)),
+                    float(r.get('cci', 0.0)),
                     date_str
                 ))
             except Exception as _se:
@@ -1962,13 +1970,15 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                                          buy_price, exit_price, target_price, confidence, recommendation,
                                          run_up_200, run_up_52w, is_early,
                                          dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
-                                         passes_daily, passes_weekly, passes_monthly, near_breakout)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         passes_daily, passes_weekly, passes_monthly, near_breakout, rsi, cci)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
             passes_daily = excluded.passes_daily,
             passes_weekly = excluded.passes_weekly,
             passes_monthly = excluded.passes_monthly,
-            near_breakout = excluded.near_breakout;
+            near_breakout = excluded.near_breakout,
+            rsi = excluded.rsi,
+            cci = excluded.cci;
         """
         trend_saved = 0
         for r in trend_setups:
@@ -1996,6 +2006,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                     bool(r['passes_weekly']) if r.get('passes_weekly') is not None else None,
                     bool(r['passes_monthly']) if r.get('passes_monthly') is not None else None,
                     bool(r['near_breakout']) if r.get('near_breakout') is not None else None,
+                    float(r.get('rsi', 0.0)),
+                    float(r.get('cci', 0.0))
                 ))
                 trend_saved += 1
             except Exception as _te:
@@ -2119,8 +2131,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         # Insert Near 30 SMA
         if near_30sma_list:
             near_30sma_query = """
-            INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, rsi, cci, scan_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
             for r in near_30sma_list:
                 try:
@@ -2132,6 +2144,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                         int(r.get('volume', 0)),
                         float(r['sma30']),
                         float(r['dist_pct']),
+                        float(r.get('rsi', 0.0)),
+                        float(r.get('cci', 0.0)),
                         date_str
                     ))
                 except Exception as _n30e:
@@ -2811,8 +2825,8 @@ def save_ema_support_only(date_str: str, bb_results: list) -> bool:
                 INSERT INTO scanned_ema_support
                 (symbol, company_name, cmp, day_change_pct,
                  setup, dist_9ema, dist_21ema, crossover, score,
-                 buy_price, exit_price, target_price, confidence, recommendation, scan_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 buy_price, exit_price, target_price, confidence, recommendation, rsi, cci, scan_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (symbol, scan_date) DO UPDATE SET
                     cmp = EXCLUDED.cmp,
                     day_change_pct = EXCLUDED.day_change_pct,
@@ -2825,7 +2839,9 @@ def save_ema_support_only(date_str: str, bb_results: list) -> bool:
                     exit_price = EXCLUDED.exit_price,
                     target_price = EXCLUDED.target_price,
                     confidence = EXCLUDED.confidence,
-                    recommendation = EXCLUDED.recommendation;
+                    recommendation = EXCLUDED.recommendation,
+                    rsi = EXCLUDED.rsi,
+                    cci = EXCLUDED.cci;
             """, (
                 str(r['symbol']),
                 str(r.get('company_name', '')),
@@ -2839,8 +2855,10 @@ def save_ema_support_only(date_str: str, bb_results: list) -> bool:
                 float(r['buy_price']) if r.get('buy_price') is not None else None,
                 float(r['exit_price']) if r.get('exit_price') is not None else None,
                 float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
+                str(r.get('confidence', '')),
+                str(r.get('recommendation', '')),
+                float(r.get('rsi', 0.0)),
+                float(r.get('cci', 0.0)),
                 date_str
             ))
 
@@ -2876,13 +2894,15 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
                                          buy_price, exit_price, target_price, confidence, recommendation,
                                          run_up_200, run_up_52w, is_early,
                                          dist_20sma_pct, dist_50sma_pct, dist_65sma_pct, dist_200sma_pct,
-                                         passes_daily, passes_weekly, passes_monthly, near_breakout)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         passes_daily, passes_weekly, passes_monthly, near_breakout, rsi, cci)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
             passes_daily = EXCLUDED.passes_daily,
             passes_weekly = EXCLUDED.passes_weekly,
             passes_monthly = EXCLUDED.passes_monthly,
-            near_breakout = EXCLUDED.near_breakout;
+            near_breakout = EXCLUDED.near_breakout,
+            rsi = EXCLUDED.rsi,
+            cci = EXCLUDED.cci;
         """
         for r in trend_setups:
             cur.execute(insert_trend_query, (
@@ -2908,6 +2928,8 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
                 bool(r['passes_weekly']) if r.get('passes_weekly') is not None else None,
                 bool(r['passes_monthly']) if r.get('passes_monthly') is not None else None,
                 bool(r['near_breakout']) if r.get('near_breakout') is not None else None,
+                float(r.get('rsi', 0.0)),
+                float(r.get('cci', 0.0))
             ))
         
         # 3. Update scan log
@@ -3321,8 +3343,8 @@ def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
         cur.execute("DELETE FROM scanned_near_30sma WHERE scan_date = ?;", (date_str,))
         
         insert_query = """
-        INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, scan_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO scanned_near_30sma (symbol, company_name, cmp, day_change_pct, volume, sma30, dist_pct, rsi, cci, scan_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
         """
         
         for r in near_30sma_results:
@@ -3334,6 +3356,8 @@ def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
                 int(r.get('volume', 0)),
                 float(r.get('sma30', 0.0)),
                 float(r.get('dist_pct', 0.0)),
+                float(r.get('rsi', 0.0)),
+                float(r.get('cci', 0.0)),
                 date_str
             ))
             

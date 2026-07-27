@@ -2688,6 +2688,12 @@ def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 3.0) ->
     try:
         if len(df) < 30:
             return None
+            
+        if 'RSI' not in df.columns:
+            from indicators import precompute_indicators
+            ind = precompute_indicators(df)
+            if ind:
+                df = ind['df']
         
         # We need SMA 30
         if 'SMA_30' not in df.columns:
