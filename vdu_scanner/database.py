@@ -3282,7 +3282,12 @@ def get_latest_date_ohlcv(symbol: str) -> str | None:
         cur.execute("SELECT MAX(date) FROM ohlcv_daily WHERE symbol = ?;", (symbol.strip().upper(),))
         row = cur.fetchone()
         if row and row[0]:
-            return row[0].strftime('%Y-%m-%d')
+            val = row[0]
+            # SQLite stores dates as TEXT strings — return directly
+            # If somehow it comes back as a datetime object, format it
+            if isinstance(val, str):
+                return val[:10]  # Trim to YYYY-MM-DD if any time portion present
+            return val.strftime('%Y-%m-%d')
         return None
     except Exception as e:
         print(f"Error getting latest date for {symbol}: {e}")
@@ -3346,8 +3351,27 @@ def save_data_ohlcv(symbol: str, df: pd.DataFrame):
         df_to_save = df_to_save[req_cols]
         df_to_save = df_to_save.replace({np.nan: None})
         
-        records = df_to_save.to_records(index=False)
-        data_tuples = list(records)
+        # IMPORTANT: Cast to Python native types to prevent numpy int64/float64 from being
+        # stored as blobs in SQLite when using executemany with numpy recarray.
+        # to_records() returns numpy types which sqlite3 treats as blobs unless explicitly cast.
+        numeric_cols = ['open', 'high', 'low', 'close', 'volume']
+        for nc in numeric_cols:
+            if nc in df_to_save.columns:
+                df_to_save[nc] = pd.to_numeric(df_to_save[nc], errors='coerce')
+        
+        # Use itertuples for safe Python-native type conversion
+        data_tuples = [
+            (
+                str(row.symbol),
+                str(row.date),
+                float(row.open) if row.open is not None and str(row.open) != 'nan' else None,
+                float(row.high) if row.high is not None and str(row.high) != 'nan' else None,
+                float(row.low) if row.low is not None and str(row.low) != 'nan' else None,
+                float(row.close) if row.close is not None and str(row.close) != 'nan' else None,
+                int(row.volume) if row.volume is not None and str(row.volume) != 'nan' else None,
+            )
+            for row in df_to_save.itertuples(index=False)
+        ]
         
         query = """
             INSERT INTO ohlcv_daily (symbol, date, open, high, low, close, volume)
