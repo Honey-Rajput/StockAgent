@@ -108,7 +108,9 @@ def render():
                 'Exit Price': r.get('exit_price', 0.0),
                 'Target Price': r.get('target_price', 0.0),
                 'Confidence': r.get('confidence', ''),
-                'Recommendation': r.get('recommendation', '')
+                'Recommendation': r.get('recommendation', ''),
+                'RSI': round(float(r.get('rsi') or 0.0), 2),
+                'CCI': round(float(r.get('cci') or 0.0), 2)
             } for r in ema_list])
             
             csv_ema = df_ema.to_csv(index=False).encode('utf-8-sig')
