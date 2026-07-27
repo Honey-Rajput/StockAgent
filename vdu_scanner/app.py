@@ -1284,9 +1284,9 @@ st.sidebar.markdown('### 🔍 VDU Strategy Filters')
 # Algorithmic parameter sliders
 min_vol_ratio = st.sidebar.slider(
     "Min Volume Ratio",
-    min_value=2.0,
+    min_value=1.5,
     max_value=10.0,
-    value=2.5,
+    value=float(MIN_VOLUME_RATIO),
     step=0.5,
     key="vdu_min_vol_ratio_v8",
     help="Breakout day volume compared to dry average volume (e.g., 2.0 = 2x surge)"
@@ -1296,7 +1296,7 @@ min_price_chg = st.sidebar.slider(
     "Min Price Change %",
     min_value=1.5,
     max_value=30.0,
-    value=7.0,
+    value=float(MIN_PRICE_CHANGE),
     step=0.5,
     key="vdu_min_price_chg_v8",
     help="Minimum price percentage increase on the breakout day (Close vs Open)"
@@ -1306,7 +1306,7 @@ dry_zone_range = st.sidebar.slider(
     "Dry Zone Range (Trading Days)",
     min_value=0,
     max_value=150,
-    value=(0, 50),
+    value=(int(DRY_ZONE_MIN_DAYS), int(DRY_ZONE_MAX_DAYS)),
     step=5,
     key="vdu_dry_zone_range_v5",
     help="Configure the minimum and maximum duration of the dry zone consolidation period (up to 150 days)"
