@@ -2520,6 +2520,11 @@ def scan_bb_squeeze(symbol: str, df_daily: pd.DataFrame, df_weekly: pd.DataFrame
 def scan_ema_support(symbol: str, df: pd.DataFrame, max_dist_9ema: float = 3.0, max_dist_21ema: float = 5.0) -> dict | None:
     if df is None or len(df) < 22:
         return None
+    if 'RSI' not in df.columns:
+        from indicators import precompute_indicators
+        ind = precompute_indicators(df)
+        if ind:
+            df = ind['df']
     try:
         from config import get_company_name
         cmp = float(df['Close'].iloc[-1])

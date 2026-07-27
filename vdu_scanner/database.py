@@ -1323,6 +1323,16 @@ def get_cached_vpa(date_str: str) -> list[dict]:
     unflattened_results = []
     for r in results:
         r_copy = dict(r)
+        
+        score = r.get('vpa_score', 0)
+        r_copy['score'] = score
+        if score >= 80:
+            r_copy['confidence'] = "High"
+        elif score >= 50:
+            r_copy['confidence'] = "Medium"
+        else:
+            r_copy['confidence'] = "Low"
+            
         # Reconstruct nested dictionaries expected by the UI
         r_copy['daily'] = {
             'major': r.get('daily_major', 0),
