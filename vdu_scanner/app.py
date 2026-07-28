@@ -343,19 +343,21 @@ if 'support_rsi_results' not in st.session_state:
     st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str) if is_startup and latest_date_str else None
 if 'stage_analysis_results' not in st.session_state:
     st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str) if is_startup and latest_date_str else None
-# Initialize global status dictionary if not present (shared across all threads/sessions)
-if "MOMENTUM_SCAN_STATUS" not in globals():
-    # Removed redundant global statement
-    MOMENTUM_SCAN_STATUS = {
+# Initialize MOMENTUM_SCAN_STATUS in session_state so it persists across reruns
+# (module-level globals reset on each Streamlit page rerun)
+if "MOMENTUM_SCAN_STATUS" not in st.session_state:
+    st.session_state.MOMENTUM_SCAN_STATUS = {
         "is_running": False,
         "status_text": "Not started",
         "progress": 0.0,
         "monthly_results": None,
         "weekly_results": None
     }
+MOMENTUM_SCAN_STATUS = st.session_state.MOMENTUM_SCAN_STATUS
 
 # Initialize global status dictionary for ALL individual tab background scans
-if "st.session_state.ALL_TAB_SCAN_STATUS" not in st.session_state:
+# FIX: was using wrong string literal key — caused re-init on every rerun
+if "ALL_TAB_SCAN_STATUS" not in st.session_state:
     st.session_state.ALL_TAB_SCAN_STATUS = {
         "is_running": False,
         "current_scanner": "",
@@ -366,6 +368,12 @@ if "st.session_state.ALL_TAB_SCAN_STATUS" not in st.session_state:
         "stage2_results": None,
         "vpa_results": None,
         "vp_results": None,
+        # Extended scanner result keys
+        "ema_support_results": None,
+        "ema_support_running": False,
+        "volume_profile_results": None,
+        "vpa_squeeze_results": None,
+        "near_30sma_results": None,
     }
 
 def run_background_momentum_scans():
@@ -373,7 +381,6 @@ def run_background_momentum_scans():
     Runs both Monthly and Weekly Momentum scans in a non-blocking background daemon thread.
     Updates MOMENTUM_SCAN_STATUS and saves the results to daily JSON cache files.
     """
-    global MOMENTUM_SCAN_STATUS
     if MOMENTUM_SCAN_STATUS["is_running"]:
         return
 

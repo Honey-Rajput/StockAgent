@@ -479,26 +479,26 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
                     # EMA Support (repurposed from ema_support)
                     from scanner import scan_ema_support
                     res["ema_support"] = scan_ema_support(sym, df)
-                if scan_mode in ("all", "full", "near_30sma"):
-                    from scanner import scan_near_30sma
-                    res["near_30sma"] = scan_near_30sma(sym, df)
-                    res["near_30sma_weekly"] = scan_near_30sma(sym, w_df)
-                    res["near_30sma_monthly"] = scan_near_30sma(sym, m_df)
-
-
-                if res["minervini"] or res["gapup"] or res["structural_vcp"] or res["vpa"]:
-                    bRet = 0.0
-                    if benchmark_df is not None and len(benchmark_df) > 250:
-                        bC = float(benchmark_df['Close'].iloc[-1])
-                        bCold = float(benchmark_df['Close'].iloc[-250])
-                        if bCold > 0:
-                            bRet = (bC - bCold) / bCold
-                    res["stage_analysis"] = scan_stage_analysis(sym, df, bench_ret=bRet)
                     
-                # Evaluate Monthly Early Stage 2 and Momentum universally
-                res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
-                res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
-                res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
+                    if scan_mode in ("all", "full", "near_30sma"):
+                        from scanner import scan_near_30sma
+                        res["near_30sma"] = scan_near_30sma(sym, df)
+                        res["near_30sma_weekly"] = scan_near_30sma(sym, w_df)
+                        res["near_30sma_monthly"] = scan_near_30sma(sym, m_df)
+
+                    if res["minervini"] or res["gapup"] or res["structural_vcp"] or res["vpa"]:
+                        bRet = 0.0
+                        if benchmark_df is not None and len(benchmark_df) > 250:
+                            bC = float(benchmark_df['Close'].iloc[-1])
+                            bCold = float(benchmark_df['Close'].iloc[-250])
+                            if bCold > 0:
+                                bRet = (bC - bCold) / bCold
+                        res["stage_analysis"] = scan_stage_analysis(sym, df, bench_ret=bRet)
+                        
+                    # Evaluate Monthly Early Stage 2 and Momentum universally
+                    res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
+                    res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
+                    res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
             except Exception as e:
                 # print(f"Error running extended background scans for {sym}: {e}")
                 pass

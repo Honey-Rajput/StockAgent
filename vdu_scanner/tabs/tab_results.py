@@ -89,9 +89,9 @@ def render():
         # 2. Main Scan Table
         # NOTE: Use len(scan_data) not total_scanned==0 because DB-loaded results
         # have scan_data populated but total_scanned may be 0 from scan_logs.
-        if scan_data is None and st.session_state.get('total_scanned', 0) == 0:
+        if scan_data is None:
             st.info("💡 Get started by configuring your universe in the sidebar and clicking '**Run Scanner**'.")
-        elif not scan_data or len(scan_data) == 0:
+        elif len(scan_data) == 0:
             st.info("ℹ️ No VDU breakouts found today matching these criteria. Try lowering the thresholds in the sidebar (e.g. Min Volume Ratio or Min Price Change) and re-running.")
         else:
             # Sort results descending by score
