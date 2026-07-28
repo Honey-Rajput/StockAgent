@@ -1226,7 +1226,8 @@ def get_all_latest_scan_dates() -> dict[str, str]:
         "scanned_vpa_squeeze_weekly",
         "scanned_vpa_squeeze_monthly", "scanned_stage2",
         "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
-        "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini"
+        "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini",
+        "scanned_near_30sma", "scanned_near_30sma_weekly", "scanned_near_30sma_monthly"
     ]
     latest_dates = {}
     conn = None
@@ -2412,16 +2413,17 @@ def get_monthly_base_date(year: int, month: int) -> str | None:
     """
     Returns the earliest scan_date in the specified month and year that has cached monthly momentum results.
     """
+    # Use SQLite-compatible strftime (EXTRACT is PostgreSQL syntax only)
     query = """
     SELECT MIN(scan_date) 
     FROM scanned_monthly_momentum 
-    WHERE EXTRACT(YEAR FROM scan_date) = ? AND EXTRACT(MONTH FROM scan_date) = ?;
+    WHERE strftime('%Y', scan_date) = ? AND strftime('%m', scan_date) = ?;
     """
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (year, month))
+        cur.execute(query, (str(year), f"{month:02d}"))
         row = cur.fetchone()
         cur.close()
         if row and row[0]:

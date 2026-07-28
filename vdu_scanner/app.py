@@ -1096,7 +1096,10 @@ enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", va
 
 # Automatically trigger scanning in background if results are missing for today
 if enable_background_scans:
-    if (st.session_state.monthly_momentum_results is None or st.session_state.weekly_momentum_results is None) and not MOMENTUM_SCAN_STATUS["is_running"]:
+    # Trigger if results are None OR empty (empty = DB table had no data for today's date)
+    _mm_needs_run = not st.session_state.monthly_momentum_results and not MOMENTUM_SCAN_STATUS["is_running"]
+    _wm_needs_run = not st.session_state.weekly_momentum_results and not MOMENTUM_SCAN_STATUS["is_running"]
+    if _mm_needs_run or _wm_needs_run:
         run_background_momentum_scans()
     # Auto-trigger all remaining tab scans (WaveTrend, VCS, Stage-2, VPA, Volume Profile)
     if not st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:

@@ -61,21 +61,28 @@ def render():
     st.markdown("### 🚀 Early Stage 2 Base Breakout Scanner")
     st.markdown("Identifies stocks moving out of a long-term Stage 1 base on the monthly timeframe.")
     
-    if 'stage2_results' not in st.session_state:
-        st.session_state.stage2_results = None
-
-    # Pick up background scan results if available
-    if st.session_state.stage2_results is None and st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"] is not None:
-        st.session_state.stage2_results = st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"]
-        # Try loading from DB
-        today_str = get_market_date(for_display=True)
-        try:
-            cached_stage2 = database.get_cached_stage2(today_str)
-            if cached_stage2 is not None:
-                st.session_state.stage2_results = cached_stage2
-                # Note: No need to show success message on silent load, just let the table render
-        except Exception as e:
-            print(f"Failed to load cached stage2: {e}")
+    # Pick up background scan results or load from DB
+    if not st.session_state.stage2_results:
+        # First try the in-memory background scan status
+        if st.session_state.ALL_TAB_SCAN_STATUS.get("stage2_results"):
+            st.session_state.stage2_results = st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"]
+        else:
+            # Try loading from DB (today first, then last 10 days as fallback)
+            try:
+                today_str = get_market_date(for_display=True)
+                cached_stage2 = database.get_cached_stage2(today_str)
+                if cached_stage2:
+                    st.session_state.stage2_results = cached_stage2
+                else:
+                    from datetime import timedelta
+                    for days_back in range(1, 10):
+                        check_date = (datetime.now(IST_TIMEZONE) - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                        cached_stage2 = database.get_cached_stage2(check_date)
+                        if cached_stage2:
+                            st.session_state.stage2_results = cached_stage2
+                            break
+            except Exception as e:
+                print(f"Failed to load cached stage2: {e}")
         
     s2_col1, s2_col2 = st.columns([2, 8])
     with s2_col1:

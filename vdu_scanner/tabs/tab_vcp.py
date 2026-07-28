@@ -61,8 +61,8 @@ def render():
     st.markdown("### 🎯 Minervini Ultimate +VCP")
     st.markdown("Scans for stocks passing the Minervini Trend Template with Volatility Contraction Pattern (VCP) squeeze.")
 
-    # Auto-load cached results from DB on first page visit
-    if 'vcp_minervini_results' not in st.session_state:
+    # Auto-load cached results from DB on first page visit or when results are empty
+    if not st.session_state.get('vcp_minervini_results'):
         try:
             import database
             today_str = get_market_date()
