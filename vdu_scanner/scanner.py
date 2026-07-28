@@ -125,64 +125,49 @@ def scan_stock(
         avg_dollar_vol = (baseline_subset['Volume'] * baseline_subset['Close']).mean()
         if pd.isna(avg_dollar_vol) or avg_dollar_vol < MIN_AVG_DOLLAR_VOL:
             return None
-
-    # --- STEP 2: Vectorized dry-zone search ---
+    # --- STEP 2: Deterministic Dry-Zone Search ---
     history_df = df.iloc[:-1].reset_index(drop=True)
-    h_vol = history_df['Volume']
-    h_high = history_df['High']
-    h_low = history_df['Low']
-
-    is_not_dry_mask = h_vol > (0.40 * baseline_avg_vol)
-
-    search_start_idx = len(history_df) - 1
-    search_end_idx = max(0, len(history_df) - RECENT_SEARCH_BARS)
-
-    best = None  # (start_idx, end_idx, L, spikes, dry_avg_vol, score)
-
-    for L in range(min_dry_days, max_dry_days + 1):
-        roll_vol_mean = h_vol.rolling(L).mean()
-        roll_high = h_high.rolling(L).max()
-        roll_low = h_low.rolling(L).min()
-        roll_spikes = is_not_dry_mask.rolling(L).sum()
-
-        # only consider window END indices within the recent search range,
-        # and only where the window fully fits (idx - L + 1 >= 0)
-        candidate_idx = range(search_start_idx, search_end_idx - 1, -1)
-
-        for idx in candidate_idx:
-            if idx - L + 1 < 0:
-                continue
-
-            dry_avg_vol = roll_vol_mean.iloc[idx]
-            if pd.isna(dry_avg_vol) or dry_avg_vol <= 0:
-                continue
-            if dry_avg_vol > (0.90 * baseline_avg_vol):
-                continue
-
-            zone_low = roll_low.iloc[idx]
-            zone_high = roll_high.iloc[idx]
-            if pd.isna(zone_low) or zone_low <= 0:
-                continue
-            if (zone_high - zone_low) / zone_low < MIN_RANGE_PCT:
-                continue
-
-            spikes = roll_spikes.iloc[idx]
-            if pd.isna(spikes) or spikes < min_dry_spikes:
-                continue
-
-            # recency-weighted score: lower is better.
-            bars_back = search_start_idx - idx
-            score = dry_avg_vol * (1 + RECENCY_WEIGHT * bars_back)
-
-            if best is None or score < best[5]:
-                start_idx = idx - L + 1
-                best = (start_idx, idx, L, int(spikes), dry_avg_vol, score)
-
-    if best is None:
+    if len(history_df) < max_dry_days:
+        return None
+        
+    dry_zone = history_df.tail(max_dry_days)
+    dry_avg_vol = float(dry_zone["Volume"].mean())
+    zone_low = float(dry_zone["Low"].min())
+    zone_high = float(dry_zone["High"].max())
+    zone_avg_price = float(dry_zone["Close"].mean())
+    
+    if pd.isna(dry_avg_vol) or dry_avg_vol <= 0:
+        return None
+        
+    # Stricter dryness check
+    if dry_avg_vol > (0.50 * baseline_avg_vol):
+        return None
+        
+    # Price contraction between 3% and 20%
+    price_contraction = (zone_high - zone_low) / zone_low
+    if price_contraction < 0.03 or price_contraction > 0.20:
         return None
 
-    start_idx, end_idx, dry_days_count, dry_spikes, dry_avg_vol, _ = best
+    # Institutional Spike Scoring
+    vol_ratios = dry_zone["Volume"] / baseline_avg_vol
+    spike_score = 0
+    for ratio in vol_ratios:
+        if ratio > 2.0:
+            spike_score += 3
+        elif ratio > 1.0:
+            spike_score += 2
+        elif ratio > 0.4:
+            spike_score += 1
+            
+    # Require a minimum spike score instead of a raw count
+    if spike_score < 7:
+        return None
 
+    start_idx = len(history_df) - max_dry_days
+    end_idx = len(history_df) - 1
+    dry_days_count = max_dry_days
+    dry_spikes = spike_score # Store score instead of raw count for the UI
+    
     # --- STEP 3: Today's breakout check ---
     volume_ratio = today['Volume'] / dry_avg_vol
     volume_surge_ok = volume_ratio >= min_volume_ratio
@@ -196,26 +181,22 @@ def scan_stock(
         pct_change_close = (today['Close'] - yesterday['Close']) / yesterday['Close'] * 100
     else:
         pct_change_close = pct_change_intraday
+        
+    # Breakout price condition
+    price_breakout_ok = False
+    if today['Close'] >= zone_low * 1.03:
+        price_breakout_ok = True
+    if today['Close'] >= zone_avg_price * 1.03:
+        price_breakout_ok = True
 
-    if PRICE_CHANGE_MODE == "close_to_close":
-        price_change_ok = pct_change_close >= min_price_change
-    elif PRICE_CHANGE_MODE == "intraday":
-        price_change_ok = pct_change_intraday >= min_price_change
-    else:
-        price_change_ok = (pct_change_intraday >= min_price_change) or (pct_change_close >= min_price_change)
-
-    is_breakout = volume_surge_ok and bullish_candle_ok and price_change_ok
+    is_breakout = volume_surge_ok and bullish_candle_ok and price_breakout_ok
     is_pre_breakout = False
 
     if not is_breakout:
-        # Pre-breakout condition: It's NOT a breakout today, BUT the current day is STILL a dry day.
-        # Specifically, if today's volume is also very dry and the price is consolidating tightly.
         today_vol_dry = today['Volume'] <= (0.75 * baseline_avg_vol)
         is_tight = abs(pct_change_close) < 2.0
-        # Check if the historical dry zone we found extends up to yesterday
-        is_current_dry_zone = (len(history_df) - 1 - end_idx) <= 2
         
-        if today_vol_dry and is_tight and is_current_dry_zone:
+        if today_vol_dry and is_tight:
             is_pre_breakout = True
         else:
             return None
@@ -223,7 +204,6 @@ def scan_stock(
     setup_type = "VDU Breakout" if is_breakout else "VDU Pre-Breakout"
         
     # --- STEP 4: Signal Strength Score (0 to 100) & Indicators ---
-    # Use pre-computed indicators DataFrame if available, otherwise compute
     if indicators is not None and 'df' in indicators:
         df_indicators = indicators['df']
     else:
@@ -231,7 +211,6 @@ def scan_stock(
         df_indicators['MA50'] = df_indicators['Close'].rolling(window=50).mean()
         df_indicators['MA200'] = df_indicators['Close'].rolling(window=200).mean()
         
-    # Handle both 'MA50' (from above) and 'SMA50' (from precompute_indicators)
     if 'MA50' in df_indicators.columns:
         today_ma = df_indicators['MA50'].iloc[-1]
     elif 'SMA50' in df_indicators.columns:
@@ -276,64 +255,42 @@ def scan_stock(
         atr_14 = None
 
     # --- STEP 4d: Signal Strength Score (0-100) — balanced volume + price ---
-    # Expert fix: volume and price must BOTH be strong for high score
     score = 0.0
     dryness_ratio = dry_avg_vol / baseline_avg_vol
 
-    if setup_type == "VDU Pre-Breakout":
-        # For Pre-Breakouts, reward extreme tightness and dryness instead of volume surge
-        # 1. Dryness ratio (Max 40 points) - how dry vs baseline (0.9 = 40pts, 0.5 = 22pts)
-        score += max(0.0, (1.0 - dryness_ratio) / 1.0 * 40.0)
-        
-        # 2. Tightness (Max 30 points) - closer to 0% daily move is better
-        tightness = abs(pct_change_close)
-        score += max(0.0, (3.0 - tightness) / 3.0 * 30.0)
-        
-        # 3. Today's Dryness (Max 15 points)
-        today_ratio = today['Volume'] / baseline_avg_vol
-        if today_ratio <= 1.0:
-            score += max(0.0, (1.0 - today_ratio) / 1.0 * 15.0)
-            
-        # 4. Dry zone depth bonus (more days = higher conviction)
-        if dry_days_count >= 30:
-            score += 10.0
-        elif dry_days_count >= 20:
-            score += 5.0
-            
-        # 5. Moving Averages Context
-        if above_50dma:
-            score += 8.0
-        if above_200dma:
-            score += 5.0
+    # 1. Dryness (Max 25 points) - closer to 0% gets more points
+    score += max(0.0, min(25.0, (0.50 - dryness_ratio) / 0.50 * 25.0))
+    
+    # 2. Volume Ratio (Max 25 points)
+    if is_breakout:
+        score += min(25.0, (volume_ratio / 5.0) * 25.0)
     else:
-        # Breakout Setup Scoring
-        # 1. Volume ratio: Up to 25 points (was 40 — reduced to avoid volume-only high scores)
-        score += min(volume_ratio / 5.0 * 25.0, 25.0)
-        # 2. Price move: Up to 25 points (raised from 30 to match volume weight)
+        # For pre-breakout, reward today's dryness
+        today_ratio = today['Volume'] / baseline_avg_vol
+        score += max(0.0, min(25.0, (1.0 - today_ratio) / 1.0 * 25.0))
+        
+    # 3. Price Breakout (Max 20 points)
+    if is_breakout:
         best_pct = max(pct_change_intraday, pct_change_close)
-        score += min(best_pct / 3.0 * 25.0, 25.0)
-        # 3. COMBO BONUS: Both volume >= 3x AND price move >= 2% → institutional quality
-        if volume_ratio >= 3.0 and best_pct >= 2.0:
-            score += 10.0
-        # 4. Dry zone TIGHTNESS quality score:
-        #    Reward how "dry" the consolidation was relative to baseline.
-        dryness_score = max(0.0, (0.90 - dryness_ratio) / 0.90 * 20.0)  # up to 20 pts
-        score += dryness_score
-        # 5. Moving Average filter: above 50 SMA = uptrend confirmed
-        if above_50dma:
-            score += 8.0
-        # 5b. Above 200 SMA bonus (Stage-2 context)
-        if above_200dma:
-            score += 5.0
-        # 6. MACD cross-up bonus: momentum shift confirmation
-        if indicators and indicators.get('macd_cross_up', False):
-            score += 5.0
-        # 7. RVOL bonus: institutional participation vs 50-day baseline
-        if rvol >= 3.0:
-            score += 7.0
-        elif rvol >= 2.0:
-            score += 4.0
-
+        score += min(20.0, (best_pct / 5.0) * 20.0)
+    else:
+        # For pre-breakout, reward tightness
+        tightness = abs(pct_change_close)
+        score += max(0.0, min(20.0, (2.0 - tightness) / 2.0 * 20.0))
+        
+    # 4. Spike Quality (Max 10 points)
+    score += min(10.0, (spike_score / 15.0) * 10.0)
+    
+    # 5. Price Tightness (Max 10 points)
+    # 3% is best (10 pts), 20% is worst (0 pts)
+    score += max(0.0, min(10.0, (0.20 - price_contraction) / 0.17 * 10.0))
+    
+    # 6. Moving Averages Context
+    if above_50dma:
+        score += 5.0
+    if above_200dma:
+        score += 5.0
+        
     score = round(min(score, 100.0), 1)
 
     # Calculate day-over-day price change (standard Close-to-Close change)
