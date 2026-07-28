@@ -107,13 +107,13 @@ def scan_stock(
     if pd.isna(today['Close']) or pd.isna(today['Volume']):
         return None
 
-    # --- STEP 1: Baseline volume — computed BEFORE the dry-zone search range,
-    # so it can't be dragged down by the very window it's benchmarking. ---
-    baseline_end = n - 1 - BASELINE_EXCLUDE_BARS
+    # --- STEP 1: Baseline volume — computed BEFORE the dry-zone search range
+    search_window_bars = min(RECENT_SEARCH_BARS, n - 1)
+    baseline_end = n - 1 - BASELINE_EXCLUDE_BARS - search_window_bars
     baseline_start = max(0, baseline_end - BASELINE_LOOKBACK_BARS)
-    if baseline_end <= baseline_start:
-        # not enough history to build a clean, non-overlapping baseline
-        baseline_subset = df.iloc[:-1].iloc[-90:]  # fallback to original behavior
+
+    if baseline_end <= baseline_start or baseline_end <= 0:
+        baseline_subset = df.iloc[:-1].iloc[-90:]
     else:
         baseline_subset = df.iloc[baseline_start:baseline_end]
 
@@ -139,13 +139,13 @@ def scan_stock(
     if pd.isna(dry_avg_vol) or dry_avg_vol <= 0:
         return None
         
-    # Stricter dryness check
-    if dry_avg_vol > (0.50 * baseline_avg_vol):
+    # Dryness check vs true baseline
+    if dry_avg_vol > (0.95 * baseline_avg_vol):
         return None
         
-    # Price contraction between 3% and 20%
+    # Price contraction between 3% and 35% (standard base depth)
     price_contraction = (zone_high - zone_low) / zone_low
-    if price_contraction < 0.03 or price_contraction > 0.20:
+    if price_contraction < 0.03 or price_contraction > 0.35:
         return None
 
     # Institutional Spike Scoring
@@ -154,13 +154,13 @@ def scan_stock(
     for ratio in vol_ratios:
         if ratio > 2.0:
             spike_score += 3
-        elif ratio > 1.0:
+        elif ratio > 1.5:
             spike_score += 2
-        elif ratio > 0.4:
+        elif ratio > 1.2:
             spike_score += 1
             
     # Require a minimum spike score instead of a raw count
-    if spike_score < 7:
+    if spike_score < min_dry_spikes:
         return None
 
     start_idx = len(history_df) - max_dry_days
