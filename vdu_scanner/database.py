@@ -1936,19 +1936,19 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                     float(r['volume_ratio']), 
                     int(r['dry_days_count']), 
                     int(r['dry_spikes']),
-                    float(r['market_cap_cr']), 
+                    float(r.get('market_cap_cr', 0.0)), 
                     float(r['signal_strength']), 
                     bool(r.get('above_50dma', False)),
                     bool(r.get('above_200dma', False)),
                     safe_date_str(r.get('dry_start_date')), 
                     safe_date_str(r.get('dry_end_date')),
                     date_str,
-                    float(r['buy_price']) if r.get('buy_price') is not None else None,
-                    float(r['exit_price']) if r.get('exit_price') is not None else None,
-                    float(r['target_price']) if r.get('target_price') is not None else None,
-                    str(r['confidence']) if r.get('confidence') else None,
-                    str(r['recommendation']) if r.get('recommendation') else None,
-                    str(r['setup_type']) if r.get('setup_type') is not None else 'VDU Breakout'
+                    float(r.get('buy_price', 0.0)),
+                    float(r.get('exit_price', 0.0)),
+                    float(r.get('target_price', 0.0)),
+                    str(r.get('confidence', '')),
+                    str(r.get('recommendation', '')),
+                    str(r.get('setup_type', 'VDU Breakout'))
                 ))
                 breakouts_saved += 1
             except Exception as _be:

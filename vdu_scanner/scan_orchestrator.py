@@ -100,6 +100,11 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
     today_close_val = df['Close'].iloc[-1]
     if today_close_val <= 200.0:
         return res
+        
+    from data_fetcher import get_market_cap_cr
+    mc_cr = get_market_cap_cr(sym)
+    if mc_cr > 0 and mc_cr < 2000.0:
+        return res
     
     # =====================================================================
     # PRE-COMPUTE ALL INDICATORS ONCE (eliminates 5-8x redundant recalc)

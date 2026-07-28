@@ -1228,7 +1228,7 @@ universe_selection = "Top 1000 NSE Stocks (By Market Cap)"
 st.sidebar.info("🔍 **Scan Universe:** Top 1000 NSE Stocks (By Market Cap)")
 
 # =============================================================================
-# MARKET CONDITION WIDGET — Nifty 50 Breadth Filter
+# MARKET CONDITION WIDGET — Breadth Filter
 # Shows live market health so you know whether it's safe to buy breakouts.
 # =============================================================================
 st.sidebar.markdown('---')
@@ -1262,7 +1262,7 @@ try:
         <div style='padding:10px 14px; background:{_card_color}; border:1px solid {_border_color};
                     border-radius:10px; margin-bottom:12px;'>
           <div style='font-size:1rem; font-weight:700; color:#e2e8f0;'>
-            {_mc_emoji} Nifty 50 — <span style='color:{_border_color.replace('0.35','1')};'>{_mc_status}</span>
+            {_mc_emoji} Market Health — <span style='color:{_border_color.replace('0.35','1')};'>{_mc_status}</span>
           </div>
           <div style='font-size:0.85rem; color:#94a3b8; margin-top:4px;'>
             CMP: <b style='color:#e2e8f0;'>₹{_mc_cmp:,.2f}</b>
@@ -1941,6 +1941,11 @@ if run_full or run_sma:
             # Clean progress assets
             prog_bar.empty()
             status_box.empty()
+            
+            if failed_count > 0:
+                fail_pct = (failed_count / n_stocks) * 100
+                if fail_pct >= 5.0:
+                    st.warning(f"⚠️ Failed to process {failed_count} out of {n_stocks} stocks ({fail_pct:.1f}%). Yahoo Finance may be rate-limiting the download. Try running the scan again later or checking your internet connection.")
             # Retry pass for symbols that failed the first time (often just rate-limited, not actually bad)
             def _is_empty_data(sym_key):
                 """Safely check if a symbol has no usable data in bulk_data."""
@@ -2439,7 +2444,7 @@ with tab_monthly:
     with mm_col1:
         run_mm_scan = st.button("🔍 Run Monthly Momentum Scan", width="stretch", key="run_monthly_mom_btn")
     with mm_col2:
-        st.info("⏱️ This scan downloads ~5 years of **monthly** data for all NSE stocks. It may take 3–8 minutes for All NSE universe. Use Nifty 500 for faster results.")
+        st.info("⏱️ This scan downloads ~5 years of **monthly** data for all NSE stocks. It may take 3–8 minutes for the Top 1000 universe.")
 
     # Check if background thread has finished and results are available
     if st.session_state.monthly_momentum_results is None and MOMENTUM_SCAN_STATUS["monthly_results"] is not None:
@@ -2509,17 +2514,8 @@ with tab_monthly:
             import time as _time
 
         # Resolve universe
-        from data_fetcher import get_index_stocks, get_all_nse_symbols, get_top1000_nse_symbols
-        if "Top 1000" in universe_selection or "1000" in universe_selection:
-            mm_universe = get_top1000_nse_symbols()
-        elif "NIFTY 500" in universe_selection:
-            mm_universe = get_index_stocks("NIFTY 500")
-        elif "NIFTY 100" in universe_selection:
-            mm_universe = get_index_stocks("NIFTY 100")
-        elif "NIFTY 50" in universe_selection:
-            mm_universe = get_index_stocks("NIFTY 50")
-        else:
-            mm_universe = get_all_nse_symbols()
+        from data_fetcher import get_top1000_nse_symbols
+        mm_universe = get_top1000_nse_symbols()
 
         mm_results = []
         mm_prog = st.progress(0)
@@ -2809,15 +2805,9 @@ with tab_weekly:
             import concurrent.futures as _cf_wm
             import time as _time_wm
 
-        from data_fetcher import get_index_stocks, get_all_nse_symbols
-        if "NIFTY 500" in universe_selection:
-            wm_universe = get_index_stocks("NIFTY 500")
-        elif "NIFTY 100" in universe_selection:
-            wm_universe = get_index_stocks("NIFTY 100")
-        elif "NIFTY 50" in universe_selection:
-            wm_universe = get_index_stocks("NIFTY 50")
-        else:
-            wm_universe = get_all_nse_symbols()
+        # Resolve universe
+        from data_fetcher import get_top1000_nse_symbols
+        wm_universe = get_top1000_nse_symbols()
 
         wm_results = []
         wm_prog    = st.progress(0)
