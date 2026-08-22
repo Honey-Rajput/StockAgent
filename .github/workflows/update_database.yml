@@ -1,8 +1,6 @@
 name: Update Scanner Database
 
 on:
-  schedule:
-    - cron: '0 4-12 * * 1-5'
   workflow_dispatch:
 
 jobs:
