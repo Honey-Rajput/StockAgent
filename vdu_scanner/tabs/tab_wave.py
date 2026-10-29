@@ -86,7 +86,7 @@ def render():
     if 'wt_results_by_tf' not in st.session_state:
         st.session_state.wt_results_by_tf = {}
         
-    run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", width="stretch", disabled=not is_admin)
+    run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", width="stretch")
     
     if run_wt_btn:
         # Universe is hardcoded to Top 1000 NSE stocks
@@ -94,10 +94,11 @@ def render():
         from data_fetcher import get_top1000_nse_symbols
         raw_symbols = get_top1000_nse_symbols()
             
-        symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+        symbols_to_scan = [str(s).strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]
             
-        with st.spinner(f"Running Advanced WaveTrend {wt_timeframe} scan on Top 1000 ({len(symbols_to_scan)} stocks)..."):
+        with st.spinner(f"Running Advanced WaveTrend {wt_timeframe} scan (Threshold: {wt_oversold_threshold}) on {len(symbols_to_scan)} stocks..."):
             from scanner import scan_wt_cross
+            from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
             
             # Map timeframes
             interval_map = {"Daily": "1d", "15 Min": "15m", "1 Hour": "60m", "Weekly": "1wk", "Monthly": "1mo"}
@@ -107,67 +108,85 @@ def render():
             period = period_map[wt_timeframe]
             
             wt_tf_results = []
-            chunk_size = 50
-            sym_chunks = [symbols_to_scan[i:i + chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
             
-            for chunk in sym_chunks:
-                chunk_ns = [s if s.endswith('.NS') else f"{s}.NS" for s in chunk]
-                try:
-                    # yfinance 1.x: group_by, threads, auto_adjust=False removed
-                    df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False, timeout=15)
-                    for sym in chunk:
-                        sym_ns = sym if sym.endswith('.NS') else f"{sym}.NS"
-                        try:
-                            if isinstance(df_bulk.columns, pd.MultiIndex):
-                                # yfinance 1.x: (price_type, ticker) MultiIndex
-                                all_tickers_wt = df_bulk.columns.get_level_values(1).unique().tolist()
-                                matched_wt = next((t for t in all_tickers_wt if t.upper() == sym_ns.upper()), None)
-                                if matched_wt is None:
-                                    continue
-                                ticker_df = df_bulk.xs(matched_wt, axis=1, level=1).copy()
-                            else:
-                                if len(chunk_ns) == 1:
-                                    ticker_df = df_bulk.copy()
+            if wt_timeframe in ["Daily", "Weekly", "Monthly"]:
+                bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+                for sym, ticker_df in bulk_cached.items():
+                    if ticker_df is None or len(ticker_df) < 40:
+                        continue
+                    try:
+                        eval_df = ticker_df
+                        if wt_timeframe == "Weekly":
+                            eval_df = resample_ohlcv(ticker_df, '1W-MON')
+                        elif wt_timeframe == "Monthly":
+                            eval_df = resample_ohlcv(ticker_df, '1ME')
+                            
+                        if eval_df is None or len(eval_df) < 40:
+                            continue
+                            
+                        wt_res = scan_wt_cross(sym, eval_df, wt_oversold_threshold=wt_oversold_threshold)
+                        if wt_res is not None:
+                            wt_res['timeframe'] = wt_timeframe
+                            wt_res['is_oversold'] = wt_res['wt_value'] <= wt_oversold_threshold
+                            wt_tf_results.append(wt_res)
+                    except Exception:
+                        pass
+            else:
+                chunk_size = 50
+                sym_chunks = [symbols_to_scan[i:i + chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
+                for chunk in sym_chunks:
+                    chunk_ns = [f"{s}.NS" for s in chunk]
+                    try:
+                        df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False, timeout=15)
+                        for sym in chunk:
+                            sym_ns = f"{sym}.NS"
+                            try:
+                                if isinstance(df_bulk.columns, pd.MultiIndex):
+                                    all_tickers_wt = df_bulk.columns.get_level_values(1).unique().tolist()
+                                    matched_wt = next((t for t in all_tickers_wt if t.upper() == sym_ns.upper()), None)
+                                    if matched_wt is None:
+                                        continue
+                                    ticker_df = df_bulk.xs(matched_wt, axis=1, level=1).copy()
                                 else:
-                                    continue
+                                    ticker_df = df_bulk.copy() if len(chunk_ns) == 1 else None
+                                    if ticker_df is None:
+                                        continue
 
-                            required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-                            if all(col in ticker_df.columns for col in required_cols):
-                                ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
-                                if interval not in ["15m", "60m"]:
-                                    ticker_df = ticker_df[ticker_df['Volume'] > 0]
-                                if len(ticker_df) >= 40:
-                                    ticker_df = ticker_df.reset_index()
-                                    ticker_df.rename(columns={ticker_df.columns[0]: 'Date'}, inplace=True)
-                                    ticker_df['Date'] = pd.to_datetime(ticker_df['Date'], utc=True).dt.tz_localize(None)
-
-                                    wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=wt_oversold_threshold)
-                                    if wt_res is not None:
-                                        # Market cap filter: exclude stocks below ₹2000 Cr
-                                        try:
-                                            mcap = getattr(yf.Ticker(sym_ns).fast_info, 'market_cap', None) or 0
-                                            mcap_cr = mcap / 1e7  # Convert to Crore
-                                            if mcap_cr < 2000.0:
-                                                continue
-                                            wt_res['market_cap_cr'] = round(mcap_cr, 1)
-                                        except Exception:
-                                            pass  # Allow through if market cap fetch fails
-                                        wt_res['timeframe'] = wt_timeframe
-                                        # Inject threshold logic
-                                        wt_res['is_oversold'] = wt_res['wt_value'] <= wt_oversold_threshold
-                                        wt_tf_results.append(wt_res)
-                        except Exception as sym_wt_ex:
-                            print(f"Error extracting {sym_ns} from WaveTrend bulk download: {sym_wt_ex}")
-                except Exception as chunk_ex:
-                    print(f"Error bulk downloading WaveTrend chunk: {chunk_ex}")
+                                required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+                                if all(col in ticker_df.columns for col in required_cols):
+                                    ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
+                                    if len(ticker_df) >= 40:
+                                        wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=wt_oversold_threshold)
+                                        if wt_res is not None:
+                                            wt_res['timeframe'] = wt_timeframe
+                                            wt_res['is_oversold'] = wt_res['wt_value'] <= wt_oversold_threshold
+                                            wt_tf_results.append(wt_res)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
             
             st.session_state.wt_results_by_tf[wt_cache_key] = wt_tf_results
-            st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete!", icon="✅")
+            if wt_timeframe == "Daily":
+                st.session_state.wt_results = wt_tf_results
+                today_str = get_market_date()
+                database.save_wt_cross_only(today_str, wt_tf_results)
+            st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete! Found {len(wt_tf_results)} setups.", icon="✅")
             
-    # Pick up background scan results if available
-    if not st.session_state.wt_results_by_tf.get(wt_cache_key) and st.session_state.ALL_TAB_SCAN_STATUS["wt_results"] is not None:
-        st.session_state.wt_results_by_tf["Daily_-40.0"] = st.session_state.ALL_TAB_SCAN_STATUS["wt_results"]
-        st.session_state.wt_results = st.session_state.ALL_TAB_SCAN_STATUS["wt_results"]
+    # Pick up background scan results or cached daily results
+    cached_daily = st.session_state.get('wt_results') or st.session_state.ALL_TAB_SCAN_STATUS.get("wt_results")
+    if not cached_daily:
+        today_str = get_market_date()
+        cached_daily = database.get_cached_wt_cross(today_str)
+        if cached_daily:
+            st.session_state.wt_results = cached_daily
+            st.session_state.wt_results_by_tf["Daily_-40.0"] = cached_daily
+
+    if not st.session_state.wt_results_by_tf.get(wt_cache_key):
+        if wt_timeframe == "Daily" and cached_daily:
+            matching = [r for r in cached_daily if r.get('wt_value', 0) <= wt_oversold_threshold]
+            if matching:
+                st.session_state.wt_results_by_tf[wt_cache_key] = matching
 
     wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, None)
     

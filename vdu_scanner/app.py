@@ -1089,7 +1089,8 @@ else:
         st.session_state['authenticated'] = False
         st.rerun()
 
-is_admin = st.session_state['authenticated']
+is_admin = st.session_state.get('authenticated', False)
+st.session_state['is_admin'] = is_admin
 # -----------------------------
 
 st.sidebar.markdown('### ⚡ Performance Settings')

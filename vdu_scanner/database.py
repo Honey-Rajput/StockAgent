@@ -1929,6 +1929,57 @@ def _save_vpa_squeeze_to_table(table_name: str, date_str: str, results: list[dic
     finally:
         if conn:
             conn.close()
+def save_wt_cross_only(date_str: str, wt_results: list[dict]) -> bool:
+    """
+    UPSERTs only the WaveTrend results for the given date.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_wt_cross WHERE scan_date = ?;", (date_str,))
+        insert_query = """
+        INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
+                                     buy_price, exit_price, target_price, confidence, recommendation,
+                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct, wt_value=EXCLUDED.wt_value,
+            buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price, target_price=EXCLUDED.target_price,
+            confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation,
+            wt2_value=EXCLUDED.wt2_value, buy_signal=EXCLUDED.buy_signal, wt_diff=EXCLUDED.wt_diff,
+            above_20sma=EXCLUDED.above_20sma, above_50sma=EXCLUDED.above_50sma, above_200sma=EXCLUDED.above_200sma, volume=EXCLUDED.volume;
+        """
+        for r in wt_results:
+            cur.execute(insert_query, (
+                str(r['symbol']),
+                str(r.get('company_name', '')),
+                float(r['cmp']),
+                float(r.get('day_change_pct', 0.0)),
+                float(r.get('wt_value', 0.0)),
+                date_str,
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                str(r['confidence']) if r.get('confidence') is not None else None,
+                str(r['recommendation']) if r.get('recommendation') is not None else None,
+                float(r['wt2_value']) if r.get('wt2_value') is not None else None,
+                bool(r.get('buy_signal', False)),
+                float(r['wt_diff']) if r.get('wt_diff') is not None else None,
+                bool(r.get('above_20sma', False)),
+                bool(r.get('above_50sma', False)),
+                bool(r.get('above_200sma', False)),
+                int(r.get('volume', 0))
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving to scanned_wt_cross: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 def save_stage2_only(date_str: str, stage2_results: list[dict]) -> bool:
     """
