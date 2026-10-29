@@ -3,6 +3,97 @@ import pandas as pd
 from datetime import datetime, timedelta
 import database
 from config import IST_TIMEZONE
+import importlib
+
+# Robust resolution of scan_flat_base_squeeze with hot-reload and inline fallback
+scan_flat_base_squeeze = None
+try:
+    import scanner
+    if not hasattr(scanner, 'scan_flat_base_squeeze'):
+        importlib.reload(scanner)
+    scan_flat_base_squeeze = getattr(scanner, 'scan_flat_base_squeeze', None)
+except Exception:
+    scan_flat_base_squeeze = None
+
+if scan_flat_base_squeeze is None:
+    def scan_flat_base_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None,
+                               max_gap_pct: float = 3.5, max_base_range_pct: float = 16.0,
+                               strict_bullish_alignment: bool = True):
+        if df is None or len(df) < 50:
+            return None
+        try:
+            from scanner import calc_vpa_trends, calculate_trade_levels
+            daily_trends = calc_vpa_trends(df)
+            if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] != 1:
+                return None
+                
+            close_series = df['Close'].dropna()
+            if len(close_series) < 50:
+                return None
+                
+            sma10 = float(close_series.rolling(window=10).mean().iloc[-1])
+            sma21 = float(close_series.rolling(window=21).mean().iloc[-1])
+            sma50 = float(close_series.rolling(window=50).mean().iloc[-1])
+            sma200 = float(close_series.rolling(window=200).mean().iloc[-1]) if len(close_series) >= 200 else None
+            cmp = float(close_series.iloc[-1])
+            
+            if pd.isna(sma10) or pd.isna(sma21) or pd.isna(sma50):
+                return None
+                
+            if strict_bullish_alignment:
+                if not (sma10 >= sma21 and sma21 >= sma50):
+                    return None
+                    
+            ma_list = [sma10, sma21, sma50]
+            max_ma = max(ma_list)
+            min_ma = min(ma_list)
+            ma_gap_pct = ((max_ma - min_ma) / min_ma) * 100
+            if ma_gap_pct > max_gap_pct:
+                return None
+                
+            c30 = close_series.iloc[-30:]
+            base_range_pct = ((c30.max() - c30.min()) / c30.min()) * 100
+            if base_range_pct > max_base_range_pct:
+                return None
+                
+            if cmp < (sma10 * 0.99) or cmp > (max_ma * 1.05):
+                return None
+                
+            prev_close = float(close_series.iloc[-2]) if len(close_series) >= 2 else cmp
+            day_change_pct = ((cmp - prev_close) / prev_close) * 100
+            if day_change_pct < -1.0:
+                return None
+                
+            buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df, cmp, indicators)
+            
+            rsi = indicators.get("rsi") if indicators else None
+            cci = indicators.get("cci") if indicators else None
+            
+            from config import get_company_name
+            company_name = get_company_name(symbol)
+            dist_to_200 = round(((cmp - sma200) / sma200) * 100, 2) if sma200 else 0.0
+            
+            return {
+                "symbol": symbol.strip().upper(),
+                "company_name": company_name,
+                "cmp": round(cmp, 2),
+                "day_change_pct": round(day_change_pct, 2),
+                "volume": int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0,
+                "sma10": round(sma10, 2),
+                "sma21": round(sma21, 2),
+                "sma50": round(sma50, 2),
+                "sma200": round(sma200, 2) if sma200 else None,
+                "ma_gap_pct": round(ma_gap_pct, 2),
+                "base_range_pct": round(base_range_pct, 2),
+                "dist_to_200_pct": dist_to_200,
+                "rsi": round(rsi, 2) if rsi is not None else 0.0,
+                "cci": round(cci, 2) if cci is not None else 0.0,
+                "buy_price": buy_price,
+                "exit_price": exit_price,
+                "target_price": target_price
+            }
+        except Exception as e:
+            return None
 
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
@@ -71,7 +162,6 @@ def render():
         with st.spinner("Scanning for Flat Base Squeeze setups across all NSE equities..."):
             try:
                 from data_fetcher import get_all_nse_symbols
-                from scanner import scan_flat_base_squeeze
                 from local_cache_manager import bulk_get_cached_ohlcv
                 
                 raw_symbols = get_all_nse_symbols()
