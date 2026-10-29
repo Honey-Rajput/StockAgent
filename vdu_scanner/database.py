@@ -723,6 +723,30 @@ def init_db() -> bool:
             cci DOUBLE PRECISION,
             UNIQUE(symbol, scan_date)
         );
+        CREATE TABLE IF NOT EXISTS scanned_flat_base (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            sma10 DOUBLE PRECISION,
+            sma21 DOUBLE PRECISION,
+            sma50 DOUBLE PRECISION,
+            sma200 DOUBLE PRECISION,
+            ma_gap_pct DOUBLE PRECISION,
+            base_range_pct DOUBLE PRECISION,
+            dist_to_200_pct DOUBLE PRECISION,
+            rsi DOUBLE PRECISION,
+            cci DOUBLE PRECISION,
+            buy_price DOUBLE PRECISION,
+            exit_price DOUBLE PRECISION,
+            target_price DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+
 
         """
     )
@@ -1141,6 +1165,8 @@ def get_available_scan_dates() -> list[str]:
         SELECT scan_date FROM scanned_monthly_momentum
         UNION
         SELECT scan_date FROM scanned_weekly_momentum
+        UNION
+        SELECT scan_date FROM scanned_flat_base
     ) AS all_dates
     GROUP BY scan_date
     ORDER BY scan_date DESC;
@@ -1190,6 +1216,7 @@ def cleanup_old_data(days: int = 30):
         "scanned_near_30sma",
         "scanned_near_30sma_weekly",
         "scanned_near_30sma_monthly",
+        "scanned_flat_base",
         "scan_logs"
     ]
     
@@ -1574,6 +1601,57 @@ def save_vpa_squeeze_only(date_str: str, results: list[dict]) -> bool:
 
 def get_cached_vpa_squeeze(date_str: str) -> list[dict]:
     return _get_cached_scan('scanned_vpa_squeeze', date_str)
+
+def save_flat_base_only(date_str: str, results: list[dict]) -> bool:
+    """
+    UPSERTs the Flat Base Squeeze results for the given date.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_flat_base WHERE scan_date = ?;", (date_str,))
+        
+        insert_query = """
+        INSERT INTO scanned_flat_base (
+            symbol, company_name, cmp, day_change_pct, volume, sma10, sma21, sma50, sma200, 
+            ma_gap_pct, base_range_pct, dist_to_200_pct, buy_price, exit_price, target_price, scan_date, rsi, cci
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """
+        for r in results:
+            cur.execute(insert_query, (
+                str(r['symbol']),
+                str(r.get('company_name', "")),
+                float(r['cmp']),
+                float(r['day_change_pct']),
+                int(r.get('volume', 0)),
+                float(r['sma10']),
+                float(r['sma21']),
+                float(r['sma50']),
+                float(r['sma200']) if r.get('sma200') is not None else None,
+                float(r['ma_gap_pct']),
+                float(r.get('base_range_pct', 0.0)),
+                float(r.get('dist_to_200_pct', 0.0)),
+                float(r['buy_price']) if r.get('buy_price') is not None else None,
+                float(r['exit_price']) if r.get('exit_price') is not None else None,
+                float(r['target_price']) if r.get('target_price') is not None else None,
+                date_str,
+                float(r.get('rsi', 0.0)) if r.get('rsi') is not None else 0.0,
+                float(r.get('cci', 0.0)) if r.get('cci') is not None else 0.0
+            ))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving Flat Base results: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_cached_flat_base(date_str: str) -> list[dict]:
+    return _get_cached_scan('scanned_flat_base', date_str)
+
 def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
     """Saves WT Cross results without deleting other scan results."""
     conn = None

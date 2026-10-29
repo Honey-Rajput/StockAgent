@@ -2266,12 +2266,12 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_near_30sma) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_flat_base, tab_near_30sma) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze", "📉 Near 30 SMA"
+    "🚥 VPA", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze", "📦 Flat Base Squeeze", "📉 Near 30 SMA"
 ])
 
 # ==============================================================================
@@ -3007,6 +3007,11 @@ with tab_vpa:
 with tab_vpa_squeeze:
     import tabs.tab_vpa_squeeze
     tabs.tab_vpa_squeeze.render()
+
+# TAB: FLAT BASE SQUEEZE
+with tab_flat_base:
+    import tabs.tab_flat_base
+    tabs.tab_flat_base.render()
 
 # --- NEAR 30 SMA TAB ---
 with tab_near_30sma:

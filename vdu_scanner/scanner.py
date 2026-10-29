@@ -1809,6 +1809,105 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         print(f"Error in VPA Squeeze scan for {symbol}: {e}")
         return None
 
+
+def scan_flat_base_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None,
+                           max_gap_pct: float = 3.5, max_base_range_pct: float = 16.0,
+                           strict_bullish_alignment: bool = True) -> dict | None:
+    """
+    Scans for stocks coiling inside a tight horizontal consolidation base (like Cohance Lifesciences).
+    Criteria:
+    1. Daily VPA is Green (Major=1, Mid=1, Minor=1).
+    2. Strict Bullish MA Alignment: 10 SMA >= 21 SMA >= 50 SMA.
+    3. Tight MA Compression: Distance between 10/21/50 SMA <= max_gap_pct (default 3.5%).
+    4. Horizontal Base Consolidation: 30-day price range <= max_base_range_pct (default 16%).
+    5. Price resting at or above the squeeze cluster (CMP >= 10 SMA) and not extended (>5%).
+    6. Non-dumping candle (day_change_pct >= -1.0%).
+    """
+    if df is None or len(df) < 50:
+        return None
+        
+    try:
+        # Check Daily VPA
+        daily_trends = calc_vpa_trends(df)
+        if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] != 1:
+            return None
+            
+        close_series = df['Close'].dropna()
+        if len(close_series) < 50:
+            return None
+            
+        sma10 = float(close_series.rolling(window=10).mean().iloc[-1])
+        sma21 = float(close_series.rolling(window=21).mean().iloc[-1])
+        sma50 = float(close_series.rolling(window=50).mean().iloc[-1])
+        sma200 = float(close_series.rolling(window=200).mean().iloc[-1]) if len(close_series) >= 200 else None
+        cmp = float(close_series.iloc[-1])
+        
+        if pd.isna(sma10) or pd.isna(sma21) or pd.isna(sma50):
+            return None
+            
+        # 1. Bullish Alignment (10 SMA >= 21 SMA >= 50 SMA)
+        if strict_bullish_alignment:
+            if not (sma10 >= sma21 and sma21 >= sma50):
+                return None
+                
+        # 2. Tight Compression Gap
+        ma_list = [sma10, sma21, sma50]
+        max_ma = max(ma_list)
+        min_ma = min(ma_list)
+        ma_gap_pct = ((max_ma - min_ma) / min_ma) * 100
+        if ma_gap_pct > max_gap_pct:
+            return None
+            
+        # 3. Horizontal Base Channel (30-day range)
+        c30 = close_series.iloc[-30:]
+        base_range_pct = ((c30.max() - c30.min()) / c30.min()) * 100
+        if base_range_pct > max_base_range_pct:
+            return None
+            
+        # 4. Price resting at/above squeeze cluster (not below, not extended > 5%)
+        if cmp < (sma10 * 0.99) or cmp > (max_ma * 1.05):
+            return None
+            
+        prev_close = float(close_series.iloc[-2]) if len(close_series) >= 2 else cmp
+        day_change_pct = ((cmp - prev_close) / prev_close) * 100
+        if day_change_pct < -1.0:
+            return None
+            
+        buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df, cmp, indicators)
+        
+        rsi = indicators.get("rsi") if indicators else None
+        cci = indicators.get("cci") if indicators else None
+        
+        from config import get_company_name
+        company_name = get_company_name(symbol)
+        
+        dist_to_200 = round(((cmp - sma200) / sma200) * 100, 2) if sma200 else 0.0
+        
+        return {
+            "symbol": symbol.strip().upper(),
+            "company_name": company_name,
+            "cmp": round(cmp, 2),
+            "day_change_pct": round(day_change_pct, 2),
+            "volume": int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0,
+            "sma10": round(sma10, 2),
+            "sma21": round(sma21, 2),
+            "sma50": round(sma50, 2),
+            "sma200": round(sma200, 2) if sma200 else None,
+            "ma_gap_pct": round(ma_gap_pct, 2),
+            "base_range_pct": round(base_range_pct, 2),
+            "dist_to_200_pct": dist_to_200,
+            "rsi": round(rsi, 2) if rsi is not None else 0.0,
+            "cci": round(cci, 2) if cci is not None else 0.0,
+            "buy_price": buy_price,
+            "exit_price": exit_price,
+            "target_price": target_price
+        }
+    except Exception as e:
+        print(f"Error in Flat Base Squeeze scan for {symbol}: {e}")
+        return None
+
+
+
 def scan_structural_vcp(symbol: str, df: pd.DataFrame, lookback: int = 120, pivot_tolerance: float = 0.05, max_dist_to_pivot: float = 0.10, indicators: dict = None) -> dict | None:
     """
     Scans for a structural Volatility Contraction Pattern (VCP).
