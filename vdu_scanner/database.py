@@ -1121,6 +1121,26 @@ def get_available_scan_dates() -> list[str]:
         SELECT scan_date FROM scanned_gapups
         UNION
         SELECT scan_date FROM scanned_wt_cross
+        UNION
+        SELECT scan_date FROM scanned_ema_support
+        UNION
+        SELECT scan_date FROM scanned_stage2
+        UNION
+        SELECT scan_date FROM scanned_stage_analysis
+        UNION
+        SELECT scan_date FROM scanned_near_30sma
+        UNION
+        SELECT scan_date FROM scanned_near_30sma_weekly
+        UNION
+        SELECT scan_date FROM scanned_near_30sma_monthly
+        UNION
+        SELECT scan_date FROM scanned_vpa_squeeze
+        UNION
+        SELECT scan_date FROM scanned_vcp_minervini
+        UNION
+        SELECT scan_date FROM scanned_monthly_momentum
+        UNION
+        SELECT scan_date FROM scanned_weekly_momentum
     ) AS all_dates
     GROUP BY scan_date
     ORDER BY scan_date DESC;
@@ -1145,6 +1165,7 @@ def get_available_scan_dates() -> list[str]:
 def cleanup_old_data(days: int = 30):
     """
     Deletes scan records older than `days` to prevent the database from growing too large.
+    Commits deletions to the SQLite database.
     """
     tables = [
         "scanned_breakouts",
@@ -1166,13 +1187,15 @@ def cleanup_old_data(days: int = 30):
         "scanned_stage_analysis",
         "scanned_zanger",
         "scanned_vcp_minervini",
+        "scanned_near_30sma",
+        "scanned_near_30sma_weekly",
+        "scanned_near_30sma_monthly",
         "scan_logs"
     ]
     
     conn = None
     try:
         conn = get_connection()
-        conn.autocommit = True
         cur = conn.cursor()
         
         for table in tables:
@@ -1185,6 +1208,7 @@ def cleanup_old_data(days: int = 30):
             except Exception as e:
                 print(f"Failed to cleanup table {table}: {e}")
                 
+        conn.commit()
         cur.close()
     except Exception as e:
         print(f"Database cleanup error: {e}")
@@ -1892,11 +1916,11 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         cur = conn.cursor()
         
         # Check if existing scan is more complete
-        cur.execute("SELECT total_scanned FROM scan_logs WHERE scan_date = ?;", (date_str,))
+        cur.execute("SELECT total_scanned, breakouts_found FROM scan_logs WHERE scan_date = ?;", (date_str,))
         existing_log = cur.fetchone()
         if existing_log and existing_log['total_scanned'] is not None:
-            if existing_log['total_scanned'] > total_scanned:
-                print(f"Skipping save: existing scan for {date_str} has {existing_log['total_scanned']} stocks, but current scan only has {total_scanned}.")
+            if existing_log['total_scanned'] > total_scanned and (existing_log['breakouts_found'] or 0) > 0 and len(breakouts) == 0:
+                print(f"Skipping save: existing scan for {date_str} has {existing_log['total_scanned']} stocks and existing breakouts.")
                 return False
         
         # 1. Clean existing records for this date
@@ -2000,7 +2024,9 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             prev_close=EXCLUDED.prev_close, open_price=EXCLUDED.open_price, cmp=EXCLUDED.cmp,
-            gap_pct=EXCLUDED.gap_pct, volume=EXCLUDED.volume, rsi=EXCLUDED.rsi, cci=EXCLUDED.cci;
+            gap_pct=EXCLUDED.gap_pct, volume=EXCLUDED.volume, day_change_pct=EXCLUDED.day_change_pct,
+            buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price, target_price=EXCLUDED.target_price,
+            confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation;
         """
         for r in gapups:
             try:
@@ -2115,14 +2141,10 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         INSERT INTO scanned_vcs (symbol, company_name, cmp, day_change_pct, vcs_score, volume, scan_date,
                                  buy_price, exit_price, target_price, confidence, recommendation)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
-            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct,
-            buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price, target_price=EXCLUDED.target_price,
-            confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation,
-            run_up_200=EXCLUDED.run_up_200, run_up_52w=EXCLUDED.run_up_52w, is_early=EXCLUDED.is_early,
-            dist_20sma_pct=EXCLUDED.dist_20sma_pct, dist_50sma_pct=EXCLUDED.dist_50sma_pct, dist_65sma_pct=EXCLUDED.dist_65sma_pct, dist_200sma_pct=EXCLUDED.dist_200sma_pct,
-            passes_daily=EXCLUDED.passes_daily, passes_weekly=EXCLUDED.passes_weekly, passes_monthly=EXCLUDED.passes_monthly,
-            near_breakout=EXCLUDED.near_breakout, rsi=EXCLUDED.rsi, cci=EXCLUDED.cci;
+        ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct, vcs_score=EXCLUDED.vcs_score,
+            volume=EXCLUDED.volume, buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price,
+            target_price=EXCLUDED.target_price, confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation;
         """
         for r in vcs_results:
             try:
@@ -2238,10 +2260,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         # 4. ALWAYS insert execution log — this MUST succeed even if data inserts above had errors
         try:
             cur.execute("""
-            INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT (scan_date) DO UPDATE SET
-                total_scanned=EXCLUDED.total_scanned, breakouts_found=EXCLUDED.breakouts_found, squeezes_found=EXCLUDED.squeezes_found
+            INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found, completed_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT (scan_date) DO UPDATE SET
                 total_scanned = excluded.total_scanned,
                 breakouts_found = excluded.breakouts_found,

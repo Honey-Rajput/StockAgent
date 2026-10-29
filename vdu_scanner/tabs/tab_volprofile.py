@@ -63,19 +63,20 @@ def render():
     
     # Auto-load cached results from database on first visit
     # Pick up background scan results if available
-    if not st.session_state.get('vp_results') and st.session_state.ALL_TAB_SCAN_STATUS["vp_results"] is not None:
-        st.session_state.vp_results = st.session_state.ALL_TAB_SCAN_STATUS["vp_results"]
+    bg_vp = st.session_state.ALL_TAB_SCAN_STATUS.get("vp_results") or st.session_state.ALL_TAB_SCAN_STATUS.get("volume_profile_results")
+    if not st.session_state.get('vp_results') and bg_vp is not None:
+        st.session_state.vp_results = bg_vp
 
     if 'vp_results' not in st.session_state or not st.session_state.vp_results:
         try:
-            # Try loading today's cached results first, then search last 10 days
-            from datetime import timedelta
-            for days_back in range(10):
-                check_date = (datetime.now(IST_TIMEZONE) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            # Search all available scan dates in the DB (not just last 10 calendar days)
+            # This ensures we always find cached VP data even if no scan has run recently
+            available_dates = database.get_available_scan_dates()
+            for check_date in available_dates:
                 cached = database.get_cached_volume_profile(check_date)
                 if cached:
                     st.session_state.vp_results = cached
-                    st.caption(f"📅 Loaded cached results from {check_date}")
+                    st.session_state['vp_results_date'] = check_date
                     break
         except Exception as e:
             print(f"Failed to auto-load VP cache: {e}")
@@ -189,28 +190,26 @@ def render():
             except Exception as e:
                 st.error(f"Scan failed: {e}")
                 
+    # Show background scan progress as a small informational banner (not blocking results)
+    if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
+        _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
+        _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
+        st.markdown(f"""
+        <div style="padding:10px 18px; border:1px solid rgba(0,229,255,0.2); background:rgba(0,229,255,0.04); border-radius:8px; margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+            <span style="display:inline-block; animation: spin 1.5s linear infinite; font-size:1.1rem;">🔄</span>
+            <span style="font-size:0.85rem; color:#94a3b8;">Background scan in progress &mdash; <span style="color:#00e5ff;">{_bg_status}</span> &nbsp;&nbsp;
+            <a href="?" style="color:#00e5ff; font-size:0.8rem;">[Refresh for latest results]</a></span>
+        </div>
+        <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
+        """, unsafe_allow_html=True)
+
     if not st.session_state.get('vp_results'):
-        # Background scan progress indicator
-        if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
-            _bg_scanner = st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"]
-            _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
-            _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
-            st.markdown(f"""
-            <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
-                <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
-                    <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
-                </h4>
-                <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. Volume Profile results will appear here when ready!</p>
-                <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
-            </div>
-            <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
-            """, unsafe_allow_html=True)
-            st.progress(_bg_progress)
-            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vp_status_btn"):
-                st.rerun()
-                
         st.info("No Volume Profile data available. Click 'Run Advanced Volume Profile Scan' to process.")
     else:
+        # Show which date the cached data is from
+        _vp_date = st.session_state.get('vp_results_date')
+        if _vp_date:
+            st.caption(f"📅 Showing Volume Profile results from **{_vp_date}**. Run a new scan to refresh.")
         vp_data = st.session_state.vp_results
         
         # Helper to safely extract VP level data from a timeframe dict

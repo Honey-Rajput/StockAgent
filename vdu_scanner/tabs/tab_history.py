@@ -68,6 +68,15 @@ def render():
     if not available_dates:
         st.warning("⚠️ No historical scans have been recorded in the database yet. Run the scanner to save today's results first!")
     else:
+        # Show summary of available history
+        oldest = available_dates[-1] if available_dates else "N/A"
+        newest = available_dates[0] if available_dates else "N/A"
+        st.info(
+            f"📊 **{len(available_dates)} scan session(s)** available in the database — "
+            f"from **{oldest}** to **{newest}**. "
+            f"Select a date below to browse that day's results."
+        )
+
         # Date selection column
         date_sel_col1, date_sel_col2 = st.columns([3, 5])
         selected_date_str = date_sel_col1.selectbox(
@@ -88,6 +97,18 @@ def render():
                     <p style="margin: 4px 0 0 0; font-size: 0.95rem; color: #e2e8f0;">
                         <b>Total Scanned:</b> {day_log.get('total_scanned', 'N/A')} stocks | 
                         <b>VDU Breakouts:</b> <span style="color:#00e676; font-weight:600;">{day_log.get('breakouts_found', 0)}</span>
+                    </p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        else:
+            date_sel_col2.markdown(
+                f"""
+                <div style="padding: 10px 18px; display: inline-block; background: rgba(255,193,7,0.05); border: 1px solid rgba(255,193,7,0.2); border-radius:8px;">
+                    <span style="font-size: 0.82rem; color: #94a3b8; font-weight:600;">SESSION LOG</span>
+                    <p style="margin: 4px 0 0 0; font-size: 0.9rem; color: #94a3b8;">
+                        ⚠️ No scan_log entry for {selected_date_str} — individual scan results may still be available below.
                     </p>
                 </div>
                 """,
@@ -179,3 +200,28 @@ def render():
                 sorted_hwt = sorted(h_wt, key=lambda x: float(x.get('wt_value') or 0.0))
                 st.markdown(f"**🌊 WaveTrend Signals on {selected_date_str} ({len(sorted_hwt)})**")
                 render_unified_strategy_table(sorted_hwt, "wavetrend", f"hist_wt_{selected_date_str}")
+
+        # 8. Historical Volume Profile
+        with sub_vp:
+            h_vp = database.get_cached_volume_profile(selected_date_str)
+            if not h_vp:
+                st.info(f"ℹ️ No Volume Profile data was recorded on {selected_date_str}.")
+            else:
+                st.markdown(f"**📊 Volume Profile on {selected_date_str} ({len(h_vp)})**")
+                vp_rows = []
+                for r in h_vp:
+                    vp_rows.append({
+                        "Symbol": r.get('symbol', ''),
+                        "CMP": f"₹{float(r.get('cmp') or 0.0):.2f}",
+                        "Market Cap (Cr)": round(float(r.get('market_cap_cr') or 0.0), 1),
+                        "Daily Zone": r.get('daily_zone', ''),
+                        "Daily POC": round(float(r.get('daily_poc') or 0.0), 2) if r.get('daily_poc') is not None else "-",
+                        "Daily VAL": round(float(r.get('daily_val') or 0.0), 2) if r.get('daily_val') is not None else "-",
+                        "Daily VAH": round(float(r.get('daily_vah') or 0.0), 2) if r.get('daily_vah') is not None else "-",
+                        "Weekly Zone": r.get('weekly_zone', ''),
+                        "Weekly POC": round(float(r.get('weekly_poc') or 0.0), 2) if r.get('weekly_poc') is not None else "-",
+                        "Monthly Zone": r.get('monthly_zone', ''),
+                        "Monthly POC": round(float(r.get('monthly_poc') or 0.0), 2) if r.get('monthly_poc') is not None else "-"
+                    })
+                st.dataframe(pd.DataFrame(vp_rows), use_container_width=True, hide_index=True)
+

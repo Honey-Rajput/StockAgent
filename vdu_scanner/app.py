@@ -944,6 +944,7 @@ def run_background_all_tab_scans():
                     except: pass
                 if run_vp:
                     st.session_state.ALL_TAB_SCAN_STATUS["volume_profile_results"] = vp_list
+                    st.session_state.ALL_TAB_SCAN_STATUS["vp_results"] = vp_list
                     try: database.save_volume_profile_only(today_str, vp_list)
                     except: pass
                 if run_vpa_sq:
@@ -1157,7 +1158,9 @@ if not st.session_state.get('db_cache_checked', False):
 
         _load_latest("scanned_vcs", database.get_cached_vcs, "vcs_results")
         _load_latest("scanned_vpa", database.get_cached_vpa, "vpa_results")
-        _load_latest("scanned_volume_profile", database.get_cached_volume_profile, "vp_results")
+        vp_loaded_date = _load_latest("scanned_volume_profile", database.get_cached_volume_profile, "vp_results")
+        if vp_loaded_date:
+            st.session_state['vp_results_date'] = vp_loaded_date
         _load_latest("scanned_ema_support", database.get_cached_ema_support, "ema_support_results")
         _load_latest("scanned_vpa_squeeze", database.get_cached_vpa_squeeze, "vpa_squeeze_results")
         _load_latest("scanned_near_30sma", database.get_cached_near_30sma, "near_30sma_results")  # FIX: was missing on reload

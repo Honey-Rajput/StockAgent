@@ -20,3 +20,4 @@ Thumbs.db
 vdu_scanner/*_cache.json
 
 *.db
+vdu_scanner/scratch/
