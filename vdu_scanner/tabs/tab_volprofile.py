@@ -62,10 +62,6 @@ def render():
     st.info("Scans ALL NSE listed stocks for POC, VAH, VAL levels. Filters: Price > ₹100, Market Cap > 2000 Cr.")
     
     # Auto-load cached results from database on first visit
-    # Pick up background scan results if available
-    bg_vp = st.session_state.ALL_TAB_SCAN_STATUS.get("vp_results") or st.session_state.ALL_TAB_SCAN_STATUS.get("volume_profile_results")
-    if not st.session_state.get('vp_results') and bg_vp is not None:
-        st.session_state.vp_results = bg_vp
 
     if 'vp_results' not in st.session_state or not st.session_state.vp_results:
         try:
@@ -189,19 +185,6 @@ def render():
                     
             except Exception as e:
                 st.error(f"Scan failed: {e}")
-                
-    # Show background scan progress as a small informational banner (not blocking results)
-    if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
-        _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
-        _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
-        st.markdown(f"""
-        <div style="padding:10px 18px; border:1px solid rgba(0,229,255,0.2); background:rgba(0,229,255,0.04); border-radius:8px; margin-bottom:12px; display:flex; align-items:center; gap:10px;">
-            <span style="display:inline-block; animation: spin 1.5s linear infinite; font-size:1.1rem;">🔄</span>
-            <span style="font-size:0.85rem; color:#94a3b8;">Background scan in progress &mdash; <span style="color:#00e5ff;">{_bg_status}</span> &nbsp;&nbsp;
-            <a href="?" style="color:#00e5ff; font-size:0.8rem;">[Refresh for latest results]</a></span>
-        </div>
-        <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
-        """, unsafe_allow_html=True)
 
     if not st.session_state.get('vp_results'):
         st.info("No Volume Profile data available. Click 'Run Advanced Volume Profile Scan' to process.")

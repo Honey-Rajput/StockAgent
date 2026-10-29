@@ -783,12 +783,12 @@ def run_background_all_tab_scans():
             run_wt = not bool(database.get_cached_wt_cross(today_str))
             run_vcs = not bool(database.get_cached_vcs(today_str))
             run_vpa = not bool(database.get_cached_vpa(today_str))
-            run_vp = not bool(database.get_cached_volume_profile(today_str))
+            run_vp = False  # Volume profile is run on-demand directly from the tab
             run_s2 = not bool(database.get_cached_stage2(today_str))
             run_vpa_sq = not bool(database.get_cached_vpa_squeeze(today_str))
             run_near_30sma = not bool(database.get_cached_near_30sma(today_str))
 
-            if not (run_wt or run_vcs or run_vpa or run_vp or run_s2 or run_vpa_sq or run_near_30sma):
+            if not (run_wt or run_vcs or run_vpa or run_s2 or run_vpa_sq or run_near_30sma):
                 st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
                 st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 1.0
                 st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
@@ -802,7 +802,7 @@ def run_background_all_tab_scans():
             
             # Phase 2: Shared Daily Download (1y or 2y)
             shared_daily_data = {}
-            if run_wt or run_vcs or run_vpa or run_vp or run_vpa_sq or run_near_30sma:
+            if run_wt or run_vcs or run_vpa or run_vpa_sq or run_near_30sma:
                 st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
                 st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
                 st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.05
