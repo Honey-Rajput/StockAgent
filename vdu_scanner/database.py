@@ -2448,9 +2448,12 @@ def save_monthly_momentum_results(date_str: str, results: list[dict]) -> bool:
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
-            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct, wt_value=EXCLUDED.wt_value,
-            wt2_value=EXCLUDED.wt2_value, wt_diff=EXCLUDED.wt_diff, buy_signal=EXCLUDED.buy_signal,
-            above_20sma=EXCLUDED.above_20sma, above_50sma=EXCLUDED.above_50sma, above_200sma=EXCLUDED.above_200sma;
+            cmp=excluded.cmp, day_change_pct=excluded.day_change_pct, ema8=excluded.ema8,
+            ema12=excluded.ema12, ema20=excluded.ema20, roc6=excluded.roc6,
+            rsi_monthly=excluded.rsi_monthly, volume=excluded.volume, vol_sma12=excluded.vol_sma12,
+            market_cap_cr=excluded.market_cap_cr, momentum_score=excluded.momentum_score,
+            buy_price=excluded.buy_price, exit_price=excluded.exit_price, target_price=excluded.target_price,
+            confidence=excluded.confidence, recommendation=excluded.recommendation, return_1m=excluded.return_1m;
         """
         for r in results:
             cur.execute(insert_query, (
@@ -2510,9 +2513,13 @@ def save_weekly_momentum_results(date_str: str, results: list[dict]) -> bool:
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
-            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct, vcs_score=EXCLUDED.vcs_score,
-            volume=EXCLUDED.volume, buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price,
-            target_price=EXCLUDED.target_price, confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation;
+            cmp=excluded.cmp, weekly_chg_pct=excluded.weekly_chg_pct, prev_close=excluded.prev_close,
+            curr_open=excluded.curr_open, close_sma20=excluded.close_sma20,
+            rsi_weekly=excluded.rsi_weekly, cci_weekly=excluded.cci_weekly, volume=excluded.volume,
+            vol_sma20=excluded.vol_sma20, vol_ratio=excluded.vol_ratio, market_cap_cr=excluded.market_cap_cr,
+            weekly_score=excluded.weekly_score, buy_price=excluded.buy_price, exit_price=excluded.exit_price,
+            target_price=excluded.target_price, confidence=excluded.confidence, recommendation=excluded.recommendation,
+            return_1m=excluded.return_1m;
         """
         for r in results:
             cur.execute(insert_query, (

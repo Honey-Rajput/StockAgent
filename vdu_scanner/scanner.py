@@ -798,31 +798,66 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
         if cmp < 100.0:
             return None
 
-        # Condition 0: CMP must be breaking upward from previous month's closing price
-        prev_month_close = float(close.iloc[-2]) if len(close) >= 2 else cmp
-        if not (cmp > prev_month_close):
+        # Detect if the last monthly bar is an incomplete (current) month.
+        # yfinance returns a partial candle for the current month — its volume
+        # will be much lower than a full month. We use the PREVIOUS completed
+        # month's close for trend conditions when the current month is partial.
+        from datetime import date as _date
+        today_date = _date.today()
+        last_bar_date = df_monthly.index[-1] if hasattr(df_monthly.index, 'date') else None
+        try:
+            if last_bar_date is None and 'Date' in df_monthly.columns:
+                last_bar_date = pd.to_datetime(df_monthly['Date'].iloc[-1]).date()
+            elif last_bar_date is not None:
+                if hasattr(last_bar_date, 'date'):
+                    last_bar_date = last_bar_date.date()
+        except Exception:
+            last_bar_date = None
+
+        is_partial_month = False
+        if last_bar_date is not None:
+            # Partial if the bar's month == today's month (month not yet closed)
+            is_partial_month = (last_bar_date.year == today_date.year and
+                                last_bar_date.month == today_date.month)
+
+        # For EMA and ROC checks use the last COMPLETED month's close if current month is partial
+        if is_partial_month and len(close) >= 2:
+            close_for_ema = close.iloc[:-1]  # exclude current incomplete month
+            cmp_for_conditions = float(close.iloc[-2])  # last completed month close
+        else:
+            close_for_ema = close
+            cmp_for_conditions = cmp
+
+        # Condition 0: CMP must be above previous completed month close
+        prev_month_close = float(close_for_ema.iloc[-2]) if len(close_for_ema) >= 2 else cmp_for_conditions
+        if not (cmp_for_conditions > prev_month_close):
             return None
 
-        # Condition 0.5: Current monthly candle must be green (CMP > Monthly Open)
-        monthly_open = float(df_monthly['Open'].iloc[-1])
-        if not (cmp > monthly_open):
-            return None
+        # Condition 0.5: Last completed monthly candle must be green (Close > Open)
+        if is_partial_month and len(df_monthly) >= 2:
+            prev_monthly_open = float(df_monthly['Open'].iloc[-2])
+            if not (cmp_for_conditions > prev_monthly_open):
+                return None
+        else:
+            monthly_open = float(df_monthly['Open'].iloc[-1])
+            if not (cmp > monthly_open):
+                return None
 
         # ---- Market Cap filter ----
         if market_cap_cr > 0 and market_cap_cr < 3000.0:
             return None
 
-        # ---- EMA calculations ----
-        ema8  = close.ewm(span=8,  adjust=False).mean()
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema20 = close.ewm(span=20, adjust=False).mean()
+        # ---- EMA calculations (on completed months only) ----
+        ema8  = close_for_ema.ewm(span=8,  adjust=False).mean()
+        ema12 = close_for_ema.ewm(span=12, adjust=False).mean()
+        ema20 = close_for_ema.ewm(span=20, adjust=False).mean()
 
         ema8_val  = float(ema8.iloc[-1])
         ema12_val = float(ema12.iloc[-1])
         ema20_val = float(ema20.iloc[-1])
 
         # Condition 1: Close > EMA8
-        if not (cmp > ema8_val):
+        if not (cmp_for_conditions > ema8_val):
             return None
         # Condition 2: EMA8 > EMA12
         if not (ema8_val > ema12_val):
@@ -831,13 +866,13 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
         if not (ema12_val > ema20_val):
             return None
 
-        # ---- ROC (6 months) ----
-        if len(close) < 7:
+        # ---- ROC (6 months) based on completed months ----
+        if len(close_for_ema) < 7:
             return None
-        close_6m_ago = float(close.iloc[-7])
+        close_6m_ago = float(close_for_ema.iloc[-7])
         if close_6m_ago <= 0:
             return None
-        roc6 = (cmp - close_6m_ago) / close_6m_ago * 100.0
+        roc6 = (cmp_for_conditions - close_6m_ago) / close_6m_ago * 100.0
 
         # Condition 4: ROC >= 10.0% (Matched UI 10-80%)
         if not (roc6 >= 10.0):
@@ -846,8 +881,8 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
         if not (roc6 <= 80.0):
             return None
 
-        # ---- RSI (14 monthly bars) ----
-        delta = close.diff()
+        # ---- RSI (14 monthly bars) on completed months ----
+        delta = close_for_ema.diff()
         gain  = delta.clip(lower=0)
         loss  = -delta.clip(upper=0)
         avg_gain = gain.ewm(com=13, adjust=False).mean()
@@ -866,18 +901,18 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
             return None
 
         # ---- Volume > SMA(Volume, 12) ----
-        if len(volume) < 12:
+        # For partial months, use previous completed months' volume data
+        vol_for_check = df_monthly['Volume'].iloc[:-1] if is_partial_month else volume
+        if len(vol_for_check) < 12:
             return None
-        vol_sma12 = float(volume.rolling(window=12).mean().iloc[-1])
-        curr_vol  = float(volume.iloc[-1])
+        vol_sma12 = float(vol_for_check.rolling(window=12).mean().iloc[-1])
+        curr_vol  = float(vol_for_check.iloc[-1])
 
         # Condition 8: Volume > SMA(Volume, 12)
         if not (curr_vol > vol_sma12):
             return None
 
         # ---- All conditions passed — compute trade setup ----
-        buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df_monthly, cmp)
-
         # Score based on quality of alignment
         score = 0.0
         # EMA stacking tightness (the tighter, the earlier the entry)
@@ -905,8 +940,12 @@ def scan_monthly_momentum(symbol: str, df_monthly: pd.DataFrame, market_cap_cr: 
         else:
             confidence = f"Medium ({score}%)"
 
-        prev_close = float(close.iloc[-2]) if len(close) >= 2 else cmp
-        day_change_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close > 0 else 0.0
+        prev_close = float(close_for_ema.iloc[-2]) if len(close_for_ema) >= 2 else cmp_for_conditions
+        day_change_pct = round((cmp_for_conditions - prev_close) / prev_close * 100, 2) if prev_close > 0 else 0.0
+
+        # Use actual CMP (live price) for display but conditions-checked values for analysis
+        display_cmp = cmp  # Always show today's live price
+        buy_price, exit_price, target_price, support, resistance = calculate_trade_levels(df_monthly, display_cmp)
 
         base_rec = (
             f"Monthly EMA Stack (EMA8 > EMA12 > EMA20) confirmed bullish alignment. "
@@ -966,18 +1005,45 @@ def scan_weekly_momentum(symbol: str, df_weekly: pd.DataFrame, market_cap_cr: fl
         return None
 
     try:
+        # Detect if the last weekly bar is an incomplete (current) week.
+        # If we are mid-week, the current week bar is partial — use last completed week for conditions.
+        from datetime import date as _date
+        today_date = _date.today()
+        iso_weekday = today_date.isoweekday()  # 1=Mon, 5=Fri, 6=Sat, 7=Sun
+
         close  = df_weekly['Close'].reset_index(drop=True)
         open_  = df_weekly['Open'].reset_index(drop=True)
         high   = df_weekly['High'].reset_index(drop=True)
         low    = df_weekly['Low'].reset_index(drop=True)
         volume = df_weekly['Volume'].reset_index(drop=True)
 
-        cmp        = float(close.iloc[-1])
-        curr_open  = float(open_.iloc[-1])
-        prev_close = float(close.iloc[-2]) if len(close) >= 2 else cmp
+        # For weekly: use last COMPLETED week close for conditions (Mon-Thu = partial current week)
+        # On Saturday/Sunday, week is closed — use as is.
+        is_partial_week = iso_weekday in (1, 2, 3, 4)  # Mon-Thu: week not yet complete
+
+        if is_partial_week and len(close) >= 2:
+            cmp        = float(close.iloc[-1])   # actual current price (live)
+            curr_open  = float(open_.iloc[-2])   # last completed week open
+            prev_close = float(close.iloc[-3]) if len(close) >= 3 else float(close.iloc[-2])
+            cmp_check  = float(close.iloc[-2])   # last completed week close for conditions
+            curr_vol   = float(volume.iloc[-2])  # last completed week volume
+            vol_series = volume.iloc[:-1]
+            close_check = close.iloc[:-1]
+            high_check  = high.iloc[:-1]
+            low_check   = low.iloc[:-1]
+        else:
+            cmp        = float(close.iloc[-1])
+            curr_open  = float(open_.iloc[-1])
+            prev_close = float(close.iloc[-2]) if len(close) >= 2 else cmp
+            cmp_check  = cmp
+            curr_vol   = float(volume.iloc[-1])
+            vol_series = volume
+            close_check = close
+            high_check  = high
+            low_check   = low
 
         # Condition 2: Price > 200
-        if cmp < 200.0:
+        if cmp_check < 200.0:
             return None
 
         # Condition 6: Market Cap > 5000 Cr
@@ -985,31 +1051,29 @@ def scan_weekly_momentum(symbol: str, df_weekly: pd.DataFrame, market_cap_cr: fl
             return None
 
         # Condition 3: Close > Previous Week Close
-        if not (cmp > prev_close):
+        if not (cmp_check > prev_close):
             return None
 
-        # Condition 4: Open > Previous Week Close
+        # Condition 4: Open > Previous Week Close (gap-up / strong open)
         if not (curr_open > prev_close):
             return None
 
         # Condition 1: Volume > SMA(Volume, 20)
-        if len(volume) < 20:
+        if len(vol_series) < 20:
             return None
-        vol_sma20 = float(volume.rolling(window=20).mean().iloc[-1])
-        curr_vol  = float(volume.iloc[-1])
+        vol_sma20 = float(vol_series.rolling(window=20).mean().iloc[-1])
         if not (curr_vol > vol_sma20):
             return None
 
         # Condition 8: Close > SMA(Close, 20)
-        if len(close) < 20:
+        if len(close_check) < 20:
             return None
-        close_sma20 = float(close.rolling(window=20).mean().iloc[-1])
-        if not (cmp > close_sma20):
+        close_sma20 = float(close_check.rolling(window=20).mean().iloc[-1])
+        if not (cmp_check > close_sma20):
             return None
 
-        # Condition 7: RSI(14) > 60
         # Condition 7: RSI(14) > SMA(RSI, 14)
-        delta    = close.diff()
+        delta    = close_check.diff()
         gain     = delta.clip(lower=0)
         loss     = -delta.clip(upper=0)
         avg_gain = gain.ewm(com=13, adjust=False).mean()
@@ -1024,7 +1088,7 @@ def scan_weekly_momentum(symbol: str, df_weekly: pd.DataFrame, market_cap_cr: fl
             return None
 
         # Condition 5: CCI(20) > 90
-        tp       = (high + low + close) / 3.0
+        tp       = (high_check + low_check + close_check) / 3.0
         tp_sma20 = tp.rolling(window=20).mean()
         mad20    = tp.rolling(window=20).apply(lambda x: (abs(x - x.mean())).mean(), raw=True)
         cci_val  = float(((tp - tp_sma20) / (0.015 * (mad20 + 1e-9))).iloc[-1])
@@ -1057,7 +1121,7 @@ def scan_weekly_momentum(symbol: str, df_weekly: pd.DataFrame, market_cap_cr: fl
             score += 18.0
         else:
             score += 10.0
-        dist_pct = (cmp - close_sma20) / close_sma20 * 100
+        dist_pct = (cmp_check - close_sma20) / close_sma20 * 100
         if dist_pct <= 5:
             score += 20.0
         elif dist_pct <= 10:
@@ -1067,7 +1131,7 @@ def scan_weekly_momentum(symbol: str, df_weekly: pd.DataFrame, market_cap_cr: fl
         score = round(min(score, 100.0), 1)
 
         confidence = f"High ({score}%)" if score >= 75 else f"Medium-High ({score}%)" if score >= 55 else f"Medium ({score}%)"
-        weekly_chg_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close > 0 else 0.0
+        weekly_chg_pct = round((cmp_check - prev_close) / prev_close * 100, 2) if prev_close > 0 else 0.0
 
         base_rec = (
             f"Weekly Momentum Breakout: Price ₹{cmp:.2f} above 20W SMA (₹{close_sma20:.2f}). "
