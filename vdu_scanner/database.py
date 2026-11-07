@@ -2753,93 +2753,145 @@ def get_weekly_base_date(start_date_str: str, end_date_str: str) -> str | None:
 def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
     """
     Retrieves stocks that have been frequently flagged across any scanner
-    over the last N distinct scan dates.
+    over the last N distinct scan dates. Compatible with both PostgreSQL and SQLite.
+    Uses STRING_AGG for PostgreSQL and GROUP_CONCAT for SQLite.
+    Missing tables are handled gracefully by per-table try/except.
     """
-    query = """
-    WITH all_dates AS (
-        SELECT scan_date FROM scan_logs
-        UNION SELECT scan_date FROM scanned_breakouts
-        UNION SELECT scan_date FROM scanned_trend_setups
-        UNION SELECT scan_date FROM scanned_monthly_momentum
-        UNION SELECT scan_date FROM scanned_vcs
-        UNION SELECT scan_date FROM scanned_stage2
-        UNION SELECT scan_date FROM scanned_gapups
-        UNION SELECT scan_date FROM scanned_wt_cross
-        UNION SELECT scan_date FROM scanned_vpa
-        UNION SELECT scan_date FROM scanned_volume_profile
-        UNION SELECT scan_date FROM scanned_support_rsi
-        UNION SELECT scan_date FROM scanned_weekly_momentum
-    ),
-    recent_dates AS (
-        SELECT DISTINCT scan_date FROM all_dates ORDER BY scan_date DESC LIMIT ?
-    ),
-    all_scans AS (
-        SELECT symbol, scan_date, 'VDU Breakout' as source, signal_strength as score FROM scanned_breakouts WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Minervini Stage-2' as source, 0 AS score FROM scanned_trend_setups WHERE setup_type = 'minervini' AND scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'VCS' as source, vcs_score as score FROM scanned_vcs WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Monthly Momentum' as source, momentum_score as score FROM scanned_monthly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Stage-2 Breakout' as source, score FROM scanned_stage2 WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'WaveTrend Cross' as source, 0 AS score FROM scanned_wt_cross WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'VPA Trend' as source, vpa_score AS score FROM scanned_vpa WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Volume Profile' as source, 0 AS score FROM scanned_volume_profile WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Support RSI' as source, rsi as score FROM scanned_support_rsi WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-        UNION ALL
-        SELECT symbol, scan_date, 'Weekly Momentum' as source, weekly_score as score FROM scanned_weekly_momentum WHERE scan_date IN (SELECT scan_date FROM recent_dates)
-    ),
-    aggregated AS (
-        SELECT symbol, 
-               COUNT(*) as total_appearances, 
-               COUNT(DISTINCT scan_date) as days_appeared,
-               MIN(scan_date) as first_seen_date, 
-               MAX(scan_date) as last_seen_date,
-               GROUP_CONCAT(DISTINCT source) as strategies,
-               MAX(score) as max_score
-        FROM all_scans
-        GROUP BY symbol
-        HAVING COUNT(DISTINCT source) >= 2
-    ),
-    latest_date AS (
-        SELECT MAX(scan_date) as max_date FROM recent_dates
-    )
-    SELECT a.*, v.daily_rsi as rsi, v.daily_cci as cci,
-           CASE WHEN a.first_seen_date = (SELECT max_date FROM latest_date) THEN TRUE ELSE FALSE END as is_new_today
-    FROM aggregated a
-    LEFT JOIN (
-        SELECT symbol, daily_rsi, daily_cci
-        FROM (
-            SELECT symbol, daily_rsi, daily_cci,
-                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY scan_date DESC) as rn
-            FROM scanned_vpa
-        ) WHERE rn = 1
-    ) v ON a.symbol = v.symbol
-    ORDER BY 
-        CASE WHEN a.first_seen_date = (SELECT max_date FROM latest_date) THEN 0 ELSE 1 END,
-        a.days_appeared DESC, a.total_appearances DESC
-    LIMIT 300;
-    """
+    # Step 1: Get recent distinct scan dates (using our resilient helper)
+    all_dates = get_available_scan_dates()
+    recent_dates = all_dates[:days_lookback]
+    if not recent_dates:
+        return []
+
+    latest_date = recent_dates[0]  # Most recent date
+
+    # Step 2: Determine dialect for aggregation function
+    _use_pg = is_postgres_active()
+    agg_fn = "STRING_AGG(DISTINCT source, ',')" if _use_pg else "GROUP_CONCAT(DISTINCT source)"
+
+    # Step 3: Build the per-table scan union — only include tables that exist
+    # We build a combined scan list in Python from each table individually
     conn = None
     results = []
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (days_lookback,))
-        rows = cur.fetchall()
+
+        # We need a list of placeholders for the IN clause
+        if not recent_dates:
+            return []
+        placeholders = ",".join(["?" for _ in recent_dates])
+
+        # Collect rows from each scanner table individually (resilient to missing tables)
+        scan_rows = []  # list of (symbol, scan_date, source, score)
+
+        source_queries = [
+            ("scanned_breakouts",       "symbol", "scan_date", "'VDU Breakout'",      "signal_strength"),
+            ("scanned_trend_setups",    "symbol", "scan_date", "'Minervini Stage-2'", "0",              "setup_type = 'minervini'"),
+            ("scanned_vcs",             "symbol", "scan_date", "'VCS'",               "vcs_score"),
+            ("scanned_monthly_momentum","symbol", "scan_date", "'Monthly Momentum'",  "momentum_score"),
+            ("scanned_stage2",          "symbol", "scan_date", "'Stage-2 Breakout'",  "score"),
+            ("scanned_wt_cross",        "symbol", "scan_date", "'WaveTrend Cross'",   "0"),
+            ("scanned_vpa",             "symbol", "scan_date", "'VPA Trend'",         "vpa_score"),
+            ("scanned_volume_profile",  "symbol", "scan_date", "'Volume Profile'",    "0"),
+            ("scanned_support_rsi",     "symbol", "scan_date", "'Support RSI'",       "rsi"),
+            ("scanned_weekly_momentum", "symbol", "scan_date", "'Weekly Momentum'",   "weekly_score"),
+            ("scanned_gapups",          "symbol", "scan_date", "'Gap-Up'",            "0"),
+        ]
+
+        for entry in source_queries:
+            table = entry[0]
+            sym_col = entry[1]
+            date_col = entry[2]
+            source_label = entry[3]
+            score_col = entry[4]
+            extra_where = entry[5] if len(entry) > 5 else None
+
+            where_clause = f"{date_col} IN ({placeholders})"
+            if extra_where:
+                where_clause += f" AND {extra_where}"
+
+            try:
+                cur.execute(
+                    f"SELECT {sym_col}, {date_col}, {source_label}, COALESCE(CAST({score_col} AS FLOAT), 0) "
+                    f"FROM {table} WHERE {where_clause}",
+                    recent_dates
+                )
+                for row in cur.fetchall():
+                    try:
+                        sym = row[0] if not hasattr(row, 'keys') else row[row.keys()[0]] if False else (row['symbol'] if 'symbol' in (row.keys() if hasattr(row, 'keys') else []) else row[0])
+                        # Safe extraction using index (works for both DictRow and tuple)
+                        sym = row[0]
+                        dt = row[1]
+                        src = row[2]
+                        sc = row[3] if row[3] is not None else 0.0
+                        dt_str = dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)
+                        scan_rows.append((str(sym), dt_str, str(src), float(sc)))
+                    except Exception:
+                        pass
+            except Exception as tbl_err:
+                print(f"[get_frequent_stocks] Skipping table {table}: {tbl_err}")
+
         cur.close()
-        for r in rows:
-            r_dict = dict(r)
-            r_dict['first_seen_date'] = r_dict['first_seen_date'].strftime('%Y-%m-%d') if hasattr(r_dict['first_seen_date'], 'strftime') else str(r_dict['first_seen_date'])
-            r_dict['last_seen_date'] = r_dict['last_seen_date'].strftime('%Y-%m-%d') if hasattr(r_dict['last_seen_date'], 'strftime') else str(r_dict['last_seen_date'])
-            r_dict['rsi'] = float(r_dict.get('rsi') or 0.0)
-            r_dict['cci'] = float(r_dict.get('cci') or 0.0)
-            results.append(r_dict)
+        conn.close()
+        conn = None
+
+        if not scan_rows:
+            return []
+
+        # Step 4: Aggregate in Python
+        from collections import defaultdict
+        sym_data = defaultdict(lambda: {
+            'total_appearances': 0,
+            'scan_dates': set(),
+            'sources': set(),
+            'max_score': 0.0,
+            'first_seen_date': None,
+            'last_seen_date': None,
+        })
+
+        for sym, dt_str, src, sc in scan_rows:
+            d = sym_data[sym]
+            d['total_appearances'] += 1
+            d['scan_dates'].add(dt_str)
+            d['sources'].add(src)
+            d['max_score'] = max(d['max_score'], sc)
+            if d['first_seen_date'] is None or dt_str < d['first_seen_date']:
+                d['first_seen_date'] = dt_str
+            if d['last_seen_date'] is None or dt_str > d['last_seen_date']:
+                d['last_seen_date'] = dt_str
+
+        # Filter: prefer >= 2 distinct sources; fall back to >= 1 if nothing qualifies
+        filtered = {
+            sym: d for sym, d in sym_data.items()
+            if len(d['sources']) >= 2
+        }
+        if not filtered:
+            # Relax threshold to 1 source (useful when DB has very few scan dates)
+            filtered = dict(sym_data)
+
+        # Sort: new_today first, then by days_appeared desc, total_appearances desc
+        def sort_key(item):
+            sym, d = item
+            is_new = 1 if d['first_seen_date'] == latest_date else 0
+            return (-is_new, -len(d['scan_dates']), -d['total_appearances'])
+
+        sorted_items = sorted(filtered.items(), key=sort_key)[:300]
+
+        for sym, d in sorted_items:
+            results.append({
+                'symbol': sym,
+                'total_appearances': d['total_appearances'],
+                'days_appeared': len(d['scan_dates']),
+                'first_seen_date': d['first_seen_date'] or '',
+                'last_seen_date': d['last_seen_date'] or '',
+                'strategies': ', '.join(sorted(d['sources'])),
+                'max_score': round(d['max_score'], 2),
+                'rsi': 0.0,
+                'cci': 0.0,
+                'is_new_today': d['first_seen_date'] == latest_date,
+            })
+
     except Exception as e:
         print(f"Error loading frequent stocks from database: {e}")
     finally:
