@@ -469,16 +469,16 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
                 d200 = float(r.get('dist_200sma_pct') or 0.0)
                 cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem;"><span style="color:#00e676;">20: +{d20:.1f}%</span><br><span style="color:#29b6f6;">50: +{d50:.1f}%</span><br><span style="color:#ffa000;">200: +{d200:.1f}%</span></td>')
             elif strategy_type == "support_ma":
-                d65 = r.get('dist_65sma_pct', 0.0)
+                d65 = float(r.get('dist_65sma_pct') or 0.0)
                 color = "#00e676" if d65 >= 0 else "#ef4444"
                 cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem; color:{color};">65 SMA: {d65:+.1f}%</td>')
             elif strategy_type == "crossover_ma":
-                d50 = r.get('dist_50sma_pct', 0.0)
-                d200 = r.get('dist_200sma_pct', 0.0)
+                d50 = float(r.get('dist_50sma_pct') or 0.0)
+                d200 = float(r.get('dist_200sma_pct') or 0.0)
                 cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem;"><span style="color:#29b6f6;">50: {d50:+.1f}%</span><br><span style="color:#ffa000;">200: {d200:+.1f}%</span></td>')
                 
-            rsi_val = r.get("rsi", 0.0)
-            cci_val = r.get("cci", 0.0)
+            rsi_val = float(r.get("rsi") or 0.0)
+            cci_val = float(r.get("cci") or 0.0)
             rsi_color = "#00e676" if 60 <= rsi_val <= 75 else "#ffa000"
             cci_color = "#00e676" if cci_val >= 100 else "#ffa000" if cci_val >= 0 else "#ef4444"
             cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{rsi_val:.1f}</td>')
@@ -504,11 +504,12 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         elif strategy_type == "wavetrend":
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))
             cells.append(f'<td style="padding: 10px 12px;">{chg_badge}</td>')
-            wt1_val = r.get('wt_value', 0.0)
+            wt1_val = float(r.get('wt_value') or 0.0)
             wt_color = "#ef4444" if wt1_val <= -60 else "#ffa000" if wt1_val <= -50 else "#29b6f6"
             cells.append(f'<td style="padding: 10px 12px; color: {wt_color}; font-weight: 600;">{wt1_val:.1f}</td>')
-            cells.append(f'<td style="padding: 10px 12px; color: #94a3b8;">{r.get("wt2_value", 0.0):.1f}</td>')
-            diff_val = r.get('wt_diff', wt1_val - r.get('wt2_value', 0.0))
+            wt2_val = float(r.get('wt2_value') or 0.0)
+            cells.append(f'<td style="padding: 10px 12px; color: #94a3b8;">{wt2_val:.1f}</td>')
+            diff_val = float(r.get('wt_diff') or (wt1_val - wt2_val))
             diff_color = "#00e676" if diff_val > 0 else "#ef4444"
             cells.append(f'<td style="padding: 10px 12px; color: {diff_color}; font-weight: 600;">{diff_val:+.1f}</td>')
             sig_badge = '<span class="custom-badge badge-green" style="font-weight:600; padding: 2px 6px; border-radius: 4px;">🟢 BUY</span>' if r.get('buy_signal') else '<span class="custom-badge badge-grey" style="padding: 2px 6px; border-radius: 4px;">Oversold</span>'
@@ -543,8 +544,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cross_badge = '<span style="color:#00e676;">Yes ✅</span>' if r.get('crossover') else '<span style="color:#94a3b8;">No</span>'
             cells.append(f'<td style="padding: 10px 12px;">{cross_badge}</td>')
             
-            rsi_val = r.get("rsi", 0.0)
-            cci_val = r.get("cci", 0.0)
+            rsi_val = float(r.get("rsi") or 0.0)
+            cci_val = float(r.get("cci") or 0.0)
             rsi_color = "#00e676" if 60 <= rsi_val <= 75 else "#ffa000"
             cci_color = "#00e676" if cci_val >= 100 else "#ffa000" if cci_val >= 0 else "#ef4444"
             cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{rsi_val:.1f}</td>')
@@ -562,10 +563,10 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1;">₹{r.get("historical_high", 0.0):,.2f}</td>')
             cells.append(f'<td style="padding: 10px 12px; color: #ffa000; font-weight: 600;">{r.get("extension", 0.0):.1f}%</td>')
             cells.append(f'<td style="padding: 10px 12px; color: #29b6f6;">₹{r.get("sma7", 0.0):,.2f}</td>')
-            rsi_color = "#00e676" if 60 <= r.get("rsi", 0.0) <= 75 else "#ffa000"
-            cci_color = "#00e676" if r.get("cci", 0.0) >= 100 else "#ffa000" if r.get("cci", 0.0) >= 0 else "#ef4444"
-            cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{r.get("rsi", 0.0):.1f}</td>')
-            cells.append(f'<td style="padding: 10px 12px; color: {cci_color}; font-weight: 600;">{r.get("cci", 0.0):.1f}</td>')
+            rsi_color = "#00e676" if 60 <= float(r.get("rsi") or 0.0) <= 75 else "#ffa000"
+            cci_color = "#00e676" if float(r.get("cci") or 0.0) >= 100 else "#ffa000" if float(r.get("cci") or 0.0) >= 0 else "#ef4444"
+            cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{float(r.get("rsi") or 0.0):.1f}</td>')
+            cells.append(f'<td style="padding: 10px 12px; color: {cci_color}; font-weight: 600;">{float(r.get("cci") or 0.0):.1f}</td>')
             cells.append(f'<td style="padding: 10px 12px;">{get_signal_badge_html(r.get("score", 0.0))}</td>')
             
         # Common Execution Columns
