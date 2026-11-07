@@ -1249,71 +1249,72 @@ def get_best_scan_date() -> str:
 def get_available_scan_dates() -> list[str]:
     """
     Retrieves all dates that have completed daily scan logs, sorted descending.
-    Ignores empty or aborted scans. Now unions across multiple tables to ensure
-    dates are found even if the master scan_logs table is empty.
+    Queries each table individually and unions the results in Python — this makes
+    the function resilient to missing tables (e.g. on a fresh Neon DB deployment).
     """
-    query = """
-    SELECT scan_date FROM (
-        SELECT scan_date FROM scan_logs WHERE total_scanned > 0
-        UNION
-        SELECT scan_date FROM scanned_vpa
-        UNION
-        SELECT scan_date FROM scanned_vcs
-        UNION
-        SELECT scan_date FROM scanned_trend_setups
-        UNION
-        SELECT scan_date FROM scanned_zanger
-        UNION
-        SELECT scan_date FROM scanned_volume_profile
-        UNION
-        SELECT scan_date FROM scanned_breakouts
-        UNION
-        SELECT scan_date FROM scanned_squeezes
-        UNION
-        SELECT scan_date FROM scanned_gapups
-        UNION
-        SELECT scan_date FROM scanned_wt_cross
-        UNION
-        SELECT scan_date FROM scanned_ema_support
-        UNION
-        SELECT scan_date FROM scanned_stage2
-        UNION
-        SELECT scan_date FROM scanned_stage_analysis
-        UNION
-        SELECT scan_date FROM scanned_near_30sma
-        UNION
-        SELECT scan_date FROM scanned_near_30sma_weekly
-        UNION
-        SELECT scan_date FROM scanned_near_30sma_monthly
-        UNION
-        SELECT scan_date FROM scanned_vpa_squeeze
-        UNION
-        SELECT scan_date FROM scanned_vcp_minervini
-        UNION
-        SELECT scan_date FROM scanned_monthly_momentum
-        UNION
-        SELECT scan_date FROM scanned_weekly_momentum
-        UNION
-        SELECT scan_date FROM scanned_flat_base
-    ) AS all_dates
-    GROUP BY scan_date
-    ORDER BY scan_date DESC;
-    """
+    # List of all tables that store scan_date
+    scan_tables = [
+        "scan_logs",
+        "scanned_vpa",
+        "scanned_vcs",
+        "scanned_trend_setups",
+        "scanned_zanger",
+        "scanned_volume_profile",
+        "scanned_breakouts",
+        "scanned_squeezes",
+        "scanned_gapups",
+        "scanned_wt_cross",
+        "scanned_ema_support",
+        "scanned_stage2",
+        "scanned_stage_analysis",
+        "scanned_near_30sma",
+        "scanned_near_30sma_weekly",
+        "scanned_near_30sma_monthly",
+        "scanned_vpa_squeeze",
+        "scanned_vcp_minervini",
+        "scanned_monthly_momentum",
+        "scanned_weekly_momentum",
+        "scanned_flat_base",
+    ]
+    all_dates = set()
     conn = None
-    dates = []
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query)
-        rows = cur.fetchall()
+        for table in scan_tables:
+            try:
+                if table == "scan_logs":
+                    cur.execute(f"SELECT DISTINCT scan_date FROM {table} WHERE total_scanned > 0")
+                else:
+                    cur.execute(f"SELECT DISTINCT scan_date FROM {table}")
+                rows = cur.fetchall()
+                for r in rows:
+                    try:
+                        # DictRow supports both r['scan_date'] and r[0]
+                        try:
+                            val = r['scan_date']
+                        except (KeyError, TypeError):
+                            val = r[0]
+                        if val is not None:
+                            if hasattr(val, 'strftime'):
+                                all_dates.add(val.strftime("%Y-%m-%d"))
+                            else:
+                                s = str(val)
+                                if s not in ('None', 'nan', ''):
+                                    all_dates.add(s)
+                    except Exception:
+                        pass
+            except Exception as table_err:
+                # Table may not exist yet — skip gracefully
+                print(f"[get_available_scan_dates] Skipping table {table}: {table_err}")
         cur.close()
-        dates = [r[0].strftime("%Y-%m-%d") if hasattr(r[0], 'strftime') else str(r[0]) for r in rows]
     except Exception as e:
         print(f"Error loading scan dates from database: {e}")
     finally:
         if conn:
             conn.close()
-    return dates
+    # Sort descending
+    return sorted(all_dates, reverse=True)
 
 
 def cleanup_old_data(days: int = 30):

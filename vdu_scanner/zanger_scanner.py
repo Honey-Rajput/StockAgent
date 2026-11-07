@@ -172,8 +172,18 @@ def get_latest_signal(df_result: pd.DataFrame) -> dict:
     row = df_result.iloc[-1]
     vol_ratio = row["Volume"] / row["avg_vol"] if row["avg_vol"] else None
     risk_pct = row["risk_pct"] if pd.notna(row["risk_pct"]) else None
+    # Determine date from the index (DatetimeIndex) OR a 'Date' column if index is numeric
+    idx_last = df_result.index[-1]
+    if hasattr(idx_last, 'strftime'):
+        signal_date = idx_last.strftime('%Y-%m-%d')
+    elif 'Date' in df_result.columns:
+        # Numeric index — fall back to the 'Date' column value from the last row
+        date_val = row['Date']
+        signal_date = date_val.strftime('%Y-%m-%d') if hasattr(date_val, 'strftime') else str(date_val).split(' ')[0][:10]
+    else:
+        signal_date = str(idx_last).split(' ')[0]
     return {
-        "date": df_result.index[-1].strftime('%Y-%m-%d') if hasattr(df_result.index[-1], 'strftime') else str(df_result.index[-1]).split(' ')[0],
+        "date": signal_date,
         "close": row["Close"],
         "zanger_signal": bool(row["zanger_signal"]),
         "setup_type": row["setup_type"],
