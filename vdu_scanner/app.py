@@ -1012,6 +1012,10 @@ if 'monthly_momentum_results' not in st.session_state:
     st.session_state.monthly_momentum_results = None
 if 'weekly_momentum_results' not in st.session_state:
     st.session_state.weekly_momentum_results = None
+if 'monthly_momentum_date' not in st.session_state:
+    st.session_state.monthly_momentum_date = None
+if 'weekly_momentum_date' not in st.session_state:
+    st.session_state.weekly_momentum_date = None
 
 today_str_check = get_market_date(for_display=True)
 
@@ -1022,8 +1026,19 @@ if st.session_state.monthly_momentum_results is None:
         db_results = database.get_cached_monthly_momentum(today_str_check)
         if db_results:
             st.session_state.monthly_momentum_results = db_results
+            st.session_state.monthly_momentum_date = today_str_check
             MOMENTUM_SCAN_STATUS["monthly_results"] = db_results
             print(f"Loaded today's Monthly Momentum results ({len(db_results)} stocks) from PostgreSQL cache.")
+        else:
+            latest_dates = database.get_all_latest_scan_dates()
+            latest_mm_date = latest_dates.get("scanned_monthly_momentum")
+            if latest_mm_date:
+                db_results = database.get_cached_monthly_momentum(latest_mm_date)
+                if db_results:
+                    st.session_state.monthly_momentum_results = db_results
+                    st.session_state.monthly_momentum_date = latest_mm_date
+                    MOMENTUM_SCAN_STATUS["monthly_results"] = db_results
+                    print(f"Loaded latest Monthly Momentum results ({len(db_results)} stocks from {latest_mm_date}) from PostgreSQL cache.")
     except Exception as db_err:
         print(f"Error loading Monthly Momentum from database: {db_err}")
 
@@ -1034,10 +1049,12 @@ if st.session_state.monthly_momentum_results is None:
                 import json
                 with open("monthly_momentum_cache.json", "r") as f:
                     data = json.load(f)
-                    if data.get("date") == today_str_check:
-                        st.session_state.monthly_momentum_results = data.get("results")
-                        MOMENTUM_SCAN_STATUS["monthly_results"] = data.get("results")
-                        print(f"Loaded today's Monthly Momentum results ({len(data.get('results'))} stocks) from local JSON fallback cache.")
+                    c_res = data.get("results")
+                    if c_res:
+                        st.session_state.monthly_momentum_results = c_res
+                        st.session_state.monthly_momentum_date = data.get("date", today_str_check)
+                        MOMENTUM_SCAN_STATUS["monthly_results"] = c_res
+                        print(f"Loaded Monthly Momentum results ({len(c_res)} stocks) from local JSON fallback cache.")
         except Exception as e:
             print(f"Error loading monthly cache on boot: {e}")
 
@@ -1048,8 +1065,19 @@ if st.session_state.weekly_momentum_results is None:
         db_results = database.get_cached_weekly_momentum(today_str_check)
         if db_results:
             st.session_state.weekly_momentum_results = db_results
+            st.session_state.weekly_momentum_date = today_str_check
             MOMENTUM_SCAN_STATUS["weekly_results"] = db_results
             print(f"Loaded today's Weekly Momentum results ({len(db_results)} stocks) from PostgreSQL cache.")
+        else:
+            latest_dates = database.get_all_latest_scan_dates()
+            latest_wm_date = latest_dates.get("scanned_weekly_momentum")
+            if latest_wm_date:
+                db_results = database.get_cached_weekly_momentum(latest_wm_date)
+                if db_results:
+                    st.session_state.weekly_momentum_results = db_results
+                    st.session_state.weekly_momentum_date = latest_wm_date
+                    MOMENTUM_SCAN_STATUS["weekly_results"] = db_results
+                    print(f"Loaded latest Weekly Momentum results ({len(db_results)} stocks from {latest_wm_date}) from PostgreSQL cache.")
     except Exception as db_err:
         print(f"Error loading Weekly Momentum from database: {db_err}")
 
@@ -1060,10 +1088,12 @@ if st.session_state.weekly_momentum_results is None:
                 import json
                 with open("weekly_momentum_cache.json", "r") as f:
                     data = json.load(f)
-                    if data.get("date") == today_str_check:
-                        st.session_state.weekly_momentum_results = data.get("results")
-                        MOMENTUM_SCAN_STATUS["weekly_results"] = data.get("results")
-                        print(f"Loaded today's Weekly Momentum results ({len(data.get('results'))} stocks) from local JSON fallback cache.")
+                    c_res = data.get("results")
+                    if c_res:
+                        st.session_state.weekly_momentum_results = c_res
+                        st.session_state.weekly_momentum_date = data.get("date", today_str_check)
+                        MOMENTUM_SCAN_STATUS["weekly_results"] = c_res
+                        print(f"Loaded Weekly Momentum results ({len(c_res)} stocks) from local JSON fallback cache.")
         except Exception as e:
             print(f"Error loading weekly cache on boot: {e}")
 
@@ -2510,6 +2540,7 @@ with tab_monthly:
                     json.dump(monthly_payload, f, indent=2)
                     
                 st.session_state.monthly_momentum_results = mm_results
+                st.session_state.monthly_momentum_date = today_str_check
                 mm_status.text(f"✅ Monthly Momentum price update complete for {len(mm_results)} stocks!")
                 st.toast(f"📅 Monthly update done — {len(mm_results)} stocks updated!", icon="✅")
                 st.rerun()
@@ -2517,84 +2548,100 @@ with tab_monthly:
             import concurrent.futures as _cf
             import time as _time
 
-        # Resolve universe
-        from data_fetcher import get_top1000_nse_symbols
-        mm_universe = get_top1000_nse_symbols()
+            # Resolve universe
+            from data_fetcher import get_top1000_nse_symbols
+            mm_universe = get_top1000_nse_symbols()
 
-        mm_results = []
-        mm_prog = st.progress(0)
-        mm_status = st.empty()
+            mm_results = []
+            mm_prog = st.progress(0)
+            mm_status = st.empty()
 
-        # ---- Fetch all from Master Cache & Resample ----
-        mm_status.text("Step 1/3 — Fetching data from Master Cache...")
-        from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
-        
-        symbols_to_scan = [s.strip().upper() for s in mm_universe]
-        bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
-        
-        # --- Fallback to yfinance for missing symbols ---
-        missing_syms = [s for s in symbols_to_scan if s.replace(".NS", "") not in bulk_cached]
-        if missing_syms:
-            mm_status.text(f"Step 1.5/3 — Fetching {len(missing_syms)} missing stocks from yfinance...")
-            import yfinance as yf
-            import pandas as pd
-            chunk_size = 100
-            missing_chunks = [missing_syms[i:i+chunk_size] for i in range(0, len(missing_syms), chunk_size)]
-            for c_idx, chunk in enumerate(missing_chunks):
-                tkrs = [f"{s}.NS" if not s.endswith(".NS") else s for s in chunk]
-                try:
-                    df_yf = yf.download(tickers=tkrs, period="5y", interval="1d", progress=False, threads=False, timeout=15)
-                    if not df_yf.empty:
-                        for sym in chunk:
-                            try:
-                                if isinstance(df_yf.columns, pd.MultiIndex):
-                                    all_tkrs = df_yf.columns.get_level_values(1).unique().tolist()
-                                    matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
-                                    if not matched_t:
-                                        continue
-                                    t_df = df_yf.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                                else:
-                                    t_df = df_yf.dropna(subset=['Close'])
-                                    
-                                if not t_df.empty:
-                                    t_df = t_df.reset_index()
-                                    if 'Date' not in t_df.columns:
-                                        t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
-                                    t_df['Date'] = pd.to_datetime(t_df['Date'])
-                                    bulk_cached[sym.replace(".NS", "")] = t_df
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-        
-        mm_status.text(f"Step 2/3 — Resampling to Monthly & Scanning {len(bulk_cached)} stocks...")
-        mm_total = len(bulk_cached)
-        
-        for idx, (sym, d_df) in enumerate(bulk_cached.items()):
-            if idx % 50 == 0:
-                mm_status.text(f"Step 3/3 — Scanning: {idx+1}/{mm_total} ({len(mm_results)} matches so far)...")
-                mm_prog.progress((idx + 1) / max(mm_total, 1))
-                
-            if d_df is None or d_df.empty:
-                continue
-                
-            cmp = d_df['Close'].iloc[-1]
-            if cmp < 100:
-                continue
-                
-            m_df = resample_ohlcv(d_df, 'ME')  # 'ME' is month-end frequency
-            if len(m_df) < 22:
-                continue
-                
-            res_m = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
-            if res_m:
-                mm_results.append(res_m)
+            # ---- Fetch all from Master Cache & Resample ----
+            mm_status.text("Step 1/3 — Fetching data from Master Cache...")
+            from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
+            
+            symbols_to_scan = [s.strip().upper() for s in mm_universe]
+            bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
+            
+            # --- Fallback to yfinance for missing symbols ---
+            missing_syms = [s for s in symbols_to_scan if s.replace(".NS", "") not in bulk_cached]
+            if missing_syms:
+                mm_status.text(f"Step 1.5/3 — Fetching {len(missing_syms)} missing stocks from yfinance...")
+                import yfinance as yf
+                import pandas as pd
+                chunk_size = 100
+                missing_chunks = [missing_syms[i:i+chunk_size] for i in range(0, len(missing_syms), chunk_size)]
+                for c_idx, chunk in enumerate(missing_chunks):
+                    tkrs = [f"{s}.NS" if not s.endswith(".NS") else s for s in chunk]
+                    try:
+                        df_yf = yf.download(tickers=tkrs, period="5y", interval="1d", progress=False, threads=False, timeout=15)
+                        if not df_yf.empty:
+                            for sym in chunk:
+                                try:
+                                    if isinstance(df_yf.columns, pd.MultiIndex):
+                                        all_tkrs = df_yf.columns.get_level_values(1).unique().tolist()
+                                        matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
+                                        if not matched_t:
+                                            continue
+                                        t_df = df_yf.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                    else:
+                                        t_df = df_yf.dropna(subset=['Close'])
+                                        
+                                    if not t_df.empty:
+                                        t_df = t_df.reset_index()
+                                        if 'Date' not in t_df.columns:
+                                            t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                        t_df['Date'] = pd.to_datetime(t_df['Date'])
+                                        bulk_cached[sym.replace(".NS", "")] = t_df
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            
+            mm_status.text(f"Step 2/3 — Resampling to Monthly & Scanning {len(bulk_cached)} stocks...")
+            mm_total = len(bulk_cached)
+            
+            for idx, (sym, d_df) in enumerate(bulk_cached.items()):
+                if idx % 50 == 0:
+                    mm_status.text(f"Step 3/3 — Scanning: {idx+1}/{mm_total} ({len(mm_results)} matches so far)...")
+                    mm_prog.progress((idx + 1) / max(mm_total, 1))
+                    
+                if d_df is None or d_df.empty:
+                    continue
+                    
+                cmp = d_df['Close'].iloc[-1]
+                if cmp < 100:
+                    continue
+                    
+                m_df = resample_ohlcv(d_df, 'ME')  # 'ME' is month-end frequency
+                if len(m_df) < 22:
+                    continue
+                    
+                res_m = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
+                if res_m:
+                    mm_results.append(res_m)
 
-        mm_prog.progress(1.0)
-        st.session_state.monthly_momentum_results = mm_results
-        mm_data = mm_results
-        mm_status.text(f"✅ Monthly Momentum scan complete! Found {len(mm_results)} qualifying stocks.")
-        st.toast(f"📅 Monthly Momentum scan done — {len(mm_results)} stocks matched!", icon="✅")
+            mm_prog.progress(1.0)
+            st.session_state.monthly_momentum_results = mm_results
+            st.session_state.monthly_momentum_date = today_str_check
+            MOMENTUM_SCAN_STATUS["monthly_results"] = mm_results
+            try:
+                database.save_monthly_momentum_results(today_str_check, mm_results)
+                print(f"Saved {len(mm_results)} Monthly Momentum results to database for {today_str_check}.")
+            except Exception as db_save_err:
+                print(f"Error saving Monthly Momentum to database: {db_save_err}")
+                
+            try:
+                import json
+                monthly_payload = {"date": today_str_check, "results": mm_results}
+                with open("monthly_momentum_cache.json", "w") as f:
+                    json.dump(monthly_payload, f, indent=2)
+            except Exception as json_err:
+                print(f"Error saving monthly cache JSON: {json_err}")
+
+            mm_data = mm_results
+            mm_status.text(f"✅ Monthly Momentum scan complete! Found {len(mm_results)} qualifying stocks.")
+            st.toast(f"📅 Monthly Momentum scan done — {len(mm_results)} stocks matched!", icon="✅")
 
     # ---- Display Results ----
     if mm_data is None:
@@ -2602,6 +2649,8 @@ with tab_monthly:
     elif len(mm_data) == 0:
         st.warning("⚠️ No stocks matched all Monthly Momentum conditions in the selected universe. Try using a larger universe (All NSE).")
     else:
+        mm_date_disp = st.session_state.get('monthly_momentum_date') or today_str_check
+        st.caption(f"📅 Strategy Data as of: **{mm_date_disp}** | Found **{len(mm_data)}** qualifying momentum setups")
         sorted_mm = sorted(mm_data, key=lambda x: x.get('momentum_score', 0.0), reverse=True)
 
         # Metrics row
@@ -2802,6 +2851,7 @@ with tab_weekly:
                     json.dump(weekly_payload, f, indent=2)
                     
                 st.session_state.weekly_momentum_results = wm_results
+                st.session_state.weekly_momentum_date = today_str_check
                 wm_status.text(f"✅ Weekly Momentum price update complete for {len(wm_results)} stocks!")
                 st.toast(f"📈 Weekly update done — {len(wm_results)} stocks updated!", icon="✅")
                 st.rerun()
@@ -2809,49 +2859,100 @@ with tab_weekly:
             import concurrent.futures as _cf_wm
             import time as _time_wm
 
-        # Resolve universe
-        from data_fetcher import get_top1000_nse_symbols
-        wm_universe = get_top1000_nse_symbols()
+            # Resolve universe
+            from data_fetcher import get_top1000_nse_symbols
+            wm_universe = get_top1000_nse_symbols()
 
-        wm_results = []
-        wm_prog    = st.progress(0)
-        wm_status  = st.empty()
+            wm_results = []
+            wm_prog    = st.progress(0)
+            wm_status  = st.empty()
 
-        # ---- Fetch all from Master Cache & Resample ----
-        wm_status.text("Step 1/3 — Fetching data from Master Cache...")
-        from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
-        
-        symbols_to_scan = [s.strip().upper() for s in wm_universe]
-        bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
-        
-        wm_status.text(f"Step 2/3 — Resampling to Weekly & Scanning {len(bulk_cached)} stocks...")
-        wm_total = len(bulk_cached)
-        
-        for idx, (sym, d_df) in enumerate(bulk_cached.items()):
-            if idx % 50 == 0:
-                wm_status.text(f"Step 3/3 — Scanning: {idx+1}/{wm_total} ({len(wm_results)} matches so far)...")
-                wm_prog.progress((idx + 1) / max(wm_total, 1))
-                
-            if d_df is None or d_df.empty:
-                continue
-                
-            cmp = d_df['Close'].iloc[-1]
-            if cmp < 200:
-                continue
-                
-            w_df = resample_ohlcv(d_df, 'W')
-            if len(w_df) < 22:
-                continue
-                
-            res_w = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
-            if res_w:
-                wm_results.append(res_w)
+            # ---- Fetch all from Master Cache & Resample ----
+            wm_status.text("Step 1/3 — Fetching data from Master Cache...")
+            from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
+            
+            symbols_to_scan = [s.strip().upper() for s in wm_universe]
+            bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
 
-        wm_prog.progress(1.0)
-        st.session_state.weekly_momentum_results = wm_results
-        wm_data = wm_results
-        wm_status.text(f"✅ Weekly Momentum scan complete! Found {len(wm_results)} qualifying stocks.")
-        st.toast(f"📈 Weekly scan done — {len(wm_results)} stocks matched all 8 conditions!", icon="✅")
+            # --- Fallback to yfinance for missing symbols ---
+            missing_syms = [s for s in symbols_to_scan if s.replace(".NS", "") not in bulk_cached]
+            if missing_syms:
+                wm_status.text(f"Step 1.5/3 — Fetching {len(missing_syms)} missing stocks from yfinance...")
+                import yfinance as yf
+                import pandas as pd
+                chunk_size = 100
+                missing_chunks = [missing_syms[i:i+chunk_size] for i in range(0, len(missing_syms), chunk_size)]
+                for c_idx, chunk in enumerate(missing_chunks):
+                    tkrs = [f"{s}.NS" if not s.endswith(".NS") else s for s in chunk]
+                    try:
+                        df_yf = yf.download(tickers=tkrs, period="5y", interval="1d", progress=False, threads=False, timeout=15)
+                        if not df_yf.empty:
+                            for sym in chunk:
+                                try:
+                                    if isinstance(df_yf.columns, pd.MultiIndex):
+                                        all_tkrs = df_yf.columns.get_level_values(1).unique().tolist()
+                                        matched_t = next((t for t in all_tkrs if t.upper() == f"{sym}.NS".upper()), None)
+                                        if not matched_t:
+                                            continue
+                                        t_df = df_yf.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
+                                    else:
+                                        t_df = df_yf.dropna(subset=['Close'])
+                                        
+                                    if not t_df.empty:
+                                        t_df = t_df.reset_index()
+                                        if 'Date' not in t_df.columns:
+                                            t_df.rename(columns={t_df.columns[0]: 'Date'}, inplace=True)
+                                        t_df['Date'] = pd.to_datetime(t_df['Date'])
+                                        bulk_cached[sym.replace(".NS", "")] = t_df
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            
+            wm_status.text(f"Step 2/3 — Resampling to Weekly & Scanning {len(bulk_cached)} stocks...")
+            wm_total = len(bulk_cached)
+            
+            for idx, (sym, d_df) in enumerate(bulk_cached.items()):
+                if idx % 50 == 0:
+                    wm_status.text(f"Step 3/3 — Scanning: {idx+1}/{wm_total} ({len(wm_results)} matches so far)...")
+                    wm_prog.progress((idx + 1) / max(wm_total, 1))
+                    
+                if d_df is None or d_df.empty:
+                    continue
+                    
+                cmp = d_df['Close'].iloc[-1]
+                if cmp < 200:
+                    continue
+                    
+                w_df = resample_ohlcv(d_df, 'W')
+                if len(w_df) < 22:
+                    continue
+                    
+                res_w = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
+                if res_w:
+                    wm_results.append(res_w)
+
+            wm_prog.progress(1.0)
+            st.session_state.weekly_momentum_results = wm_results
+            st.session_state.weekly_momentum_date = today_str_check
+            MOMENTUM_SCAN_STATUS["weekly_results"] = wm_results
+            try:
+                database.save_weekly_momentum_results(today_str_check, wm_results)
+                print(f"Saved {len(wm_results)} Weekly Momentum results to database for {today_str_check}.")
+            except Exception as db_save_err:
+                print(f"Error saving Weekly Momentum to database: {db_save_err}")
+                
+            try:
+                import json
+                weekly_payload = {"date": today_str_check, "results": wm_results}
+                with open("weekly_momentum_cache.json", "w") as f:
+                    json.dump(weekly_payload, f, indent=2)
+            except Exception as json_err:
+                print(f"Error saving weekly cache JSON: {json_err}")
+
+            wm_data = wm_results
+            wm_status.text(f"✅ Weekly Momentum scan complete! Found {len(wm_results)} qualifying stocks.")
+            st.toast(f"📈 Weekly scan done — {len(wm_results)} stocks matched all 8 conditions!", icon="✅")
 
     # ---- Display Results ----
     if wm_data is None:
@@ -2859,6 +2960,8 @@ with tab_weekly:
     elif len(wm_data) == 0:
         st.warning("⚠️ No stocks matched all 8 Weekly Momentum conditions. Try a broader universe.")
     else:
+        wm_date_disp = st.session_state.get('weekly_momentum_date') or today_str_check
+        st.caption(f"📈 Strategy Data as of: **{wm_date_disp}** | Found **{len(wm_data)}** qualifying momentum setups")
         sorted_wm = sorted(wm_data, key=lambda x: x.get('weekly_score', 0.0), reverse=True)
 
         # Metrics row

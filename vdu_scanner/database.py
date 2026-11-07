@@ -3,12 +3,35 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 
-# Resolve and load environment variables from the parent directory's .env file
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-env_path = os.path.join(parent_dir, ".env")
-load_dotenv(dotenv_path=env_path)
+# Resolve and load environment variables from current, parent, and grandparent directories
+curr_dir = os.path.dirname(os.path.abspath(__file__))
+for p in [curr_dir, os.path.dirname(curr_dir), os.path.dirname(os.path.dirname(curr_dir))]:
+    env_candidate = os.path.join(p, ".env")
+    if os.path.exists(env_candidate):
+        load_dotenv(dotenv_path=env_candidate)
 
-DATABASE_URL = os.getenv("DATA_URL") or os.getenv("Database_URL") or os.getenv("Database_Url")
+def get_database_url():
+    url = (
+        os.getenv("Database_URL")
+        or os.getenv("DATABASE_URL")
+        or os.getenv("DATA_URL")
+        or os.getenv("Database_Url")
+    )
+    if not url:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                url = (
+                    st.secrets.get("Database_URL")
+                    or st.secrets.get("DATABASE_URL")
+                    or st.secrets.get("DATA_URL")
+                    or st.secrets.get("Database_Url")
+                )
+        except Exception:
+            pass
+    return url
+
+DATABASE_URL = get_database_url()
 
 import sqlite3
 import json
@@ -33,6 +56,86 @@ def safe_date_str(val):
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner_data.db")
 _conn = None
 _conn_lock = threading.Lock()
+
+_pg_pool = None
+_pg_pool_lock = threading.Lock()
+
+class PostgresCursorWrapper:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+    def execute(self, query, params=None):
+        pg_query = query.replace('?', '%s')
+        if params is not None:
+            return self._cur.execute(pg_query, params)
+        return self._cur.execute(pg_query)
+
+    def executemany(self, query, params_list):
+        pg_query = query.replace('?', '%s')
+        return self._cur.executemany(pg_query, params_list)
+
+    def executescript(self, script):
+        return self._cur.execute(script)
+
+class PostgresConnectionWrapper:
+    def __init__(self, conn, pool=None):
+        self._conn = conn
+        self._pool = pool
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def cursor(self, *args, **kwargs):
+        return PostgresCursorWrapper(self._conn.cursor(*args, **kwargs))
+
+    def commit(self):
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
+
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        if self._pool and self._conn:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                pass
+            self._conn = None
+        elif self._conn:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+def get_postgres_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        with _pg_pool_lock:
+            if _pg_pool is None:
+                db_url = get_database_url()
+                if not db_url:
+                    return None
+                from psycopg2.pool import ThreadedConnectionPool
+                from psycopg2.extras import DictCursor
+                clean_url = db_url.replace("&channel_binding=require", "").replace("channel_binding=require&", "")
+                _pg_pool = ThreadedConnectionPool(1, 10, clean_url, cursor_factory=DictCursor)
+    return _pg_pool
 
 class PooledConnection:
     def __init__(self, conn):
@@ -60,7 +163,22 @@ class PooledConnection:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+def is_postgres_active() -> bool:
+    db_url = get_database_url()
+    return bool(db_url and (db_url.startswith("postgresql://") or db_url.startswith("postgres://")))
+
 def get_connection():
+    db_url = get_database_url()
+    if db_url and (db_url.startswith("postgresql://") or db_url.startswith("postgres://")):
+        try:
+            pool = get_postgres_pool()
+            if pool:
+                conn = pool.getconn()
+                conn.autocommit = True
+                return PostgresConnectionWrapper(conn, pool)
+        except Exception as e:
+            print(f"PostgreSQL connection error: {e}. Falling back to SQLite.")
+
     global _conn
     if _conn is None:
         with _conn_lock:
@@ -772,18 +890,28 @@ def init_db() -> bool:
     try:
         conn = get_connection()
         cur = conn.cursor()
+        is_pg = is_postgres_active()
         for q in queries:
-            cur.executescript(q)
+            if is_pg:
+                pg_q = q.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY").replace("PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+                try:
+                    cur.executescript(pg_q)
+                except Exception as _e:
+                    pass
+            else:
+                cur.executescript(q)
             
         conn.commit() # Save tables before attempting migrations
             
-        # SQLite does NOT support "ALTER TABLE ... ADD COLUMN IF NOT EXISTS"
-        # Use a helper that checks PRAGMA table_info first.
+        # Column migration helper
         def add_col(table, col, col_type):
             try:
-                existing = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
-                if col not in existing:
-                    cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                if is_pg:
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type};")
+                else:
+                    existing = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+                    if col not in existing:
+                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
             except Exception as mig_ex:
                 pass  # column already exists or table doesn't exist yet – safe to ignore
 
@@ -1191,7 +1319,7 @@ def get_available_scan_dates() -> list[str]:
 def cleanup_old_data(days: int = 30):
     """
     Deletes scan records older than `days` to prevent the database from growing too large.
-    Commits deletions to the SQLite database.
+    Commits deletions to the database.
     """
     tables = [
         "scanned_breakouts",
@@ -1222,16 +1350,14 @@ def cleanup_old_data(days: int = 30):
     
     conn = None
     try:
+        from datetime import datetime, timedelta
+        cutoff_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
         conn = get_connection()
         cur = conn.cursor()
         
         for table in tables:
             try:
-                # SQLite syntax for date comparison
-                cur.execute(f"""
-                DELETE FROM {table} 
-                WHERE date(scan_date) < date('now', '-{days} days')
-                """)
+                cur.execute(f"DELETE FROM {table} WHERE scan_date < ?", (cutoff_date,))
             except Exception as e:
                 print(f"Failed to cleanup table {table}: {e}")
                 
@@ -1278,7 +1404,8 @@ def get_all_latest_scan_dates() -> dict[str, str]:
         "scanned_vpa_squeeze_monthly", "scanned_stage2",
         "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
         "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini",
-        "scanned_near_30sma", "scanned_near_30sma_weekly", "scanned_near_30sma_monthly"
+        "scanned_near_30sma", "scanned_near_30sma_weekly", "scanned_near_30sma_monthly",
+        "scanned_flat_base"
     ]
     latest_dates = {}
     conn = None
@@ -2569,17 +2696,20 @@ def get_monthly_base_date(year: int, month: int) -> str | None:
     """
     Returns the earliest scan_date in the specified month and year that has cached monthly momentum results.
     """
-    # Use SQLite-compatible strftime (EXTRACT is PostgreSQL syntax only)
+    import calendar
+    start_date = f"{year}-{month:02d}-01"
+    _, last_day = calendar.monthrange(year, month)
+    end_date = f"{year}-{month:02d}-{last_day:02d}"
     query = """
     SELECT MIN(scan_date) 
     FROM scanned_monthly_momentum 
-    WHERE strftime('%Y', scan_date) = ? AND strftime('%m', scan_date) = ?;
+    WHERE scan_date >= ? AND scan_date <= ?;
     """
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query, (str(year), f"{month:02d}"))
+        cur.execute(query, (start_date, end_date))
         row = cur.fetchone()
         cur.close()
         if row and row[0]:

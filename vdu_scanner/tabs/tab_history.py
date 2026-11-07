@@ -118,7 +118,7 @@ def render():
         st.markdown("<br>", unsafe_allow_html=True)
         
         # Nested sub-tabs inside History tab
-        sub_vcp_minervini, sub_breakout, sub_gapup, sub_above_ma, sub_support_ma, sub_crossover_ma, sub_wt, sub_vp = st.tabs([
+        sub_vcp_minervini, sub_breakout, sub_gapup, sub_above_ma, sub_support_ma, sub_crossover_ma, sub_wt, sub_vp, sub_wm, sub_mm = st.tabs([
             "🏆 VCP+Minervini",
             "📊 VDU Breakouts",
             "🚀 Gap-Ups",
@@ -126,7 +126,9 @@ def render():
             "🛡️ 65 SMA Support",
             "🔄 MA Crossovers",
             "🌊 Wave Trend",
-            "📊 Volume Profile"
+            "📊 Volume Profile",
+            "📈 Weekly Momentum",
+            "📅 Monthly Momentum"
         ])
         
         with sub_vcp_minervini:
@@ -224,4 +226,53 @@ def render():
                         "Monthly POC": round(float(r.get('monthly_poc') or 0.0), 2) if r.get('monthly_poc') is not None else "-"
                     })
                 st.dataframe(pd.DataFrame(vp_rows), use_container_width=True, hide_index=True)
+
+        # 9. Historical Weekly Momentum
+        with sub_wm:
+            h_wm = database.get_cached_weekly_momentum(selected_date_str)
+            if not h_wm:
+                st.info(f"ℹ️ No Weekly Momentum setups were recorded on {selected_date_str}.")
+            else:
+                sorted_wm = sorted(h_wm, key=lambda x: float(x.get('weekly_score') or 0.0), reverse=True)
+                st.markdown(f"**📈 Weekly Momentum on {selected_date_str} ({len(sorted_wm)})**")
+                wm_export = [{
+                    "Symbol": r.get('symbol', ''),
+                    "Company": r.get('company_name', ''),
+                    "CMP (₹)": round(float(r.get('cmp') or 0.0), 2),
+                    "MCap (Cr)": round(float(r.get('market_cap_cr') or 0.0), 1),
+                    "Weekly Chg (%)": round(float(r.get('weekly_chg_pct') or 0.0), 2),
+                    "Weekly Score": round(float(r.get('weekly_score') or 0.0), 1),
+                    "RSI (14W)": round(float(r.get('rsi_weekly') or 0.0), 1) if r.get('rsi_weekly') is not None else "-",
+                    "CCI (20W)": round(float(r.get('cci_weekly') or 0.0), 1) if r.get('cci_weekly') is not None else "-",
+                    "Vol Ratio": round(float(r.get('vol_ratio') or 0.0), 2) if r.get('vol_ratio') is not None else "-",
+                    "SMA20": round(float(r.get('close_sma20') or 0.0), 2) if r.get('close_sma20') is not None else "-",
+                    "Confidence": r.get('confidence', 'Medium'),
+                    "Actionable Guidance": extract_clean_recommendation(r.get('recommendation') or '')
+                } for r in sorted_wm]
+                st.dataframe(pd.DataFrame(wm_export), use_container_width=True, hide_index=True)
+
+        # 10. Historical Monthly Momentum
+        with sub_mm:
+            h_mm = database.get_cached_monthly_momentum(selected_date_str)
+            if not h_mm:
+                st.info(f"ℹ️ No Monthly Momentum setups were recorded on {selected_date_str}.")
+            else:
+                sorted_mm = sorted(h_mm, key=lambda x: float(x.get('momentum_score') or 0.0), reverse=True)
+                st.markdown(f"**📅 Monthly Momentum on {selected_date_str} ({len(sorted_mm)})**")
+                mm_export = [{
+                    "Symbol": r.get('symbol', ''),
+                    "Company": r.get('company_name', ''),
+                    "CMP (₹)": round(float(r.get('cmp') or 0.0), 2),
+                    "MCap (Cr)": round(float(r.get('market_cap_cr') or 0.0), 1),
+                    "1M Return (%)": round(float(r.get('return_1m') or r.get('day_change_pct') or 0.0), 2),
+                    "Score": round(float(r.get('momentum_score') or 0.0), 1),
+                    "EMA8": round(float(r.get('ema8') or 0.0), 2) if r.get('ema8') is not None else "-",
+                    "EMA12": round(float(r.get('ema12') or 0.0), 2) if r.get('ema12') is not None else "-",
+                    "EMA20": round(float(r.get('ema20') or 0.0), 2) if r.get('ema20') is not None else "-",
+                    "ROC 6M (%)": round(float(r.get('roc6') or 0.0), 2) if r.get('roc6') is not None else "-",
+                    "Monthly RSI": round(float(r.get('rsi_monthly') or 0.0), 1) if r.get('rsi_monthly') is not None else "-",
+                    "Confidence": r.get('confidence', 'Medium'),
+                    "Actionable Guidance": extract_clean_recommendation(r.get('recommendation') or '')
+                } for r in sorted_mm]
+                st.dataframe(pd.DataFrame(mm_export), use_container_width=True, hide_index=True)
 
