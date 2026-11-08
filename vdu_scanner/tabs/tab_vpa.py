@@ -428,6 +428,34 @@ def render():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
+        ctrl_b1, ctrl_b2 = st.columns([4, 6])
+        with ctrl_b1:
+            blast_tf = st.selectbox(
+                "📅 View Trend Timeframe (Minor / Mid / Major):",
+                ["Daily", "Weekly", "Monthly", "All Timeframes (D/W/M)"],
+                index=0,  # Default to Daily!
+                key="blast_tf_selector",
+                help="Select timeframe to view Minor, Mid, and Major VPA trends. Defaults to Daily."
+            )
+
+        # Configure 3 trend columns based on selected timeframe
+        if blast_tf == "Daily":
+            th_minor = "Minor (Daily)"
+            th_mid = "Mid (Daily)"
+            th_major = "Major (Daily)"
+        elif blast_tf == "Weekly":
+            th_minor = "Minor (Weekly)"
+            th_mid = "Mid (Weekly)"
+            th_major = "Major (Weekly)"
+        elif blast_tf == "Monthly":
+            th_minor = "Minor (Monthly)"
+            th_mid = "Mid (Monthly)"
+            th_major = "Major (Monthly)"
+        else:
+            th_minor = "Minor (D/W/M)"
+            th_mid = "Mid (D/W/M)"
+            th_major = "Major (D/W/M)"
+
         blast_rows = []
         for i, r in enumerate(blast_stocks[:50], 1):
             d = r['daily']
@@ -440,6 +468,23 @@ def render():
             reasons_html = "<br>".join(r.get('blast_reasons', [])[:4])
             vol_ratio = r.get('vol_ratio_5d', 1.0)
 
+            if blast_tf == "Daily":
+                cell_minor = trend_badge(d.get('minor', 0))
+                cell_mid = trend_badge(d.get('mid', 0))
+                cell_major = trend_badge(d.get('major', 0))
+            elif blast_tf == "Weekly":
+                cell_minor = trend_badge(w.get('minor', 0))
+                cell_mid = trend_badge(w.get('mid', 0))
+                cell_major = trend_badge(w.get('major', 0))
+            elif blast_tf == "Monthly":
+                cell_minor = trend_badge(m.get('minor', 0))
+                cell_mid = trend_badge(m.get('mid', 0))
+                cell_major = trend_badge(m.get('major', 0))
+            else:
+                cell_minor = f"{trend_badge(d.get('minor', 0))} / {trend_badge(w.get('minor', 0))} / {trend_badge(m.get('minor', 0))}"
+                cell_mid = f"{trend_badge(d.get('mid', 0))} / {trend_badge(w.get('mid', 0))} / {trend_badge(m.get('mid', 0))}"
+                cell_major = f"{trend_badge(d.get('major', 0))} / {trend_badge(w.get('major', 0))} / {trend_badge(m.get('major', 0))}"
+
             blast_rows.append(f"""<tr style="border-bottom:1px solid rgba(255,255,255,0.05); background:{'rgba(255,68,68,0.04)' if r.get('blast_score',0)>=75 else 'transparent'};">
 <td style="padding:10px 8px; font-weight:bold; color:#94a3b8;">#{i}</td>
 <td style="padding:10px 8px;"><a href="{tv_link}" target="_blank" style="color:#00e5ff; font-weight:bold; text-decoration:none;">{sym}</a></td>
@@ -447,8 +492,9 @@ def render():
 <td style="padding:10px 8px;">{get_day_change_badge_html(r['day_change_pct'])}</td>
 <td style="padding:10px 8px; font-weight:bold; font-size:1.1rem; color:{tier_color};">{r.get('blast_score',0)}</td>
 <td style="padding:10px 8px; color:{tier_color}; font-weight:bold;">{tier}</td>
-<td style="padding:10px 8px;">{trend_badge(d['major'])} / {trend_badge(w['major'])} / {trend_badge(m['major'])}</td>
-<td style="padding:10px 8px;">{trend_badge(d['mid'])} / {trend_badge(w['mid'])} / {trend_badge(m['mid'])}</td>
+<td style="padding:10px 8px; text-align:center;">{cell_minor}</td>
+<td style="padding:10px 8px; text-align:center;">{cell_mid}</td>
+<td style="padding:10px 8px; text-align:center;">{cell_major}</td>
 <td style="padding:10px 8px; color:{'#00e676' if vol_ratio>=1.5 else '#fbbf24' if vol_ratio>=1.0 else '#ef4444'};">{vol_ratio:.1f}x</td>
 <td style="padding:10px 8px; font-size:0.78rem; color:#94a3b8; max-width:240px;">{reasons_html}</td>
 </tr>""")
@@ -463,8 +509,9 @@ def render():
 <th style="padding:10px 8px; color:#ff4444;">Chg%</th>
 <th style="padding:10px 8px; color:#ff4444;">Blast Score</th>
 <th style="padding:10px 8px; color:#ff4444;">Tier</th>
-<th style="padding:10px 8px; color:#ff4444;">Major (D/W/M)</th>
-<th style="padding:10px 8px; color:#ff4444;">Mid (D/W/M)</th>
+<th style="padding:10px 8px; color:#ff4444; text-align:center;">{th_minor}</th>
+<th style="padding:10px 8px; color:#ff4444; text-align:center;">{th_mid}</th>
+<th style="padding:10px 8px; color:#ff4444; text-align:center;">{th_major}</th>
 <th style="padding:10px 8px; color:#ff4444;">Vol Ratio</th>
 <th style="padding:10px 8px; color:#ff4444;">Why It May Blast</th>
 </tr>
@@ -486,9 +533,9 @@ def render():
                 'Change %': round(r['day_change_pct'], 2),
                 'Blast Score': r.get('blast_score', 0),
                 'Tier': r.get('blast_tier', ''),
-                'D Major': r['daily']['major'], 'D Mid': r['daily']['mid'], 'D Minor': r['daily']['minor'],
-                'W Major': r['weekly']['major'], 'W Mid': r['weekly']['mid'], 'W Minor': r['weekly']['minor'],
-                'M Major': r['monthly']['major'], 'M Mid': r['monthly']['mid'],
+                'D Minor': d.get('minor', 0), 'D Mid': d.get('mid', 0), 'D Major': d.get('major', 0),
+                'W Minor': w.get('minor', 0), 'W Mid': w.get('mid', 0), 'W Major': w.get('major', 0),
+                'M Minor': m.get('minor', 0), 'M Mid': m.get('mid', 0), 'M Major': m.get('major', 0),
                 'D RSI': r['daily'].get('rsi', 0), 'W RSI': r['weekly'].get('rsi', 0),
                 'Vol Ratio 5d': r.get('vol_ratio_5d', 1.0),
                 'Near Breakout': r.get('near_breakout', False),

@@ -117,6 +117,12 @@ def generate_pva_excel_bytes(vpa_data: list[dict], scan_date: str = None) -> byt
             r.get('vol_rising')
         )
         sym = str(r.get('symbol', '')).strip().upper().replace('.NS', '')
+        d = r.get('daily', {})
+        w = r.get('weekly', {})
+        m = r.get('monthly', {})
+        def _trend_str(val):
+            return "Up" if val == 1 else ("Down" if val == -1 else "Neutral")
+
         rows.append({
             'Symbol': sym,
             'Company Name': r.get('company_name', ''),
@@ -127,6 +133,15 @@ def generate_pva_excel_bytes(vpa_data: list[dict], scan_date: str = None) -> byt
             'Price Movement': pva['price_movement'],
             'Signal': pva['signal'],
             'Automatic Interpretation': pva['interpretation'],
+            'Daily Minor': _trend_str(d.get('minor', 0)),
+            'Daily Mid': _trend_str(d.get('mid', 0)),
+            'Daily Major': _trend_str(d.get('major', 0)),
+            'Weekly Minor': _trend_str(w.get('minor', 0)),
+            'Weekly Mid': _trend_str(w.get('mid', 0)),
+            'Weekly Major': _trend_str(w.get('major', 0)),
+            'Monthly Minor': _trend_str(m.get('minor', 0)),
+            'Monthly Mid': _trend_str(m.get('mid', 0)),
+            'Monthly Major': _trend_str(m.get('major', 0)),
             'Blast Score': int(r.get('blast_score', 0)),
             'Blast Tier': r.get('blast_tier', ''),
             'VPA Score': int(r.get('score', 0)),
@@ -309,3 +324,4 @@ if __name__ == "__main__":
     with open(out_file, "wb") as f:
         f.write(excel_bytes)
     print(f"Generated {out_file} ({len(excel_bytes)} bytes) successfully!")
+
