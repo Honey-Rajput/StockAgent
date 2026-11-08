@@ -189,9 +189,21 @@ def render():
         unsafe_allow_html=True
     )
     
-    # Pick up background scan results if available
-    if not st.session_state.get('vpa_results') and st.session_state.ALL_TAB_SCAN_STATUS["vpa_results"] is not None:
-        st.session_state.vpa_results = st.session_state.ALL_TAB_SCAN_STATUS["vpa_results"]
+    # Pick up background scan results or hydrate from DB cache
+    if not st.session_state.get('vpa_results'):
+        if st.session_state.ALL_TAB_SCAN_STATUS.get("vpa_results"):
+            st.session_state.vpa_results = st.session_state.ALL_TAB_SCAN_STATUS["vpa_results"]
+        else:
+            try:
+                all_latest = database.get_all_latest_scan_dates()
+                vpa_date = all_latest.get('scanned_vpa')
+                if vpa_date:
+                    cached_vpa = database.get_cached_vpa(vpa_date)
+                    if cached_vpa:
+                        st.session_state.vpa_results = cached_vpa
+                        st.session_state['vpa_results_date'] = vpa_date
+            except Exception as _e:
+                print(f"Error hydrating VPA from cache: {_e}")
 
     col1, col2 = st.columns([3, 7])
     with col1:
@@ -313,11 +325,24 @@ def render():
             <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
             """, unsafe_allow_html=True)
             st.progress(_bg_progress)
-            if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vpa_status_btn"):
-                st.rerun()
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vpa_status_btn"):
+                    st.rerun()
+            with col_b2:
+                if st.button("🛑 Cancel Background Scan", key="cancel_bg_vpa_status_btn"):
+                    st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = False
+                    st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Cancelled by user"
+                    st.rerun()
                 
-        st.info("No VPA data available. Click 'Run Advanced VPA Scan' to process.")
+        st.info("No VPA data available in database. Click 'Run Advanced VPA Scan' to process.")
         return
+
+    # Non-blocking notification if background scan is currently updating data
+    if st.session_state.ALL_TAB_SCAN_STATUS.get("is_running", False):
+        _bg_status = st.session_state.ALL_TAB_SCAN_STATUS.get("status_text", "")
+        vpa_date_display = st.session_state.get('vpa_results_date', 'previous scan')
+        st.info(f"🔄 Background All-Tab Scan is active ({_bg_status}). Showing cached VPA data from **{vpa_date_display}**. New results will appear automatically once scan completes.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # DATA ENRICHMENT — compute blast scores if missing (loaded from DB cache)

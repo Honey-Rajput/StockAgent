@@ -27,10 +27,10 @@ from vcp_minervini import MinerviniVCPAnalyzer, VCPConfig
 from zanger_scanner import scan_zanger, ZangerConfig
 from local_cache_manager import resample_ohlcv
 
-def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map, high_price_map, low_price_map, volume_map,
-                          min_dry, max_dry, min_vol_ratio, min_price_chg, min_dry_spikes,
-                          min_signal_str, above_50dma_only, above_200dma_only, vcp_max_tightness,
-                          sma20_lower_bound, sma20_upper_bound, sma50_lower_bound, sma50_upper_bound, sma20_min_volume, sma_timeframe, scan_mode="all"):
+def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close_price_map=None, high_price_map=None, low_price_map=None, volume_map=None,
+                          min_dry=None, max_dry=None, min_vol_ratio=None, min_price_chg=None, min_dry_spikes=None,
+                          min_signal_str=None, above_50dma_only=False, above_200dma_only=False, vcp_max_tightness=None,
+                          sma20_lower_bound=None, sma20_upper_bound=None, sma50_lower_bound=None, sma50_upper_bound=None, sma20_min_volume=None, sma_timeframe="Daily", scan_mode="all"):
     res = {
         "failed": False,
         "gapup": None,
@@ -99,6 +99,7 @@ def process_single_symbol(sym, df, benchmark_df, open_price_map, close_price_map
         
     today_close_val = df['Close'].iloc[-1]
     if today_close_val <= 200.0:
+        res["failed"] = True
         return res
         
     from data_fetcher import get_market_cap_cr

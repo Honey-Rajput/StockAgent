@@ -290,7 +290,7 @@ def _fetch_latest_non_empty(fetch_fn, fallback=None):
     scan session that actually contains records for this strategy.
     Prevents tabs from appearing blank when different scanners ran on different dates.
     """
-    if not is_startup or not latest_dates:
+    if not latest_dates:
         return fallback
     for _d in latest_dates:
         try:
@@ -1021,7 +1021,10 @@ def run_background_all_tab_scans():
             st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = False
             print(f"[BG All-Tab] Fatal error: {err}")
 
+    import threading
+    from streamlit.runtime.scriptrunner import add_script_run_ctx
     t = threading.Thread(target=thread_runner, name="Background_All_Tab_Scans", daemon=True)
+    add_script_run_ctx(t)
     t.start()
 
 
@@ -1140,23 +1143,6 @@ is_admin = st.session_state.get('authenticated', False)
 st.session_state['is_admin'] = is_admin
 # -----------------------------
 
-st.sidebar.markdown('### ⚡ Performance Settings')
-enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", value=True, help="Disable this on Streamlit Cloud to prevent UI freezing due to heavy thread execution.")
-
-# Automatically trigger scanning in background if results are missing for today
-if enable_background_scans:
-    # Trigger if results are None OR empty (empty = DB table had no data for today's date)
-    _mm_needs_run = not st.session_state.monthly_momentum_results and not MOMENTUM_SCAN_STATUS["is_running"]
-    _wm_needs_run = not st.session_state.weekly_momentum_results and not MOMENTUM_SCAN_STATUS["is_running"]
-    if _mm_needs_run or _wm_needs_run:
-        run_background_momentum_scans()
-    # Auto-trigger all remaining tab scans (WaveTrend, VCS, Stage-2, VPA, Volume Profile)
-    if not st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
-        run_background_all_tab_scans()
-    # Auto-trigger BB Squeeze
-    if not st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
-        run_background_ema_support_scan()
-
 # --- Automatic Daily Database Cache Loader ---
 # Runs ONCE per browser session (db_cache_checked stays False until first load).
 # Each scanner loads independently from its own DB table/date — NOT gated behind scan_logs.
@@ -1258,15 +1244,25 @@ if not st.session_state.get('db_cache_checked', False):
                 st.session_state.total_scanned = 0
                 st.session_state.failed_count = 0
                 st.session_state.last_scanned = "Never"
+    except Exception as e:
+        print(f"Error during auto database cache loading: {e}")
 
-        # NOTE: Auto background AI scan on boot is DISABLED.
-        # It was triggering Groq API calls for all 1000 stocks on every page refresh,
-        # burning through API quota and significantly slowing down the app.
-        # AI scans now only run from the AI Pattern tab (on demand).
+st.sidebar.markdown('### ⚡ Performance Settings')
+enable_background_scans = st.sidebar.checkbox("Enable Auto-Background Scans", value=True, help="Disable this on Streamlit Cloud to prevent UI freezing due to heavy thread execution.")
 
-
-    except Exception as cache_err:
-        print(f"Error loading daily database scan cache on boot: {cache_err}")
+# Automatically trigger scanning in background if results are missing for today
+if enable_background_scans:
+    # Trigger if results are None OR empty (empty = DB table had no data for today's date)
+    _mm_needs_run = not st.session_state.monthly_momentum_results and not MOMENTUM_SCAN_STATUS["is_running"]
+    _wm_needs_run = not st.session_state.weekly_momentum_results and not MOMENTUM_SCAN_STATUS["is_running"]
+    if _mm_needs_run or _wm_needs_run:
+        run_background_momentum_scans()
+    # Auto-trigger all remaining tab scans (WaveTrend, VCS, Stage-2, VPA, Volume Profile)
+    if not st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
+        run_background_all_tab_scans()
+    # Auto-trigger BB Squeeze
+    if not st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_running", False):
+        run_background_ema_support_scan()
 
 
 # --- HEADER SECTION ---

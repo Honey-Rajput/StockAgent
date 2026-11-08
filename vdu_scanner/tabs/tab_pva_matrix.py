@@ -36,14 +36,28 @@ def render():
     # Retrieve data from session state or database cache
     vpa_data = st.session_state.get('vpa_results')
     if not vpa_data:
-        dates = database.get_available_scan_dates()
-        if dates:
-            for d in dates:
-                cached = database.get_cached_vpa(d)
+        try:
+            all_latest = database.get_all_latest_scan_dates()
+            latest_vpa_d = all_latest.get('scanned_vpa')
+            if latest_vpa_d:
+                cached = database.get_cached_vpa(latest_vpa_d)
                 if cached:
                     vpa_data = cached
                     st.session_state.vpa_results = cached
-                    break
+                    st.session_state['vpa_results_date'] = latest_vpa_d
+        except Exception as _e:
+            print(f"Error hydrating PVA matrix from cache: {_e}")
+
+        if not vpa_data:
+            dates = database.get_available_scan_dates()
+            if dates:
+                for d in dates:
+                    cached = database.get_cached_vpa(d)
+                    if cached:
+                        vpa_data = cached
+                        st.session_state.vpa_results = cached
+                        st.session_state['vpa_results_date'] = d
+                        break
 
     if not vpa_data:
         st.info("ℹ️ No Price + Volume scan data available in session. Please run a scan from the VPA tab or load historical sessions from History.")
@@ -310,3 +324,4 @@ def render():
             mime="text/csv",
             help="Plain CSV compatible with Google Sheets import"
         )
+
