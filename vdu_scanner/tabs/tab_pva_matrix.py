@@ -281,7 +281,8 @@ def render():
                 data=excel_bytes,
                 file_name=f"price_volume_matrix_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Includes both the Price_Volume_Matrix sheet and the Market_Conditions_Legend sheet, ready for Google Sheets or Microsoft Excel."
+                help="Includes both the Price_Volume_Matrix sheet and the Market_Conditions_Legend sheet, ready for Google Sheets or Microsoft Excel.",
+                key="pva_matrix_export_excel_btn"
             )
         except Exception as e:
             st.error(f"Excel export error: {e}")
@@ -322,6 +323,7 @@ def render():
             data=pd.DataFrame(csv_rows).to_csv(index=False).encode('utf-8-sig'),
             file_name=f"price_volume_matrix_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv",
-            help="Plain CSV compatible with Google Sheets import"
+            help="Plain CSV compatible with Google Sheets import",
+            key="pva_matrix_export_csv_btn"
         )
 
