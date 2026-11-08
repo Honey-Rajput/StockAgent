@@ -60,7 +60,16 @@ def render():
                         break
 
     if not vpa_data:
-        st.info("ℹ️ No Price + Volume scan data available in session. Please run a scan from the VPA tab or load historical sessions from History.")
+        st.info("ℹ️ No Price + Volume scan data available in active session.")
+        if st.button("🔄 Load Latest Cached PVA / VPA Data", key="pva_manual_load_btn"):
+            all_latest = database.get_all_latest_scan_dates()
+            vpa_d = all_latest.get('scanned_vpa')
+            if vpa_d:
+                cached = database.get_cached_vpa(vpa_d)
+                if cached:
+                    st.session_state.vpa_results = cached
+                    st.session_state['vpa_results_date'] = vpa_d
+                    st.rerun()
         return
 
     # Data enrichment: ensure PVA classification and blast scores
