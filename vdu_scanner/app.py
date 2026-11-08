@@ -1162,15 +1162,29 @@ if not st.session_state.get('db_cache_checked', False):
             """Helper: find own latest date for a table, then load and set session state.
             Returns the date string the data was loaded from (or None)."""
             try:
-                # Prefer best_scan_date for breakouts to ensure we don't load a partial scan
-                d = best_scan_date if table == "scanned_breakouts" and best_scan_date else all_latest_dates.get(table)
+                # 1. First check the table's own MAX(scan_date) to ensure records exist
+                d = all_latest_dates.get(table)
+                data = getter_fn(d) if d else None
                 
-                if d:
-                    data = getter_fn(d)
+                # 2. If own table's date returned no data and it's breakouts, check best_scan_date
+                if not data and table == "scanned_breakouts" and best_scan_date and best_scan_date != d:
+                    data = getter_fn(best_scan_date)
                     if data:
-                        st.session_state[state_key] = post_fn(data) if post_fn else data
-                    else:
-                        st.session_state[state_key] = []
+                        d = best_scan_date
+
+                # 3. If still no data for breakouts, search available scan dates for any cached records
+                if not data and table == "scanned_breakouts":
+                    avail_dates = database.get_available_scan_dates()
+                    for fallback_d in avail_dates:
+                        if fallback_d not in (d, best_scan_date):
+                            fb_data = getter_fn(fallback_d)
+                            if fb_data:
+                                data = fb_data
+                                d = fallback_d
+                                break
+                
+                if data:
+                    st.session_state[state_key] = post_fn(data) if post_fn else data
                     return d  # Return the date loaded
                 else:
                     st.session_state[state_key] = []

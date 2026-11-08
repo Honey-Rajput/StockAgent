@@ -1223,9 +1223,15 @@ def has_scanned_today(date_str: str) -> dict | None:
 def get_best_scan_date() -> str:
     """
     Returns the scan_date of the run with the highest total_scanned.
-    Ties are broken by most recent scan_date.
+    Prioritizes dates with actual breakouts found, then falls back to any run.
     """
-    query = """
+    query_with_breakouts = """
+    SELECT scan_date FROM scan_logs
+    WHERE total_scanned > 0 AND breakouts_found > 0
+    ORDER BY scan_date DESC, total_scanned DESC
+    LIMIT 1;
+    """
+    query_fallback = """
     SELECT scan_date FROM scan_logs
     WHERE total_scanned > 0
     ORDER BY scan_date DESC, total_scanned DESC
@@ -1235,8 +1241,11 @@ def get_best_scan_date() -> str:
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(query)
+        cur.execute(query_with_breakouts)
         row = cur.fetchone()
+        if not (row and row[0]):
+            cur.execute(query_fallback)
+            row = cur.fetchone()
         if row and row[0]:
             return row[0].strftime("%Y-%m-%d") if hasattr(row[0], 'strftime') else str(row[0])
     except Exception:
