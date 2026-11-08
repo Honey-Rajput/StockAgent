@@ -1524,6 +1524,42 @@ def get_cached_vcs(date_str: str) -> list[dict]:
 
 def get_cached_vpa(date_str: str) -> list[dict]:
     results = _get_cached_scan('scanned_vpa', date_str)
+    if not results:
+        return []
+
+    # Batch query 20-day average volume for symbols to compute real volume ratios
+    symbols = list(set([r['symbol'] for r in results if r.get('symbol')]))
+    avg_vols = {}
+    if symbols:
+        conn = None
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            placeholders = ','.join(['?' for _ in symbols])
+            cur.execute(f"""
+                SELECT symbol, AVG(volume) as avg_vol_20 
+                FROM (
+                    SELECT symbol, volume, ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY date DESC) as rn
+                    FROM historical_ohlcv
+                    WHERE symbol IN ({placeholders})
+                ) t
+                WHERE rn <= 20
+                GROUP BY symbol
+            """, symbols)
+            for row in cur.fetchall():
+                try:
+                    s = row['symbol'] if hasattr(row, 'keys') and 'symbol' in row.keys() else row[0]
+                    v = row['avg_vol_20'] if hasattr(row, 'keys') and 'avg_vol_20' in row.keys() else row[1]
+                    avg_vols[str(s).upper()] = float(v or 0.0)
+                except Exception:
+                    pass
+            cur.close()
+        except Exception as e:
+            print(f"[get_cached_vpa] Could not query avg volume: {e}")
+        finally:
+            if conn:
+                conn.close()
+
     unflattened_results = []
     for r in results:
         r_copy = dict(r)
@@ -1536,6 +1572,17 @@ def get_cached_vpa(date_str: str) -> list[dict]:
             r_copy['confidence'] = "Medium"
         else:
             r_copy['confidence'] = "Low"
+
+        # Dynamically compute accurate volume ratio instead of defaulting to 1.0x
+        sym_clean = str(r.get('symbol', '')).upper().replace('.NS', '')
+        avg_v = avg_vols.get(sym_clean) or avg_vols.get(f"{sym_clean}.NS")
+        vol_today = float(r.get('volume') or 0.0)
+        if avg_v and avg_v > 0 and vol_today > 0:
+            v_ratio = round(vol_today / avg_v, 2)
+        else:
+            v_ratio = round(float(r.get('vol_ratio') or r.get('vol_ratio_5d') or 1.0), 2)
+        r_copy['vol_ratio_5d'] = v_ratio
+        r_copy['vol_ratio'] = v_ratio
             
         # Reconstruct nested dictionaries expected by the UI
         r_copy['daily'] = {

@@ -1786,6 +1786,8 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
             "cmp": round(cmp, 2),
             "day_change_pct": round(day_change_pct, 2),
             "volume": int(df['Volume'].iloc[-1]),
+            "vol_ratio": round(float(df['Volume'].iloc[-1]) / vol_20, 2) if vol_20 > 0 else 1.0,
+            "vol_ratio_5d": round(vol_5 / vol_20, 2) if vol_20 > 0 else 1.0,
             "daily": daily_trends,
             "weekly": weekly_trends,
             "monthly": monthly_trends,
