@@ -390,8 +390,9 @@ def render():
                 
                 if to_scan_list:
                     try:
-                        from app import run_background_ai_scan
-                        run_background_ai_scan(to_scan_list, today_str, force=btn_force_batch_scan)
+                        runner = st.session_state.get('run_background_ai_scan')
+                        if runner:
+                            runner(to_scan_list, today_str, force=btn_force_batch_scan)
                         st.toast(f"🚀 AI pattern analysis started in the background for {len(to_scan_list)} stocks!", icon="🤖")
                         st.rerun()
                     except Exception as launch_err:

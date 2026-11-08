@@ -3863,15 +3863,7 @@ def save_near_30sma_only(date_str: str, near_30sma_results: list[dict]) -> bool:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (symbol, scan_date) DO UPDATE SET
                 cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct, volume=EXCLUDED.volume,
-                sma30=EXCLUDED.sma30, dist_pct=EXCLUDED.dist_pct, rsi=EXCLUDED.rsi, cci=EXCLUDED.cci
-        ON CONFLICT (symbol, setup_type, scan_date) DO UPDATE SET
-            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct,
-            buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price, target_price=EXCLUDED.target_price,
-            confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation,
-            run_up_200=EXCLUDED.run_up_200, run_up_52w=EXCLUDED.run_up_52w, is_early=EXCLUDED.is_early,
-            dist_20sma_pct=EXCLUDED.dist_20sma_pct, dist_50sma_pct=EXCLUDED.dist_50sma_pct, dist_65sma_pct=EXCLUDED.dist_65sma_pct, dist_200sma_pct=EXCLUDED.dist_200sma_pct,
-            passes_daily=EXCLUDED.passes_daily, passes_weekly=EXCLUDED.passes_weekly, passes_monthly=EXCLUDED.passes_monthly,
-            near_breakout=EXCLUDED.near_breakout, rsi=EXCLUDED.rsi, cci=EXCLUDED.cci;
+                sma30=EXCLUDED.sma30, dist_pct=EXCLUDED.dist_pct, rsi=EXCLUDED.rsi, cci=EXCLUDED.cci;
         """
         
         for r in near_30sma_results:

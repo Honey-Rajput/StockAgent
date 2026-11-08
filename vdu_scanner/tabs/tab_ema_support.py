@@ -67,12 +67,25 @@ def render():
     if run_bb_btn:
         st.session_state.ema_support_results = None
         st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"] = None
-        from app import run_background_ema_support_scan
-        run_background_ema_support_scan(force=True)
+        runner = st.session_state.get('run_background_ema_support_scan')
+        if runner:
+            runner(force=True)
         st.rerun()
         
     if st.session_state.get('ema_support_results') is None and st.session_state.ALL_TAB_SCAN_STATUS.get("ema_support_results") is not None:
         st.session_state.ema_support_results = st.session_state.ALL_TAB_SCAN_STATUS["ema_support_results"]
+
+    if st.session_state.get('ema_support_results') is None:
+        try:
+            all_latest = database.get_all_latest_scan_dates()
+            ema_date = all_latest.get('scanned_ema_support')
+            if ema_date:
+                cached_ema = database.get_cached_ema_support(ema_date)
+                if cached_ema:
+                    st.session_state.ema_support_results = cached_ema
+                    st.session_state['ema_support_date'] = ema_date
+        except Exception as _e:
+            print(f"Error loading EMA support cache: {_e}")
         
     if st.session_state.get('ema_support_results') is not None:
         ema_list = st.session_state.ema_support_results

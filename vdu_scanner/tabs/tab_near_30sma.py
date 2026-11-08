@@ -72,11 +72,18 @@ def render():
     # Auto load from DB if missing in session
     if 'near_30sma_results' not in st.session_state or not st.session_state.near_30sma_results:
         try:
-            today_str = get_market_date()
             import database
-            st.session_state.near_30sma_results = database.get_cached_near_30sma(today_str) or []
-            st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(today_str) or []
-            st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(today_str) or []
+            all_latest = database.get_all_latest_scan_dates()
+            near_date = all_latest.get('scanned_near_30sma')
+            if near_date:
+                st.session_state.near_30sma_results = database.get_cached_near_30sma(near_date) or []
+                st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(near_date) or []
+                st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(near_date) or []
+            else:
+                today_str = get_market_date()
+                st.session_state.near_30sma_results = database.get_cached_near_30sma(today_str) or []
+                st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(today_str) or []
+                st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(today_str) or []
         except Exception as e:
             pass
             

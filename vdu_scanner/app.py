@@ -134,6 +134,8 @@ def run_background_ai_scan(symbols_list, date_str, force=False):
     t = threading.Thread(target=thread_runner, name="AI_Background_Scan", daemon=True)
     t.start()
 
+st.session_state['run_background_ai_scan'] = run_background_ai_scan
+
 def ensure_minervini_fields(m_list):
     if not m_list:
         return m_list
@@ -761,6 +763,8 @@ def run_background_ema_support_scan(force=False):
     add_script_run_ctx(t)
     t.start()
 
+st.session_state['run_background_ema_support_scan'] = run_background_ema_support_scan
+
 
 def run_background_all_tab_scans():
     """
@@ -1136,7 +1140,7 @@ if not st.session_state['authenticated']:
                 else:
                     st.error("Invalid credentials")
 else:
-    if st.sidebar.button("🔓 Logout", use_container_width=True):
+    if st.sidebar.button("🔓 Logout", use_container_width=True, key="app_sidebar_logout_btn"):
         st.session_state['authenticated'] = False
         st.rerun()
 

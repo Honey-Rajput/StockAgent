@@ -65,15 +65,22 @@ def render():
 
     if 'vp_results' not in st.session_state or not st.session_state.vp_results:
         try:
-            # Search all available scan dates in the DB (not just last 10 calendar days)
-            # This ensures we always find cached VP data even if no scan has run recently
-            available_dates = database.get_available_scan_dates()
-            for check_date in available_dates:
-                cached = database.get_cached_volume_profile(check_date)
+            all_latest = database.get_all_latest_scan_dates()
+            vp_date = all_latest.get('scanned_volume_profile')
+            if vp_date:
+                cached = database.get_cached_volume_profile(vp_date)
                 if cached:
                     st.session_state.vp_results = cached
-                    st.session_state['vp_results_date'] = check_date
-                    break
+                    st.session_state['vp_results_date'] = vp_date
+            
+            if 'vp_results' not in st.session_state or not st.session_state.vp_results:
+                available_dates = database.get_available_scan_dates()
+                for check_date in available_dates:
+                    cached = database.get_cached_volume_profile(check_date)
+                    if cached:
+                        st.session_state.vp_results = cached
+                        st.session_state['vp_results_date'] = check_date
+                        break
         except Exception as e:
             print(f"Failed to auto-load VP cache: {e}")
     
