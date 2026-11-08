@@ -477,8 +477,16 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
                 d200 = float(r.get('dist_200sma_pct') or 0.0)
                 cells.append(f'<td style="padding: 10px 12px; font-size:0.85rem;"><span style="color:#29b6f6;">50: {d50:+.1f}%</span><br><span style="color:#ffa000;">200: {d200:+.1f}%</span></td>')
                 
-            rsi_val = float(r.get("rsi") or 0.0)
-            cci_val = float(r.get("cci") or 0.0)
+            try:
+                _rsi_raw = r.get("rsi")
+                rsi_val = float(_rsi_raw) if _rsi_raw is not None and str(_rsi_raw).lower() not in ('none','nan','') else 0.0
+            except (ValueError, TypeError):
+                rsi_val = 0.0
+            try:
+                _cci_raw = r.get("cci")
+                cci_val = float(_cci_raw) if _cci_raw is not None and str(_cci_raw).lower() not in ('none','nan','') else 0.0
+            except (ValueError, TypeError):
+                cci_val = 0.0
             rsi_color = "#00e676" if 60 <= rsi_val <= 75 else "#ffa000"
             cci_color = "#00e676" if cci_val >= 100 else "#ffa000" if cci_val >= 0 else "#ef4444"
             cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{rsi_val:.1f}</td>')
@@ -544,8 +552,16 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cross_badge = '<span style="color:#00e676;">Yes ✅</span>' if r.get('crossover') else '<span style="color:#94a3b8;">No</span>'
             cells.append(f'<td style="padding: 10px 12px;">{cross_badge}</td>')
             
-            rsi_val = float(r.get("rsi") or 0.0)
-            cci_val = float(r.get("cci") or 0.0)
+            try:
+                _rsi_raw2 = r.get("rsi")
+                rsi_val = float(_rsi_raw2) if _rsi_raw2 is not None and str(_rsi_raw2).lower() not in ('none','nan','') else 0.0
+            except (ValueError, TypeError):
+                rsi_val = 0.0
+            try:
+                _cci_raw2 = r.get("cci")
+                cci_val = float(_cci_raw2) if _cci_raw2 is not None and str(_cci_raw2).lower() not in ('none','nan','') else 0.0
+            except (ValueError, TypeError):
+                cci_val = 0.0
             rsi_color = "#00e676" if 60 <= rsi_val <= 75 else "#ffa000"
             cci_color = "#00e676" if cci_val >= 100 else "#ffa000" if cci_val >= 0 else "#ef4444"
             cells.append(f'<td style="padding: 10px 12px; color: {rsi_color}; font-weight: 600;">{rsi_val:.1f}</td>')

@@ -287,7 +287,19 @@ is_startup = 'scan_results' not in st.session_state
 if 'ema_support_results' not in st.session_state:
     st.session_state.ema_support_results = database.get_cached_ema_support(latest_date_str) if is_startup and latest_date_str else None
 if 'scan_results' not in st.session_state:
-    st.session_state.scan_results = database.get_cached_breakouts(latest_date_str) if is_startup and latest_date_str else None
+    # Find the latest date that actually has breakout data (not just any scan table).
+    # This prevents showing 0 breakouts when the most recent scan date came from
+    # scan_logs/monthly_momentum but no VDU breakouts were found on that date.
+    _breakout_date = None
+    _breakouts_loaded = None
+    if is_startup and latest_dates:
+        for _d in latest_dates:
+            _test = database.get_cached_breakouts(_d)
+            if _test:
+                _breakout_date = _d
+                _breakouts_loaded = _test
+                break
+    st.session_state.scan_results = _breakouts_loaded if _breakouts_loaded else ([] if is_startup else None)
 if 'total_scanned' not in st.session_state:
     log_entry = database.has_scanned_today(latest_date_str) if is_startup and latest_date_str else None
     st.session_state.total_scanned = log_entry.get('total_scanned', 0) if log_entry else 0
