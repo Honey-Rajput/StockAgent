@@ -284,22 +284,27 @@ except Exception as e:
 # First time app load check
 is_startup = 'scan_results' not in st.session_state
 
+def _fetch_latest_non_empty(fetch_fn, fallback=None):
+    """
+    Scans backward through available historical dates to find the most recent
+    scan session that actually contains records for this strategy.
+    Prevents tabs from appearing blank when different scanners ran on different dates.
+    """
+    if not is_startup or not latest_dates:
+        return fallback
+    for _d in latest_dates:
+        try:
+            res = fetch_fn(_d)
+            if res:
+                return res
+        except Exception:
+            pass
+    return fallback
+
 if 'ema_support_results' not in st.session_state:
-    st.session_state.ema_support_results = database.get_cached_ema_support(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.ema_support_results = _fetch_latest_non_empty(database.get_cached_ema_support, None)
 if 'scan_results' not in st.session_state:
-    # Find the latest date that actually has breakout data (not just any scan table).
-    # This prevents showing 0 breakouts when the most recent scan date came from
-    # scan_logs/monthly_momentum but no VDU breakouts were found on that date.
-    _breakout_date = None
-    _breakouts_loaded = None
-    if is_startup and latest_dates:
-        for _d in latest_dates:
-            _test = database.get_cached_breakouts(_d)
-            if _test:
-                _breakout_date = _d
-                _breakouts_loaded = _test
-                break
-    st.session_state.scan_results = _breakouts_loaded if _breakouts_loaded else ([] if is_startup else None)
+    st.session_state.scan_results = _fetch_latest_non_empty(database.get_cached_breakouts, [] if is_startup else None)
 if 'total_scanned' not in st.session_state:
     log_entry = database.has_scanned_today(latest_date_str) if is_startup and latest_date_str else None
     st.session_state.total_scanned = log_entry.get('total_scanned', 0) if log_entry else 0
@@ -314,47 +319,47 @@ if 'ai_selected_stock' not in st.session_state:
 if 'ai_custom_sym_input' not in st.session_state:
     st.session_state.ai_custom_sym_input = ""
 if 'vpa_results' not in st.session_state:
-    st.session_state.vpa_results = database.get_cached_vpa(latest_date_str) if is_startup and latest_date_str else []
+    st.session_state.vpa_results = _fetch_latest_non_empty(database.get_cached_vpa, [])
 if 'vp_results' not in st.session_state:
-    st.session_state.vp_results = database.get_cached_volume_profile(latest_date_str) if is_startup and latest_date_str else []
+    st.session_state.vp_results = _fetch_latest_non_empty(database.get_cached_volume_profile, [])
 if 'gapup_results' not in st.session_state:
-    st.session_state.gapup_results = database.get_cached_gapups(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.gapup_results = _fetch_latest_non_empty(database.get_cached_gapups, None)
 if 'above_ma_results' not in st.session_state:
-    st.session_state.above_ma_results = database.get_cached_trend_setups(latest_date_str, 'above_ma') if is_startup and latest_date_str else None
+    st.session_state.above_ma_results = _fetch_latest_non_empty(lambda d: database.get_cached_trend_setups(d, 'above_ma'), None)
 if 'support_ma_results' not in st.session_state:
-    st.session_state.support_ma_results = database.get_cached_trend_setups(latest_date_str, 'support_ma') if is_startup and latest_date_str else None
+    st.session_state.support_ma_results = _fetch_latest_non_empty(lambda d: database.get_cached_trend_setups(d, 'support_ma'), None)
 if 'crossover_ma_results' not in st.session_state:
-    st.session_state.crossover_ma_results = database.get_cached_trend_setups(latest_date_str, 'crossover_ma') if is_startup and latest_date_str else None
+    st.session_state.crossover_ma_results = _fetch_latest_non_empty(lambda d: database.get_cached_trend_setups(d, 'crossover_ma'), None)
 if 'wt_results' not in st.session_state:
-    st.session_state.wt_results = database.get_cached_wt_cross(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.wt_results = _fetch_latest_non_empty(database.get_cached_wt_cross, None)
 if 'wt_results_by_tf' not in st.session_state:
     st.session_state.wt_results_by_tf = {}
 if 'minervini_results' not in st.session_state:
-    st.session_state.minervini_results = database.get_cached_trend_setups(latest_date_str, 'minervini') if is_startup and latest_date_str else None
+    st.session_state.minervini_results = _fetch_latest_non_empty(lambda d: database.get_cached_trend_setups(d, 'minervini'), None)
 if 'vcs_results' not in st.session_state:
-    st.session_state.vcs_results = database.get_cached_vcs(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.vcs_results = _fetch_latest_non_empty(database.get_cached_vcs, None)
 if 'monthly_momentum_results' not in st.session_state:
-    st.session_state.monthly_momentum_results = database.get_cached_monthly_momentum(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.monthly_momentum_results = _fetch_latest_non_empty(database.get_cached_monthly_momentum, None)
 if 'weekly_momentum_results' not in st.session_state:
-    st.session_state.weekly_momentum_results = database.get_cached_weekly_momentum(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.weekly_momentum_results = _fetch_latest_non_empty(database.get_cached_weekly_momentum, None)
 if 'vpa_squeeze_results' not in st.session_state:
-    st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.vpa_squeeze_results = _fetch_latest_non_empty(database.get_cached_vpa_squeeze, None)
 if 'near_30sma_results' not in st.session_state:
-    st.session_state.near_30sma_results = database.get_cached_near_30sma(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.near_30sma_results = _fetch_latest_non_empty(database.get_cached_near_30sma, None)
 if 'near_30sma_weekly_results' not in st.session_state:
-    st.session_state.near_30sma_weekly_results = database.get_cached_near_30sma_weekly(latest_date_str) if is_startup and latest_date_str else []
+    st.session_state.near_30sma_weekly_results = _fetch_latest_non_empty(database.get_cached_near_30sma_weekly, [])
 if 'near_30sma_monthly_results' not in st.session_state:
-    st.session_state.near_30sma_monthly_results = database.get_cached_near_30sma_monthly(latest_date_str) if is_startup and latest_date_str else []
+    st.session_state.near_30sma_monthly_results = _fetch_latest_non_empty(database.get_cached_near_30sma_monthly, [])
 if 'dan_zanger_results' not in st.session_state:
-    st.session_state.dan_zanger_results = database.get_cached_zanger(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.dan_zanger_results = _fetch_latest_non_empty(database.get_cached_zanger, None)
 if 'vcp_minervini_results' not in st.session_state:
-    st.session_state.vcp_minervini_results = database.get_cached_vcp_minervini(latest_date_str) if is_startup and latest_date_str else []
+    st.session_state.vcp_minervini_results = _fetch_latest_non_empty(database.get_cached_vcp_minervini, [])
 if 'stage2_results' not in st.session_state:
-    st.session_state.stage2_results = database.get_cached_stage2(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.stage2_results = _fetch_latest_non_empty(database.get_cached_stage2, None)
 if 'support_rsi_results' not in st.session_state:
-    st.session_state.support_rsi_results = database.get_cached_support_rsi(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.support_rsi_results = _fetch_latest_non_empty(database.get_cached_support_rsi, None)
 if 'stage_analysis_results' not in st.session_state:
-    st.session_state.stage_analysis_results = database.get_cached_stage_analysis(latest_date_str) if is_startup and latest_date_str else None
+    st.session_state.stage_analysis_results = _fetch_latest_non_empty(database.get_cached_stage_analysis, None)
 # Initialize MOMENTUM_SCAN_STATUS in session_state so it persists across reruns
 # (module-level globals reset on each Streamlit page rerun)
 if "MOMENTUM_SCAN_STATUS" not in st.session_state:
