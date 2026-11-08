@@ -205,6 +205,16 @@ def render():
             except Exception as _e:
                 print(f"Error hydrating VPA from cache: {_e}")
 
+        if not st.session_state.get('vpa_results'):
+            dates = database.get_available_scan_dates()
+            if dates:
+                for d in dates:
+                    cached = database.get_cached_vpa(d)
+                    if cached:
+                        st.session_state.vpa_results = cached
+                        st.session_state['vpa_results_date'] = d
+                        break
+
     col1, col2 = st.columns([3, 7])
     with col1:
         run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch", disabled=not is_admin)
@@ -330,9 +340,17 @@ def render():
                 if st.button("🔄 Refresh Scanner Status", key="refresh_bg_vpa_status_btn"):
                     st.rerun()
             with col_b2:
-                if st.button("🛑 Cancel Background Scan", key="cancel_bg_vpa_status_btn"):
+                if st.button("🛑 Cancel Background Scan & Load Cache", key="cancel_bg_vpa_status_btn"):
                     st.session_state.ALL_TAB_SCAN_STATUS["is_running"] = False
                     st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Cancelled by user"
+                    try:
+                        all_latest = database.get_all_latest_scan_dates()
+                        vpa_date = all_latest.get('scanned_vpa')
+                        if vpa_date:
+                            st.session_state.vpa_results = database.get_cached_vpa(vpa_date)
+                            st.session_state['vpa_results_date'] = vpa_date
+                    except Exception as _e:
+                        print(f"Error loading VPA on cancel: {_e}")
                     st.rerun()
                 
         st.info("No VPA data available in database. Click 'Run Advanced VPA Scan' to process.")

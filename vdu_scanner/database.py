@@ -1522,7 +1522,12 @@ def get_cached_wt_cross(date_str: str) -> list[dict]:
 def get_cached_vcs(date_str: str) -> list[dict]:
     return _get_cached_scan('scanned_vcs', date_str)
 
+_vpa_memory_cache = {}
+
 def get_cached_vpa(date_str: str) -> list[dict]:
+    if date_str in _vpa_memory_cache:
+        return _vpa_memory_cache[date_str]
+
     results = _get_cached_scan('scanned_vpa', date_str)
     if not results:
         return []
@@ -1616,6 +1621,8 @@ def get_cached_vpa(date_str: str) -> list[dict]:
             'minor_val': r.get('monthly_minor_val', 0.0),
         }
         unflattened_results.append(r_copy)
+    if unflattened_results:
+        _vpa_memory_cache[date_str] = unflattened_results
     return unflattened_results
 
 def save_vcs_only(date_str: str, vcs_results: list[dict]) -> bool:
