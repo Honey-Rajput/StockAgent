@@ -734,7 +734,10 @@ def render():
     dl_c1, dl_c2 = st.columns(2)
     with dl_c1:
         try:
-            excel_bytes = generate_pva_excel_bytes(vpa_data)
+            if 'vpa_pva_excel_bytes' not in st.session_state or st.session_state.get('vpa_pva_excel_len') != len(vpa_data):
+                st.session_state.vpa_pva_excel_bytes = generate_pva_excel_bytes(vpa_data)
+                st.session_state.vpa_pva_excel_len = len(vpa_data)
+            excel_bytes = st.session_state.vpa_pva_excel_bytes
             st.download_button(
                 label="📥 Download 6-Condition Matrix (Excel .xlsx)",
                 data=excel_bytes,
@@ -747,25 +750,28 @@ def render():
             st.error(f"Excel export error: {e}")
 
     with dl_c2:
-        csv_rows = []
-        for r in vpa_data:
-            pva = r.get('pva') or classify_pva(r.get('day_change_pct', 0.0), r.get('vol_ratio_5d', 1.0), r.get('vol_rising'))
-            csv_rows.append({
-                'Symbol': r.get('symbol', ''),
-                'Company Name': r.get('company_name', ''),
-                'CMP': r.get('cmp', 0.0),
-                'Change %': round(r.get('day_change_pct', 0.0), 2),
-                'Volume Ratio': round(r.get('vol_ratio_5d', 1.0), 2),
-                'Volume Movement': pva['vol_movement'],
-                'Price Movement': pva['price_movement'],
-                'Signal': pva['signal'],
-                'Automatic Interpretation': pva['interpretation'],
-                'Blast Score': r.get('blast_score', 0),
-                'Blast Tier': r.get('blast_tier', '')
-            })
+        if 'vpa_pva_csv_bytes' not in st.session_state or st.session_state.get('vpa_pva_csv_len') != len(vpa_data):
+            csv_rows = []
+            for r in vpa_data:
+                pva = r.get('pva') or classify_pva(r.get('day_change_pct', 0.0), r.get('vol_ratio_5d', 1.0), r.get('vol_rising'))
+                csv_rows.append({
+                    'Symbol': r.get('symbol', ''),
+                    'Company Name': r.get('company_name', ''),
+                    'CMP': r.get('cmp', 0.0),
+                    'Change %': round(r.get('day_change_pct', 0.0), 2),
+                    'Volume Ratio': round(r.get('vol_ratio_5d', 1.0), 2),
+                    'Volume Movement': pva['vol_movement'],
+                    'Price Movement': pva['price_movement'],
+                    'Signal': pva['signal'],
+                    'Automatic Interpretation': pva['interpretation'],
+                    'Blast Score': r.get('blast_score', 0),
+                    'Blast Tier': r.get('blast_tier', '')
+                })
+            st.session_state.vpa_pva_csv_bytes = pd.DataFrame(csv_rows).to_csv(index=False).encode('utf-8-sig')
+            st.session_state.vpa_pva_csv_len = len(vpa_data)
         st.download_button(
             label="📥 Download Matrix for Google Sheets (CSV)",
-            data=pd.DataFrame(csv_rows).to_csv(index=False).encode('utf-8-sig'),
+            data=st.session_state.vpa_pva_csv_bytes,
             file_name=f"price_volume_matrix_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M')}.csv",
             mime="text/csv",
             help="Plain CSV compatible with Google Sheets import",
