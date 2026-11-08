@@ -2812,21 +2812,26 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
                 where_clause += f" AND {extra_where}"
 
             try:
+                # Use explicit aliases so we can do dict-style access on both
+                # psycopg2 DictRow (cloud/Neon) AND sqlite3.Row (local fallback).
+                # Positional indexing (row[0]) does NOT work on psycopg2 DictRow.
                 cur.execute(
-                    f"SELECT {sym_col}, {date_col}, {source_label}, COALESCE(CAST({score_col} AS FLOAT), 0) "
+                    f"SELECT {sym_col} AS _sym, {date_col} AS _dt, "
+                    f"{source_label} AS _src, "
+                    f"COALESCE(CAST({score_col} AS FLOAT), 0) AS _sc "
                     f"FROM {table} WHERE {where_clause}",
                     recent_dates
                 )
                 for row in cur.fetchall():
                     try:
-                        sym = row[0] if not hasattr(row, 'keys') else row[row.keys()[0]] if False else (row['symbol'] if 'symbol' in (row.keys() if hasattr(row, 'keys') else []) else row[0])
-                        # Safe extraction using index (works for both DictRow and tuple)
-                        sym = row[0]
-                        dt = row[1]
-                        src = row[2]
-                        sc = row[3] if row[3] is not None else 0.0
+                        row_d = dict(row)
+                        sym = row_d.get('_sym') or row_d.get(sym_col, '')
+                        dt  = row_d.get('_dt')  or row_d.get(date_col)
+                        src = row_d.get('_src') or ''
+                        sc  = row_d.get('_sc')
+                        sc  = float(sc) if sc is not None else 0.0
                         dt_str = dt.strftime('%Y-%m-%d') if hasattr(dt, 'strftime') else str(dt)
-                        scan_rows.append((str(sym), dt_str, str(src), float(sc)))
+                        scan_rows.append((str(sym), dt_str, str(src), sc))
                     except Exception:
                         pass
             except Exception as tbl_err:
