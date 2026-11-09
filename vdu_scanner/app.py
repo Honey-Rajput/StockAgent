@@ -23,6 +23,18 @@ from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, g
 from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp, scan_flat_base_squeeze
 from indicators import precompute_indicators
 
+def _attach_script_run_ctx(thread):
+    """Safely attach Streamlit script run context to background threads across all Streamlit versions."""
+    try:
+        from streamlit.runtime.scriptrunner_utils.script_run_context import add_script_run_ctx
+        add_script_run_ctx(thread)
+    except Exception:
+        try:
+            from streamlit.runtime.scriptrunner import add_script_run_ctx
+            add_script_run_ctx(thread)
+        except Exception:
+            pass
+
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
     if today.isoweekday() == 7:
@@ -765,9 +777,8 @@ def run_background_ema_support_scan(force=False):
             st.session_state.ema_support_running = False
             
     import threading
-    from streamlit.runtime.scriptrunner import add_script_run_ctx
     t = threading.Thread(target=thread_runner, name="Background_BB_Squeeze", daemon=True)
-    add_script_run_ctx(t)
+    _attach_script_run_ctx(t)
     t.start()
 
 st.session_state['run_background_ema_support_scan'] = run_background_ema_support_scan
@@ -1034,9 +1045,8 @@ def run_background_all_tab_scans():
             print(f"[BG All-Tab] Fatal error: {err}")
 
     import threading
-    from streamlit.runtime.scriptrunner import add_script_run_ctx
     t = threading.Thread(target=thread_runner, name="Background_All_Tab_Scans", daemon=True)
-    add_script_run_ctx(t)
+    _attach_script_run_ctx(t)
     t.start()
 
 

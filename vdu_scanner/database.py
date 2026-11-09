@@ -1,6 +1,7 @@
 # database.py
 import os
 import pandas as pd
+import numpy as np
 from dotenv import load_dotenv
 
 # Resolve and load environment variables from current, parent, and grandparent directories
@@ -1970,54 +1971,6 @@ def save_flat_base_only(date_str: str, results: list[dict]) -> bool:
 def get_cached_flat_base(date_str: str) -> list[dict]:
     return _get_cached_scan('scanned_flat_base', date_str)
 
-def save_wt_cross_only(date_str: str, wt_cross: list[dict]) -> bool:
-    """Saves WT Cross results without deleting other scan results."""
-    conn = None
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        
-        insert_wt_query = """
-        INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
-                                     buy_price, exit_price, target_price, confidence, recommendation,
-                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (symbol, scan_date) DO UPDATE SET
-            above_20sma = EXCLUDED.above_20sma,
-            above_50sma = EXCLUDED.above_50sma;
-        """
-        for r in wt_cross:
-            cur.execute(insert_wt_query, (
-                str(r['symbol']),
-                str(r.get('company_name', '')),
-                float(r['cmp']),
-                float(r['day_change_pct']),
-                float(r['wt_value']),
-                date_str,
-                float(r['buy_price']) if r.get('buy_price') is not None else None,
-                float(r['exit_price']) if r.get('exit_price') is not None else None,
-                float(r['target_price']) if r.get('target_price') is not None else None,
-                str(r['confidence']) if r.get('confidence') is not None else None,
-                str(r['recommendation']) if r.get('recommendation') is not None else None,
-                float(r['wt2_value']) if r.get('wt2_value') is not None else None,
-                bool(r.get('buy_signal', False)),
-                float(r['wt_diff']) if r.get('wt_diff') is not None else None,
-                bool(r.get('above_20sma', False)),
-                bool(r.get('above_50sma', False)),
-                bool(r.get('above_200sma', False)),
-                int(r.get('volume', 0))
-            ))
-            
-        conn.commit()
-        cur.close()
-        return True
-    except Exception as e:
-        print(f"Error saving WT Cross only: {e}")
-        return False
-    finally:
-        if conn:
-            conn.close()
-
 
 def get_cached_vpa_squeeze_weekly(date_str: str) -> list[dict]:
     conn = None
@@ -3824,7 +3777,6 @@ def get_vcp_minervini_scan_dates() -> list[str]:
             conn.close()
 
 
-import numpy as np
 
 def get_latest_date_ohlcv(symbol: str) -> str | None:
     conn = get_connection()

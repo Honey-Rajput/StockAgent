@@ -7,6 +7,12 @@
     "python.autoComplete.extraPaths": [
         "${workspaceFolder}",
         "${workspaceFolder}/vdu_scanner"
-    ]
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportMissingImports": "none",
+        "reportMissingModuleSource": "none",
+        "reportPrivateImportUsage": "none",
+        "reportUnusedImport": "none"
+    }
 }
 
