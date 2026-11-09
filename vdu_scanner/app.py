@@ -1892,11 +1892,11 @@ if run_full or run_sma:
                                     valid_data = {k: v.copy() for k, v in chunk_data.items() if not v.empty}
                                     if valid_data:
                                         def _upload_chunk(data_dict, tf):
-                                            for sym_k, df_v in data_dict.items():
-                                                try:
-                                                    save_to_cache(sym_k, df_v, tf)
-                                                except Exception:
-                                                    pass
+                                            try:
+                                                from local_cache_manager import save_to_cache_bulk
+                                                save_to_cache_bulk(data_dict, tf)
+                                            except Exception as _ce:
+                                                print(f"Error in background chunk upload: {_ce}")
                                         import threading
                                         threading.Thread(target=_upload_chunk, args=(valid_data, _tf_db_key), daemon=True).start()
     

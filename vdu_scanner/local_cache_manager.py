@@ -37,11 +37,13 @@ def resample_ohlcv(df: pd.DataFrame, freq: str) -> pd.DataFrame:
 def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = False) -> pd.DataFrame | None:
     """Returns the cached DataFrame if it exists and is not stale (unless ignore_ttl=True)."""
     clean_sym = symbol.strip().upper().replace(".NS", "")
+    conn = None
     try:
         conn = database.get_connection()
         cur = conn.cursor()
         cur.execute("SELECT date, open, high, low, close, volume FROM historical_ohlcv WHERE symbol=? AND timeframe=? ORDER BY date ASC", (clean_sym, timeframe))
         rows = cur.fetchall()
+        cur.close()
         
         if not rows:
             return None
@@ -54,6 +56,9 @@ def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = Fals
     except Exception as e:
         print(f"Error reading DB cache for {clean_sym}: {e}")
         return None
+    finally:
+        if conn:
+            conn.close()
 
 def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
     """Returns a dictionary of DataFrames for multiple symbols in a single query."""
@@ -62,6 +67,7 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
         
     clean_syms = [s.strip().upper().replace(".NS", "") for s in symbols]
     result_dict = {}
+    conn = None
     
     try:
         conn = database.get_connection()
@@ -87,10 +93,14 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
                     df_sym = group.drop(columns=['Symbol']).reset_index(drop=True)
                     result_dict[sym] = df_sym
                     
+        cur.close()
         return result_dict
     except Exception as e:
         print(f"Error reading bulk DB cache: {e}")
         return result_dict
+    finally:
+        if conn:
+            conn.close()
 
 def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
     """Saves the DataFrame to the Neon DB cache."""
@@ -98,6 +108,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
         return
         
     clean_sym = symbol.strip().upper().replace(".NS", "")
+    conn = None
     
     try:
         conn = database.get_connection()
@@ -112,6 +123,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
             df = df[df['Date'] >= max_date]
             
         if df.empty:
+            cur.close()
             return
             
         query = """
@@ -141,7 +153,57 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
             
         database.execute_values(cur, query, argslist, page_size=200)
         conn.commit()
+        cur.close()
             
     except Exception as e:
         print(f"Error saving DB cache for {clean_sym}: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+def save_to_cache_bulk(data_dict: dict, timeframe: str = "1d"):
+    """Saves multiple symbol DataFrames in a single DB connection."""
+    if not data_dict:
+        return
+    conn = None
+    try:
+        conn = database.get_connection()
+        cur = conn.cursor()
+        
+        query = """
+        INSERT INTO historical_ohlcv (symbol, timeframe, date, open, high, low, close, volume)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(symbol, timeframe, date) DO UPDATE SET
+        open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low, close=EXCLUDED.close, volume=EXCLUDED.volume
+        """
+        
+        all_args = []
+        for symbol, df in data_dict.items():
+            if df is None or df.empty:
+                continue
+            clean_sym = symbol.strip().upper().replace(".NS", "")
+            for _, row in df.iterrows():
+                date_str = str(row['Date']).split(' ')[0] if pd.notnull(row['Date']) else None
+                if not date_str:
+                    continue
+                all_args.append((
+                    clean_sym,
+                    timeframe,
+                    date_str,
+                    float(row['Open']) if pd.notnull(row['Open']) else 0.0,
+                    float(row['High']) if pd.notnull(row['High']) else 0.0,
+                    float(row['Low']) if pd.notnull(row['Low']) else 0.0,
+                    float(row['Close']) if pd.notnull(row['Close']) else 0.0,
+                    int(row['Volume']) if pd.notnull(row['Volume']) else 0
+                ))
+                
+        if all_args:
+            database.execute_values(cur, query, all_args, page_size=500)
+            conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f"Error in save_to_cache_bulk: {e}")
+    finally:
+        if conn:
+            conn.close()
 

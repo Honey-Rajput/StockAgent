@@ -134,7 +134,7 @@ def get_postgres_pool():
                 from psycopg2.pool import ThreadedConnectionPool
                 from psycopg2.extras import DictCursor
                 clean_url = db_url.replace("&channel_binding=require", "").replace("channel_binding=require&", "")
-                _pg_pool = ThreadedConnectionPool(1, 10, clean_url, cursor_factory=DictCursor)
+                _pg_pool = ThreadedConnectionPool(2, 30, clean_url, cursor_factory=DictCursor)
     return _pg_pool
 
 class PooledConnection:
@@ -177,7 +177,17 @@ def get_connection():
                 conn.autocommit = True
                 return PostgresConnectionWrapper(conn, pool)
         except Exception as e:
-            print(f"PostgreSQL connection error: {e}. Falling back to SQLite.")
+            import time
+            print(f"PostgreSQL connection error: {e}. Retrying pool in 0.3s...")
+            time.sleep(0.3)
+            try:
+                pool = get_postgres_pool()
+                if pool:
+                    conn = pool.getconn()
+                    conn.autocommit = True
+                    return PostgresConnectionWrapper(conn, pool)
+            except Exception as e2:
+                print(f"PostgreSQL connection error after retry: {e2}. Falling back to SQLite.")
 
     global _conn
     if _conn is None:
@@ -202,6 +212,7 @@ def get_today_quotes(symbols: list, date_str: str) -> dict:
     """
     if not symbols:
         return {}
+    conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -226,10 +237,14 @@ def get_today_quotes(symbols: list, date_str: str) -> dict:
                     "close":  float(row["close"])  if row["close"]  is not None else 0.0,
                     "volume": int(row["volume"])   if row["volume"] is not None else 0,
                 }
+        cur.close()
         return result
     except Exception as e:
         print(f"get_today_quotes error: {e}")
         return {}
+    finally:
+        if conn:
+            conn.close()
 
 
 def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
@@ -241,6 +256,7 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
     """
     if not close_map:
         return
+    conn = None
     try:
         conn = get_connection()
         if not conn:
@@ -279,6 +295,9 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
         print(f"save_today_quotes: saved {len(data_to_insert)} symbols for {date_str}")
     except Exception as e:
         print(f"save_today_quotes error: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def init_db() -> bool:
@@ -1290,6 +1309,42 @@ def get_available_scan_dates() -> list[str]:
     try:
         conn = get_connection()
         cur = conn.cursor()
+        
+        # Fast path: Unified single UNION query across all major scan tables
+        try:
+            cur.execute("""
+                SELECT DISTINCT scan_date FROM (
+                    SELECT scan_date FROM scan_logs WHERE total_scanned > 0
+                    UNION ALL SELECT scan_date FROM scanned_breakouts
+                    UNION ALL SELECT scan_date FROM scanned_trend_setups
+                    UNION ALL SELECT scan_date FROM scanned_vpa
+                    UNION ALL SELECT scan_date FROM scanned_vcp_minervini
+                    UNION ALL SELECT scan_date FROM scanned_zanger
+                    UNION ALL SELECT scan_date FROM scanned_volume_profile
+                    UNION ALL SELECT scan_date FROM scanned_ema_support
+                    UNION ALL SELECT scan_date FROM scanned_near_30sma
+                    UNION ALL SELECT scan_date FROM scanned_wt_cross
+                    UNION ALL SELECT scan_date FROM scanned_stage_analysis
+                ) combined_dates ORDER BY scan_date DESC;
+            """)
+            rows = cur.fetchall()
+            cur.close()
+            quick_dates = []
+            for r in rows:
+                val = r[0] if isinstance(r, (list, tuple)) else r['scan_date']
+                if val:
+                    s = val.strftime("%Y-%m-%d") if hasattr(val, 'strftime') else str(val)
+                    if s not in ('None', 'nan', ''):
+                        quick_dates.append(s)
+            if quick_dates:
+                return quick_dates
+        except Exception as _fast_err:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            cur = conn.cursor()
+
         for table in scan_tables:
             try:
                 if table == "scan_logs":
@@ -1314,7 +1369,11 @@ def get_available_scan_dates() -> list[str]:
                     except Exception:
                         pass
             except Exception as table_err:
-                # Table may not exist yet — skip gracefully
+                # Table may not exist yet — rollback aborted transaction and skip gracefully
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 print(f"[get_available_scan_dates] Skipping table {table}: {table_err}")
         cur.close()
     except Exception as e:
