@@ -661,6 +661,54 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         unsafe_allow_html=True
     )
 
+
+def ensure_minervini_fields(m_list):
+    """Normalize and guarantee Minervini Stage-2 fields exist on each record."""
+    if not m_list:
+        return m_list
+    for r in m_list:
+        if r.get('run_up_200') is not None:
+            try:
+                r['run_up_200'] = float(r['run_up_200'])
+            except (ValueError, TypeError):
+                r['run_up_200'] = 10.0
+        else:
+            rec = r.get('recommendation', '')
+            plain_text = rec
+            if isinstance(rec, str) and rec.strip().startswith("{") and rec.strip().endswith("}"):
+                try:
+                    plain_text = json.loads(rec).get("text", rec)
+                except Exception:
+                    pass
+            m = re.search(r'holding\s+(\d+\.?\d*)%\s+above\s+its\s+200\s+SMA', str(plain_text), re.IGNORECASE)
+            r['run_up_200'] = float(m.group(1)) if m else 10.0
+
+        if r.get('run_up_52w') is not None:
+            try:
+                r['run_up_52w'] = float(r['run_up_52w'])
+            except (ValueError, TypeError):
+                r['run_up_52w'] = 30.0
+        else:
+            rec = r.get('recommendation', '')
+            plain_text = rec
+            if isinstance(rec, str) and rec.strip().startswith("{") and rec.strip().endswith("}"):
+                try:
+                    plain_text = json.loads(rec).get("text", rec)
+                except Exception:
+                    pass
+            m = re.search(r'run\s+up\s+(\d+\.?\d*)%\s+from\s+its\s+52w', str(plain_text), re.IGNORECASE)
+            r['run_up_52w'] = float(m.group(1)) if m else 30.0
+
+        if r.get('is_early') is not None:
+            r['is_early'] = bool(r['is_early'])
+        else:
+            conf = str(r.get('confidence', ''))
+            rec = str(r.get('recommendation', ''))
+            r['is_early'] = 'early' in conf.lower() or 'early' in rec.lower()
+
+    return m_list
+
+
 def render_quick_trade_board(results_list: list, key_prefix: str):
     if not results_list or len(results_list) == 0:
         return
@@ -725,3 +773,51 @@ def render_quick_trade_board(results_list: list, key_prefix: str):
         f'</div>',
         unsafe_allow_html=True
     )
+
+
+def ensure_minervini_fields(m_list):
+    """Normalize and guarantee Minervini Stage-2 fields exist on each record."""
+    if not m_list:
+        return m_list
+    for r in m_list:
+        if r.get('run_up_200') is not None:
+            try:
+                r['run_up_200'] = float(r['run_up_200'])
+            except (ValueError, TypeError):
+                r['run_up_200'] = 10.0
+        else:
+            rec = r.get('recommendation', '')
+            plain_text = rec
+            if isinstance(rec, str) and rec.strip().startswith("{") and rec.strip().endswith("}"):
+                try:
+                    plain_text = json.loads(rec).get("text", rec)
+                except Exception:
+                    pass
+            m = re.search(r'holding\s+(\d+\.?\d*)%\s+above\s+its\s+200\s+SMA', str(plain_text), re.IGNORECASE)
+            r['run_up_200'] = float(m.group(1)) if m else 10.0
+
+        if r.get('run_up_52w') is not None:
+            try:
+                r['run_up_52w'] = float(r['run_up_52w'])
+            except (ValueError, TypeError):
+                r['run_up_52w'] = 30.0
+        else:
+            rec = r.get('recommendation', '')
+            plain_text = rec
+            if isinstance(rec, str) and rec.strip().startswith("{") and rec.strip().endswith("}"):
+                try:
+                    plain_text = json.loads(rec).get("text", rec)
+                except Exception:
+                    pass
+            m = re.search(r'run\s+up\s+(\d+\.?\d*)%\s+from\s+its\s+52w', str(plain_text), re.IGNORECASE)
+            r['run_up_52w'] = float(m.group(1)) if m else 30.0
+
+        if r.get('is_early') is not None:
+            r['is_early'] = bool(r['is_early'])
+        else:
+            conf = str(r.get('confidence', ''))
+            rec = str(r.get('recommendation', ''))
+            r['is_early'] = 'early' in conf.lower() or 'early' in rec.lower()
+
+    return m_list
+

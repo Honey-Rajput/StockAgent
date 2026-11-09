@@ -66,7 +66,16 @@ def render():
     with col1:
         sma_timeframe_tab = st.selectbox("SMA Strategy Timeframe", ["Daily", "Weekly", "All (Daily + Weekly Convergence)"], index=0, key="sma_timeframe_tab")
     
-    above_ma_data = st.session_state.above_ma_results
+    above_ma_data = st.session_state.get('above_ma_results')
+    if not above_ma_data:
+        try:
+            d = database.get_all_latest_scan_dates().get("scanned_trend_setups") or database.get_best_scan_date()
+            if d:
+                above_ma_data = database.get_cached_trend_setups(d, 'above_ma')
+                if above_ma_data:
+                    st.session_state.above_ma_results = above_ma_data
+        except Exception:
+            pass
     
     if above_ma_data is None:
         st.info("💡 Run the scanner from the sidebar to identify stocks trading above their 20 SMA and 50 SMA.")

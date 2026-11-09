@@ -174,13 +174,18 @@ def render():
             st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete! Found {len(wt_tf_results)} setups.", icon="✅")
             
     # Pick up background scan results or cached daily results
-    cached_daily = st.session_state.get('wt_results') or st.session_state.ALL_TAB_SCAN_STATUS.get("wt_results")
+    cached_daily = st.session_state.get('wt_results') or (st.session_state.get("ALL_TAB_SCAN_STATUS", {}).get("wt_results"))
     if not cached_daily:
-        today_str = get_market_date()
-        cached_daily = database.get_cached_wt_cross(today_str)
-        if cached_daily:
-            st.session_state.wt_results = cached_daily
-            st.session_state.wt_results_by_tf["Daily_-40.0"] = cached_daily
+        try:
+            d = database.get_all_latest_scan_dates().get("scanned_wt_cross") or database.get_best_scan_date()
+            if d:
+                cached_daily = database.get_cached_wt_cross(d)
+                if cached_daily:
+                    st.session_state.wt_results = cached_daily
+                    st.session_state.wt_results_by_tf["Daily_-40.0"] = cached_daily
+                    st.session_state.wt_results_by_tf["Daily"] = cached_daily
+        except Exception:
+            pass
 
     if not st.session_state.wt_results_by_tf.get(wt_cache_key):
         if wt_timeframe == "Daily" and cached_daily:

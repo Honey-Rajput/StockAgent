@@ -62,7 +62,16 @@ def render():
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Scan for institutional pullbacks where the price is testing or bouncing precisely off the 65-day Simple Moving Average (65 SMA), offering high-probability low-risk entries.</p>", unsafe_allow_html=True)
     st.markdown("---")
     
-    support_ma_data = st.session_state.support_ma_results
+    support_ma_data = st.session_state.get('support_ma_results')
+    if not support_ma_data:
+        try:
+            d = database.get_all_latest_scan_dates().get("scanned_trend_setups") or database.get_best_scan_date()
+            if d:
+                support_ma_data = database.get_cached_trend_setups(d, 'support_ma')
+                if support_ma_data:
+                    st.session_state.support_ma_results = support_ma_data
+        except Exception:
+            pass
     
     if support_ma_data is None:
         st.info("💡 Run the scanner from the sidebar to identify stocks taking support at their 65 SMA.")

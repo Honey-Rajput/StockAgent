@@ -62,7 +62,16 @@ def render():
     st.markdown("<p style='font-size:0.9rem; color:#94a3b8;'>Identify stocks triggering critical trend reversal crossovers (50 SMA crossing 150/200 SMA, or price crossing above 50/150/200 SMA) in the latest session.</p>", unsafe_allow_html=True)
     st.markdown("---")
     
-    crossover_ma_data = st.session_state.crossover_ma_results
+    crossover_ma_data = st.session_state.get('crossover_ma_results')
+    if not crossover_ma_data:
+        try:
+            d = database.get_all_latest_scan_dates().get("scanned_trend_setups") or database.get_best_scan_date()
+            if d:
+                crossover_ma_data = database.get_cached_trend_setups(d, 'crossover_ma')
+                if crossover_ma_data:
+                    st.session_state.crossover_ma_results = crossover_ma_data
+        except Exception:
+            pass
     
     if crossover_ma_data is None:
         st.info("💡 Run the scanner from the sidebar to identify moving average crossover signals.")

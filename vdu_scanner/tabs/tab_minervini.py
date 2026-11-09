@@ -50,6 +50,7 @@ from ui_components import (
     render_quick_trade_board,
     render_trading_setup_card,
     render_unified_strategy_table,
+    ensure_minervini_fields,
 )
 import database
 import ai_detector
@@ -72,7 +73,24 @@ def render():
     )
     
     if min_mode == "🟢 View Today's Minervini Setups":
-        minervini_data = st.session_state.minervini_results
+        minervini_data = st.session_state.get('minervini_results')
+        if not minervini_data:
+            try:
+                d = database.get_all_latest_scan_dates().get("scanned_trend_setups") or database.get_best_scan_date()
+                if d:
+                    minervini_data = database.get_cached_trend_setups(d, 'minervini')
+                    if minervini_data:
+                        minervini_data = ensure_minervini_fields(minervini_data)
+                        st.session_state.minervini_results = minervini_data
+                if not minervini_data:
+                    for fb_d in database.get_available_scan_dates():
+                        minervini_data = database.get_cached_trend_setups(fb_d, 'minervini')
+                        if minervini_data:
+                            minervini_data = ensure_minervini_fields(minervini_data)
+                            st.session_state.minervini_results = minervini_data
+                            break
+            except Exception:
+                pass
         
         if minervini_data is None:
             st.info("💡 Run the scanner from the sidebar to identify stocks matching the Mark Minervini Stage-2 Trend Template.")

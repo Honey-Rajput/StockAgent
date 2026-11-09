@@ -173,12 +173,14 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
     # Use pre-computed SMAs from indicators — no need to recalculate
     df_ma = df  # Already has SMA20, SMA50, SMA65, SMA150, SMA200 from precompute_indicators()
     
-    if len(df_ma) >= 200:
+    if len(df_ma) >= 65:
         today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]
         c_val = float(today_row['Close']); l_val = float(today_row['Low'])
-        sma20 = float(today_row['SMA20']); sma50 = float(today_row['SMA50'])
-        sma65 = float(today_row['SMA65']); sma150 = float(today_row['SMA150'])
-        sma200 = float(today_row['SMA200'])
+        sma20 = float(today_row['SMA20']) if pd.notna(today_row.get('SMA20')) else 0.0
+        sma50 = float(today_row['SMA50']) if pd.notna(today_row.get('SMA50')) else 0.0
+        sma65 = float(today_row['SMA65']) if pd.notna(today_row.get('SMA65')) else 0.0
+        sma150 = float(today_row['SMA150']) if pd.notna(today_row.get('SMA150')) else 0.0
+        sma200 = float(today_row['SMA200']) if pd.notna(today_row.get('SMA200')) else 0.0
         
         # Multi-Timeframe 20 & 50 SMA Strategy
         dist_20 = (c_val - sma20) / sma20 * 100 if sma20 else 0
@@ -220,7 +222,7 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                     if left_avg > mid_avg and right_avg > mid_avg and d_close > mid_avg * 1.05 and dip_depth >= 0.05:
                         is_rounding = True
                         
-                # 1. MA stacking: Close >= SMA20 >= SMA50 >= SMA200
+                # 1. MA stacking: Close >= SMA20 >= SMA50 (>= SMA200 if available)
                 stacking_ok = (d_close >= d_sma20) and (d_sma20 >= d_sma50)
                 if pd.notna(d_sma200) and not is_rounding:
                     stacking_ok = stacking_ok and (d_sma50 >= d_sma200)
@@ -246,12 +248,12 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                 # SMA bounds
                 sma50_bounds_ok = True
                 close_200_ok = True
-                if not is_rounding:
+                if pd.notna(d_sma200) and not is_rounding:
                     sma50_bounds_ok = (d_sma50 <= d_sma200 * sma50_upper_bound) and (d_sma50 >= d_sma200 * sma50_lower_bound)
                     close_200_ok = (d_close >= d_sma200 * 0.98)
                 
                 condition_daily = (
-                    pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and pd.notna(d_sma200) and
+                    pd.notna(d_sma20) and pd.notna(d_sma50) and pd.notna(d_close) and
                     stacking_ok and
                     cond_20_gap and cond_50_gap and cond_200_gap and
                     tightness_ok and slope_ok and
@@ -399,17 +401,21 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                 "cci": float(today_row.get('CCI', 0.0)) if 'CCI' in today_row else 0.0
             }
             
-        crossed_golden = (yesterday_row['SMA50'] <= yesterday_row['SMA200']) and (today_row['SMA50'] > today_row['SMA200'])
-        crossed_150 = (yesterday_row['SMA50'] <= yesterday_row['SMA150']) and (today_row['SMA50'] > today_row['SMA150'])
+        has_200 = sma200 > 0 and pd.notna(yesterday_row.get('SMA200')) and float(yesterday_row['SMA200']) > 0
+        has_150 = sma150 > 0 and pd.notna(yesterday_row.get('SMA150')) and float(yesterday_row['SMA150']) > 0
+
+        crossed_golden = (float(yesterday_row['SMA50']) <= float(yesterday_row['SMA200'])) and (today_row['SMA50'] > today_row['SMA200']) if has_200 else False
+        crossed_150 = (float(yesterday_row['SMA50']) <= float(yesterday_row['SMA150'])) and (today_row['SMA50'] > today_row['SMA150']) if has_150 else False
         price_crossed_50 = (yesterday_row['Close'] <= yesterday_row['SMA50']) and (today_row['Close'] > today_row['SMA50'])
-        price_crossed_150 = (yesterday_row['Close'] <= yesterday_row['SMA150']) and (today_row['Close'] > today_row['SMA150'])
-        price_crossed_200 = (yesterday_row['Close'] <= yesterday_row['SMA200']) and (today_row['Close'] > today_row['SMA200'])
+        price_crossed_150 = (yesterday_row['Close'] <= yesterday_row['SMA150']) and (today_row['Close'] > today_row['SMA150']) if has_150 else False
+        price_crossed_200 = (yesterday_row['Close'] <= yesterday_row['SMA200']) and (today_row['Close'] > today_row['SMA200']) if has_200 else False
         
         # Gap filter: skip stocks where price is too far from crossover MAs (overextended)
-        cross_dist_50 = (c_val - sma50) / sma50 * 100
-        cross_dist_200 = (c_val - sma200) / sma200 * 100
-        if (crossed_golden or crossed_150 or price_crossed_50 or price_crossed_150 or price_crossed_200) and cross_dist_50 <= 15 and cross_dist_200 <= 20:
-            cross_support = max(s for s in [sma50, sma150, sma200] if s < c_val) if any(s < c_val for s in [sma50, sma150, sma200]) else c_val * 0.94
+        cross_dist_50 = (c_val - sma50) / sma50 * 100 if sma50 > 0 else 0
+        cross_dist_200 = (c_val - sma200) / sma200 * 100 if sma200 > 0 else 0
+        if (crossed_golden or crossed_150 or price_crossed_50 or price_crossed_150 or price_crossed_200) and cross_dist_50 <= 15 and (not has_200 or cross_dist_200 <= 20):
+            valid_supports = [s for s in [sma50, sma150, sma200] if s > 0 and s < c_val]
+            cross_support = max(valid_supports) if valid_supports else c_val * 0.94
             cross_buy_price = round(cross_support * 1.01, 2)  # Support = nearest MA below price
             cross_exit_price = round(cross_support * 0.96, 2) 
             cross_target_price = round(today_close_val * 1.18, 2) 
@@ -428,15 +434,18 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
             }
 
     if scan_mode in ("all", "full"):
-        if len(df_ma) >= 250:
+        if len(df_ma) >= 200:
             today_row = df_ma.iloc[-1]; yesterday_row = df_ma.iloc[-2]; c_val = float(today_row['Close'])
-            sma50 = float(today_row['SMA50']); sma150 = float(today_row['SMA150']); sma200 = float(today_row['SMA200'])
+            sma50 = float(today_row['SMA50']) if pd.notna(today_row.get('SMA50')) else 0.0
+            sma150 = float(today_row['SMA150']) if pd.notna(today_row.get('SMA150')) else 0.0
+            sma200 = float(today_row['SMA200']) if pd.notna(today_row.get('SMA200')) else 0.0
             # EXPERT FIX: Use 20-bar lookback for 200 SMA trend (Minervini uses ~1 month, not 10 days)
             # 10 bars = 2 weeks = too short, causes whipsaw on minor corrections
-            sma200_20d_ago = float(df_ma['SMA200'].iloc[-21]) if len(df_ma) >= 220 else sma200
-            high_52w = float(df_ma['High'].iloc[-250:].max()); low_52w = float(df_ma['Low'].iloc[-250:].min())
+            sma200_20d_ago = float(df_ma['SMA200'].iloc[-21]) if len(df_ma) >= 220 and pd.notna(df_ma['SMA200'].iloc[-21]) else sma200
+            lookback_len = min(250, len(df_ma))
+            high_52w = float(df_ma['High'].iloc[-lookback_len:].max()); low_52w = float(df_ma['Low'].iloc[-lookback_len:].min())
             
-            if c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_20d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.25 * low_52w and c_val >= 0.75 * high_52w:
+            if sma150 > 0 and sma200 > 0 and c_val > sma150 and c_val > sma200 and sma150 > sma200 and sma200 > sma200_20d_ago and sma50 > sma150 and sma50 > sma200 and c_val > sma50 and c_val >= 1.25 * low_52w and c_val >= 0.75 * high_52w:
                 run_up_200 = round(((c_val - sma200) / sma200 * 100), 2)
                 run_up_52w = round(((c_val - low_52w) / low_52w * 100), 2)
                 is_early = bool(c_val <= 1.20 * sma200)

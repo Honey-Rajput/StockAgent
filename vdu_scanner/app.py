@@ -2115,19 +2115,77 @@ if run_full or run_sma:
                         pass
             
             # Cache results in state to allow seamless widget interactions
-            # Safety net: if fresh scan returned 0 VDU results, fall back to last good DB results
-            if len(flagged_list) == 0:
-                try:
-                    import database as _db_fb
-                    _fb_dates = _db_fb.get_available_scan_dates()
-                    for fb_d in _fb_dates:
-                        _fb_results = _db_fb.get_cached_breakouts(fb_d)
-                        if _fb_results and len(_fb_results) > 0:
-                            flagged_list = _fb_results
-                            st.toast(f"⚠️ Fresh scan found 0 VDU results today. Loaded {len(flagged_list)} cached setups from {fb_d}.", icon="📅")
-                            break
-                except Exception:
-                    pass
+            # Comprehensive fallback safety net: if fresh scan returned 0 results for any tab, fall back to last good DB results
+            try:
+                import database as _db_fb
+                _all_latest_scan_dates = _db_fb.get_all_latest_scan_dates()
+                _best_d = _db_fb.get_best_scan_date()
+                _avail_dates = _db_fb.get_available_scan_dates()
+
+                def _resolve_fallback(getter_fn, tbl_name):
+                    target_d = _all_latest_scan_dates.get(tbl_name)
+                    if target_d:
+                        res = getter_fn(target_d)
+                        if res and len(res) > 0:
+                            return res
+                    if _best_d and _best_d != target_d:
+                        res = getter_fn(_best_d)
+                        if res and len(res) > 0:
+                            return res
+                    for d_cand in _avail_dates:
+                        if d_cand not in (target_d, _best_d):
+                            res = getter_fn(d_cand)
+                            if res and len(res) > 0:
+                                return res
+                    return None
+
+                if len(flagged_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_breakouts, "scanned_breakouts")
+                    if fb:
+                        flagged_list = fb
+                        st.toast(f"⚠️ Fresh scan found 0 VDU results today. Loaded {len(flagged_list)} cached setups.", icon="📅")
+
+                if len(gapup_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_gapups, "scanned_gapups")
+                    if fb: gapup_list = fb
+
+                if len(above_ma_list) == 0:
+                    fb = _resolve_fallback(lambda d: _db_fb.get_cached_trend_setups(d, 'above_ma'), "scanned_trend_setups")
+                    if fb: above_ma_list = fb
+
+                if len(support_ma_list) == 0:
+                    fb = _resolve_fallback(lambda d: _db_fb.get_cached_trend_setups(d, 'support_ma'), "scanned_trend_setups")
+                    if fb: support_ma_list = fb
+
+                if len(crossover_ma_list) == 0:
+                    fb = _resolve_fallback(lambda d: _db_fb.get_cached_trend_setups(d, 'crossover_ma'), "scanned_trend_setups")
+                    if fb: crossover_ma_list = fb
+
+                if len(minervini_list) == 0:
+                    fb = _resolve_fallback(lambda d: _db_fb.get_cached_trend_setups(d, 'minervini'), "scanned_trend_setups")
+                    if fb: minervini_list = ensure_minervini_fields(fb)
+
+                if len(wt_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_wt_cross, "scanned_wt_cross")
+                    if fb: wt_list = fb
+
+                if len(vpa_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_vpa, "scanned_vpa")
+                    if fb: vpa_list = fb
+
+                if len(vpa_squeeze_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_vpa_squeeze, "scanned_vpa_squeeze")
+                    if fb: vpa_squeeze_list = fb
+
+                if len(near_30sma_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_near_30sma, "scanned_near_30sma")
+                    if fb: near_30sma_list = fb
+
+                if len(vcs_list) == 0:
+                    fb = _resolve_fallback(_db_fb.get_cached_vcs, "scanned_vcs")
+                    if fb: vcs_list = fb
+            except Exception as _fb_err:
+                print(f"Post-scan cache fallback error: {_fb_err}")
             st.session_state.scan_results = flagged_list
             st.session_state.gapup_results = gapup_list
             st.session_state.above_ma_results = above_ma_list
