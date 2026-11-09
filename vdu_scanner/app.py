@@ -1780,7 +1780,7 @@ if run_full or run_sma:
                         yf_period = "17y"
                     else:
                         yf_interval = "1d"
-                        yf_period = f"{LOOKBACK_DAYS}d"
+                        yf_period = "2y"
     
                     status_box.text(f"Phase 2/3: Checking local cache for {scan_timeframe} historical data...")
                     prog_bar.progress(0)
@@ -1803,7 +1803,7 @@ if run_full or run_sma:
                     
                     if len(missing_symbols) > 0:
                         status_box.text(f"Phase 2/3: Downloading {len(missing_symbols)} missing symbols...")
-                        chunk_size = 30
+                        chunk_size = 20
                         sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
                         
                         def download_chunk(chunk_idx, chunk):
@@ -1812,7 +1812,7 @@ if run_full or run_sma:
                             chunk_ns = [f"{s.strip().upper()}.NS" for s in chunk]
     
                             retries = 0
-                            max_retries = 2
+                            max_retries = 3
                             backoff = 2.0
     
                             while retries <= max_retries:
@@ -1824,7 +1824,7 @@ if run_full or run_sma:
                                         interval=yf_interval,
                                         progress=False,
                                         threads=False,
-                                        timeout=20
+                                        timeout=25
                                     )
     
                                     if df_bulk is None or df_bulk.empty:
@@ -1868,8 +1868,7 @@ if run_full or run_sma:
                                         except Exception:
                                             pass
     
-                                    # Upload successfully downloaded data to Turso DB in a background thread
-                                    # This prevents the 60-second database upload from blocking the next Yahoo download!
+                                    # Upload successfully downloaded data to DB in background
                                     valid_data = {k: v.copy() for k, v in chunk_data.items() if not v.empty}
                                     if valid_data:
                                         def _upload_chunk(data_dict, tf):
@@ -1885,9 +1884,27 @@ if run_full or run_sma:
     
                                 except Exception as chunk_ex:
                                     retries += 1
-    
                                     if retries > max_retries:
-                                        print(f"Error downloading chunk {chunk_idx+1}: {chunk_ex}")
+                                        print(f"Batch chunk {chunk_idx+1} failed ({chunk_ex}). Attempting individual ticker fallbacks...")
+                                        # Individual ticker fallback so one bad/delisted ticker doesn't ruin the whole chunk
+                                        for sym in chunk:
+                                            try:
+                                                sym_ns = f"{sym.strip().upper()}.NS"
+                                                s_df = yf.download(tickers=sym_ns, period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=12)
+                                                if s_df is not None and not s_df.empty:
+                                                    if isinstance(s_df.columns, pd.MultiIndex):
+                                                        s_df.columns = s_df.columns.get_level_values(0)
+                                                    req_c = ["Open", "High", "Low", "Close", "Volume"]
+                                                    if all(col in s_df.columns for col in req_c):
+                                                        s_df = s_df[req_c].dropna(subset=["Close"])
+                                                        s_df = s_df[s_df["Volume"] > 0]
+                                                        if not s_df.empty:
+                                                            s_df = s_df.reset_index()
+                                                            s_df.rename(columns={s_df.columns[0]: "Date"}, inplace=True)
+                                                            s_df["Date"] = pd.to_datetime(s_df["Date"], utc=True).dt.tz_localize(None)
+                                                            chunk_data[sym.strip().upper()] = s_df
+                                            except Exception:
+                                                pass
                                         break
     
                                     import time
@@ -1897,8 +1914,6 @@ if run_full or run_sma:
                             return chunk_data
     
                         import time
-                        # Process sequentially and add a tiny sleep to be polite to the Yahoo Finance API.
-                        # This prevents Streamlit from dropping the WebSocket connection (blank screen) due to excessive rate-limit backoff blocking.
                         for chunk_idx, chunk in enumerate(sym_chunks):
                             res = download_chunk(chunk_idx, chunk)
                             bulk_data.update(res)
@@ -1908,7 +1923,7 @@ if run_full or run_sma:
                             
                             # Add a proactive sleep between chunks to avoid Yahoo rate limits
                             if chunk_idx < len(sym_chunks) - 1:
-                                time.sleep(1)
+                                time.sleep(1.5)
     
                     if len(bulk_data) > 0:
                         st.session_state[cache_key_p2] = bulk_data
@@ -1935,6 +1950,10 @@ if run_full or run_sma:
             def process_and_fetch_if_needed(sym, df, benchmark_df, *args):
                 try:
                     if df is None or len(df) == 0:
+                        clean_sym = sym.strip().upper().replace(".NS", "")
+                        from local_cache_manager import get_cached_ohlcv
+                        df = get_cached_ohlcv(clean_sym, _tf_db_key, ignore_ttl=True)
+                    if df is None or len(df) < 5:
                         return {"failed": True, "error": "No historical data available"}
                     return process_single_symbol(sym, df, benchmark_df, *args)
                 except Exception as e:
@@ -2002,7 +2021,7 @@ if run_full or run_sma:
                 return True
     
             failed_syms_retry = [s for s in scan_symbols if _is_empty_data(s.strip().upper())]
-            if failed_syms_retry and len(failed_syms_retry) < n_stocks * 0.6:
+            if failed_syms_retry:
                 status_box.text(f"Retrying {len(failed_syms_retry)} failed symbols after cool-down...")
                 time.sleep(5)
                 retry_chunk_size = 15
