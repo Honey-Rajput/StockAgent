@@ -62,7 +62,7 @@ def render():
     st.markdown("Analyzes Minervini's 8 Trend Template criteria to classify stocks into Stage 1, Stage 2 (Uptrend), Stage 3 (Topping), or Stage 4 (Decline).")
     
     col_sa1, col_sa2 = st.columns([1, 2])
-    run_sa_btn = col_sa1.button("🔍 Run Stage Analysis Scan", type="primary", use_container_width=True)
+    run_sa_btn = col_sa1.button("🔍 Run Stage Analysis Scan", type="primary", use_container_width=True, key="run_stage_analysis_btn")
     
     if run_sa_btn:
         st.session_state.stage_analysis_results = None

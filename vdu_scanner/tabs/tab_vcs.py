@@ -105,7 +105,7 @@ def render():
     st.markdown("---")
     
     col_btn, col_note = st.columns([1, 2])
-    run_zanger_btn = col_btn.button("🔍 Run Dan Zanger Scan", type="primary", use_container_width=True)
+    run_zanger_btn = col_btn.button("🔍 Run Dan Zanger Scan", type="primary", use_container_width=True, key="run_zanger_scan_btn")
     
     if run_zanger_btn:
         with st.spinner("Running Dan Zanger scan..."):

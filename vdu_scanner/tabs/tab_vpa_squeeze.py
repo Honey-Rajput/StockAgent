@@ -78,7 +78,7 @@ def render():
         except Exception as e:
             pass
         
-    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch", disabled=not is_admin)
+    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch", disabled=not is_admin, key="run_vpa_squeeze_scan_btn")
     if run_vpa_squeeze_btn:
         st.session_state.vpa_squeeze_results = []
         with st.spinner("Running VPA Squeeze Scan..."):

@@ -62,7 +62,7 @@ def render():
     st.markdown("Stocks taking support at their 9 or 21 EMA with tight proximity, plus crossover signals.")
     
     col_btn, col_note = st.columns([1, 2])
-    run_bb_btn = col_btn.button("🔍 Run EMA Support Scan", type="primary", use_container_width=True)
+    run_bb_btn = col_btn.button("🔍 Run EMA Support Scan", type="primary", use_container_width=True, key="run_ema_support_btn")
     
     if run_bb_btn:
         st.session_state.ema_support_results = None

@@ -217,7 +217,7 @@ def render():
 
     col1, col2 = st.columns([3, 7])
     with col1:
-        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch", disabled=not is_admin)
+        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch", disabled=not is_admin, key="run_vpa_scan_btn")
     
     if run_vpa_btn:
         st.session_state.vpa_results = []
@@ -590,6 +590,7 @@ def render():
             data=pd.DataFrame(blast_csv_data).to_csv(index=False).encode('utf-8-sig'),
             file_name="vpa_blast_watchlist.csv",
             mime="text/csv",
+            key="vpa_tab_blast_watchlist_dl_btn"
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -885,13 +886,13 @@ def render():
     dl1, dl2, dl3 = st.columns(3)
     with dl1:
         st.download_button("📥 Daily VPA (CSV)", data=pd.DataFrame(daily_export).to_csv(index=False).encode('utf-8-sig'),
-                           file_name="vpa_daily_trend.csv", mime="text/csv", width="stretch")
+                           file_name="vpa_daily_trend.csv", mime="text/csv", width="stretch", key="vpa_tab_daily_trend_dl_btn")
     with dl2:
         st.download_button("📥 Weekly VPA (CSV)", data=pd.DataFrame(weekly_export).to_csv(index=False).encode('utf-8-sig'),
-                           file_name="vpa_weekly_trend.csv", mime="text/csv", width="stretch")
+                           file_name="vpa_weekly_trend.csv", mime="text/csv", width="stretch", key="vpa_tab_weekly_trend_dl_btn")
     with dl3:
         st.download_button("📥 Monthly VPA (CSV)", data=pd.DataFrame(monthly_export).to_csv(index=False).encode('utf-8-sig'),
-                           file_name="vpa_monthly_trend.csv", mime="text/csv", width="stretch")
+                           file_name="vpa_monthly_trend.csv", mime="text/csv", width="stretch", key="vpa_tab_monthly_trend_dl_btn")
 
     st.caption(f"Showing **{rank}** stocks | {selected_tf} Timeframe | Min Blast Score: {min_blast}")
 

@@ -87,7 +87,7 @@ def render():
     s2_col1, s2_col2 = st.columns([2, 8])
     with s2_col1:
         s2_max_runup = st.number_input("Max Run-Up (%)", min_value=5.0, max_value=50.0, value=20.0, step=1.0)
-        run_stage2_btn = st.button("🔍 Run Stage 2 Scan", width="stretch", type="primary")
+        run_stage2_btn = st.button("🔍 Run Stage 2 Scan", width="stretch", type="primary", key="run_stage2_scan_btn")
         
     if run_stage2_btn:
         with st.spinner(f"Running Monthly Stage 2 Scan on {st.session_state.get('universe_selection', 'Top 1000 NSE Stocks (By Market Cap)')}..."):

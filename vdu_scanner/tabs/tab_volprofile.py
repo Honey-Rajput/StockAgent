@@ -86,7 +86,7 @@ def render():
     
     col1, col2 = st.columns([3, 7])
     with col1:
-        run_vp_btn = st.button("🚀 Run Advanced Volume Profile Scan", width="stretch")
+        run_vp_btn = st.button("🚀 Run Advanced Volume Profile Scan", width="stretch", key="run_volprofile_scan_btn")
     
     if run_vp_btn:
         st.session_state.vp_results = []

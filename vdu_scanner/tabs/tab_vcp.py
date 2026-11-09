@@ -88,7 +88,7 @@ def render():
     st.markdown("---")
     
     col_v_btn, col_v_note = st.columns([1, 2])
-    run_vcp_btn = col_v_btn.button("🔍 Run VCP+Minervini Scan", type="primary", use_container_width=True)
+    run_vcp_btn = col_v_btn.button("🔍 Run VCP+Minervini Scan", type="primary", use_container_width=True, key="run_vcp_scan_btn")
     
     if run_vcp_btn:
         with st.spinner("Running Minervini VCP scan across all NSE stocks..."):

@@ -155,7 +155,7 @@ def render():
     
     col_btn, col_info = st.columns([3, 7])
     with col_btn:
-        run_scan_btn = st.button("🚀 Run Flat Base Squeeze Scan", width="stretch")
+        run_scan_btn = st.button("🚀 Run Flat Base Squeeze Scan", width="stretch", key="run_flat_base_scan_btn")
         
     if run_scan_btn:
         st.session_state.flat_base_results = []
