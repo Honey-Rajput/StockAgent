@@ -409,24 +409,34 @@ def fetch_sector_map() -> dict:
             
     return sector_map
 
+_sector_memory_cache = {}
+
 @st.cache_data(ttl=86400 * 7)
 def get_stock_sector(symbol: str) -> str:
     """Returns the sector for a symbol. Tries static map first, then yfinance."""
     sym = symbol.strip().upper()
     base_sym = sym.replace('.NS', '')
     
+    if base_sym in _sector_memory_cache:
+        return _sector_memory_cache[base_sym]
+        
     sector_map = fetch_sector_map()
     if base_sym in sector_map:
+        _sector_memory_cache[base_sym] = sector_map[base_sym]
         return sector_map[base_sym]
     if sym in sector_map:
+        _sector_memory_cache[base_sym] = sector_map[sym]
         return sector_map[sym]
     
-    # Fallback to yfinance (can be slow so only fallback)
+    # Fallback to yfinance (cached so it only runs once per symbol)
     try:
         yf_sym = f"{base_sym}.NS"
         info = yf.Ticker(yf_sym).info
-        return info.get('sector') or info.get('industry') or 'Unknown'
+        sec = info.get('sector') or info.get('industry') or 'Unknown'
+        _sector_memory_cache[base_sym] = sec
+        return sec
     except Exception:
+        _sector_memory_cache[base_sym] = 'Unknown'
         return 'Unknown'
 
 

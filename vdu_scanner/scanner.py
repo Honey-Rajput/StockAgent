@@ -94,7 +94,15 @@ def scan_stock(
     if df is None or len(df) < min_required_len:
         return None
 
-    df = df.reset_index(drop=True)
+    if 'Date' not in df.columns:
+        if isinstance(df.index, pd.DatetimeIndex) or str(df.index.dtype).startswith('datetime'):
+            df = df.reset_index()
+            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+        else:
+            df = df.copy()
+            df['Date'] = pd.date_range(end=pd.Timestamp.today(), periods=len(df), freq='B')
+    else:
+        df = df.reset_index(drop=True)
     n = len(df)
     min_dry_days = max(1, min_dry_days)
 
@@ -189,7 +197,11 @@ def scan_stock(
     if today['Close'] >= zone_avg_price * 1.03:
         price_breakout_ok = True
 
-    is_breakout = volume_surge_ok and bullish_candle_ok and price_breakout_ok
+    # Price gain condition (respects user-configured min_price_change)
+    best_pct = max(pct_change_intraday, pct_change_close)
+    price_gain_ok = best_pct >= min_price_change
+
+    is_breakout = volume_surge_ok and bullish_candle_ok and price_breakout_ok and price_gain_ok
     is_pre_breakout = False
 
     if not is_breakout:
@@ -367,6 +379,8 @@ def scan_stock(
 
     from config import get_company_name
     company_name = get_company_name(symbol)
+    start_dt = history_df['Date'].iloc[start_idx] if 'Date' in history_df.columns else pd.Timestamp.today()
+    end_dt = history_df['Date'].iloc[end_idx] if 'Date' in history_df.columns else pd.Timestamp.today()
 
     return {
         "symbol":           symbol.strip().upper(),
@@ -380,8 +394,8 @@ def scan_stock(
         "rvol":             rvol,
         "dry_days_count":   int(dry_days_count),
         "dry_spikes":       dry_spikes,
-        "dry_start_date":   pd.to_datetime(history_df['Date'].iloc[start_idx]),
-        "dry_end_date":     pd.to_datetime(history_df['Date'].iloc[end_idx]),
+        "dry_start_date":   pd.to_datetime(start_dt),
+        "dry_end_date":     pd.to_datetime(end_dt),
         "signal_strength":  score,
         "pct_change_today": round(day_change_pct, 2),
         "above_50dma":      above_50dma,

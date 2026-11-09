@@ -62,8 +62,16 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
         res["failed"] = True
         return res
         
+    if 'Date' not in df.columns:
+        if isinstance(df.index, pd.DatetimeIndex) or str(df.index.dtype).startswith('datetime'):
+            df = df.reset_index()
+            df.rename(columns={df.columns[0]: 'Date'}, inplace=True)
+        else:
+            df = df.copy()
+            df['Date'] = pd.date_range(end=pd.Timestamp.today(), periods=len(df), freq='B')
+
     df = df.sort_values('Date').reset_index(drop=True)
-    last_df_date = df['Date'].iloc[-1].date()
+    last_df_date = pd.to_datetime(df['Date'].iloc[-1]).date()
     today_raw = datetime.now(IST_TIMEZONE)
     if today_raw.isoweekday() == 7:
         today_date = (today_raw - pd.Timedelta(days=2)).date()
@@ -98,13 +106,8 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         
     today_close_val = df['Close'].iloc[-1]
-    if today_close_val <= 200.0:
-        res["failed"] = True
-        return res
-        
-    from data_fetcher import get_market_cap_cr
-    mc_cr = get_market_cap_cr(sym)
-    if mc_cr > 0 and mc_cr < 2000.0:
+    # Filter penny stocks (under ₹5) without marking as pipeline failure
+    if today_close_val < 5.0:
         return res
     
     # =====================================================================

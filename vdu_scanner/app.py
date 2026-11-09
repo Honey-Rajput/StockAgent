@@ -1341,21 +1341,21 @@ st.sidebar.markdown('### 🔍 VDU Strategy Filters')
 # Algorithmic parameter sliders
 min_vol_ratio = st.sidebar.slider(
     "Min Volume Ratio",
-    min_value=1.5,
+    min_value=1.2,
     max_value=10.0,
     value=float(MIN_VOLUME_RATIO),
-    step=0.5,
-    key="vdu_min_vol_ratio_v8",
-    help="Breakout day volume compared to dry average volume (e.g., 2.0 = 2x surge)"
+    step=0.1,
+    key="vdu_min_vol_ratio_v9",
+    help="Breakout day volume compared to dry average volume (e.g., 1.8 = 1.8x surge)"
 )
 
 min_price_chg = st.sidebar.slider(
     "Min Price Change %",
-    min_value=1.5,
+    min_value=1.0,
     max_value=30.0,
     value=float(MIN_PRICE_CHANGE),
     step=0.5,
-    key="vdu_min_price_chg_v8",
+    key="vdu_min_price_chg_v9",
     help="Minimum price percentage increase on the breakout day (Close vs Open)"
 )
 
@@ -1373,9 +1373,9 @@ min_dry_spikes = st.sidebar.slider(
     "Min Spikes in Dry Zone",
     min_value=0,
     max_value=20,
-    value=7,
+    value=2,
     step=1,
-    key="vdu_min_dry_spikes_v8",
+    key="vdu_min_dry_spikes_v9",
     help="Requires at least this many volume accumulation spikes inside the dry zone window (up to 20 spikes)"
 )
 
@@ -1383,9 +1383,9 @@ min_signal_str = st.sidebar.slider(
     "Min Signal Strength Score",
     min_value=0,
     max_value=100,
-    value=30,
+    value=25,
     step=5,
-    key="vdu_min_signal_str_v5",
+    key="vdu_min_signal_str_v6",
     help="Filter stocks based on overall calculated algorithmic rating"
 )
 
@@ -1548,7 +1548,7 @@ if run_full or run_sma:
             prog_bar = st.progress(0)
             
             # Known-delisted / permanently broken symbols — skip entirely to avoid wasted retries
-            BLACKLISTED_SYMBOLS = {"GANGAFO-RE", "AMIRCHAND"}
+            BLACKLISTED_SYMBOLS = {"GANGAFO-RE", "AMIRCHAND", "TATAMOTORS"}
             raw_symbols = [s for s in raw_symbols if s.strip().upper() not in BLACKLISTED_SYMBOLS]
 
             all_tickers_ns = []
@@ -2103,11 +2103,12 @@ if run_full or run_sma:
                 try:
                     import database as _db_fb
                     _fb_dates = _db_fb.get_available_scan_dates()
-                    if _fb_dates:
-                        _fb_results = _db_fb.get_cached_breakouts(_fb_dates[0])
+                    for fb_d in _fb_dates:
+                        _fb_results = _db_fb.get_cached_breakouts(fb_d)
                         if _fb_results and len(_fb_results) > 0:
                             flagged_list = _fb_results
-                            st.toast(f"⚠️ Fresh scan found 0 VDU results. Loaded {len(flagged_list)} cached results from {_fb_dates[0]}.", icon="📅")
+                            st.toast(f"⚠️ Fresh scan found 0 VDU results today. Loaded {len(flagged_list)} cached setups from {fb_d}.", icon="📅")
+                            break
                 except Exception:
                     pass
             st.session_state.scan_results = flagged_list
