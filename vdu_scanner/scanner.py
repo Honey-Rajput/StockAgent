@@ -2243,6 +2243,23 @@ def scan_volume_profile(symbol: str, df: pd.DataFrame, market_cap: float) -> dic
         return None
 
     try:
+        # Moving Averages to identify trend direction (prevent buying in downtrends)
+        close_series = df['Close']
+        sma_50 = float(close_series.rolling(50).mean().iloc[-1]) if len(close_series) >= 50 else None
+        sma_200 = float(close_series.rolling(200).mean().iloc[-1]) if len(close_series) >= 200 else (
+            float(close_series.rolling(len(close_series)).mean().iloc[-1]) if len(close_series) > 0 else None
+        )
+        
+        above_50dma = bool(close_price >= sma_50) if sma_50 is not None else True
+        above_200dma = bool(close_price >= sma_200) if sma_200 is not None else True
+        
+        if above_50dma and above_200dma:
+            trend = "🟢 Uptrend"
+        elif above_50dma or above_200dma:
+            trend = "🟡 Neutral"
+        else:
+            trend = "🔴 Downtrend"
+
         df_weekly = df.set_index('Date').resample('W-FRI').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
         df_monthly = df.set_index('Date').resample('ME').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'}).dropna().reset_index()
 
@@ -2259,7 +2276,10 @@ def scan_volume_profile(symbol: str, df: pd.DataFrame, market_cap: float) -> dic
             'monthly': monthly_result,
             'cmp': close_price,
             'symbol': symbol,
-            'market_cap_cr': market_cap
+            'market_cap_cr': market_cap,
+            'trend': trend,
+            'above_50dma': above_50dma,
+            'above_200dma': above_200dma
         }
     except Exception as e:
         return None

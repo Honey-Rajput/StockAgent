@@ -238,9 +238,23 @@ def render():
             
             clean_sym = str(r.get('symbol', '')).replace('.NS', '').strip().upper()
             
+            # Determine trend status
+            trend_val = r.get('trend')
+            if not trend_val:
+                # Infer from zone: if below VAL or Avoid, mark as downtrend
+                if d['zone'] == '⛔ Avoid (Below Support)' or (d['va_pct'] is not None and d['va_pct'] < 0):
+                    trend_val = '🔴 Downtrend'
+                elif w['zone'] == '⛔ Avoid (Below Support)':
+                    trend_val = '🔴 Downtrend'
+                elif d['zone'] == '✅ Can Buy (Near Support)' and (w['zone'] == '✅ Can Buy (Near Support)' or w['zone'] == '⏳ Hold (Moving to Target)' or w['zone'] == '🎯 Take Profit (Near Resistance)'):
+                    trend_val = '🟢 Uptrend'
+                else:
+                    trend_val = '🟢 Uptrend'
+            
             vp_export.append({
                 'Rank': rank,
                 'Symbol': clean_sym,
+                'Trend': trend_val,
                 'CMP': r.get('cmp', 0),
                 'Market Cap (Cr)': round(r.get('market_cap_cr', 0), 2),
                 # Daily levels
@@ -266,6 +280,20 @@ def render():
             
         df_vp = pd.DataFrame(vp_export)
         
+        # Trend Filter Controls
+        col_f1, col_f2 = st.columns([5, 5])
+        trend_filter = col_f1.radio(
+            "Filter by Trend:",
+            options=["🟢 Uptrend Only (Exclude Downtrend)", "All Stocks (Include Downtrend)"],
+            index=0,
+            horizontal=True,
+            help="Filters out stocks in a downtrend so you avoid buying falling knives."
+        )
+        
+        if trend_filter == "🟢 Uptrend Only (Exclude Downtrend)" and not df_vp.empty and 'Trend' in df_vp.columns:
+            df_vp = df_vp[df_vp['Trend'] != '🔴 Downtrend'].copy()
+            df_vp['Rank'] = range(1, len(df_vp) + 1)
+        
         # Summary Metrics
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -278,15 +306,16 @@ def render():
             st.metric("Monthly Buy Zone", len(df_vp[df_vp['M Zone'] == '✅ Can Buy (Near Support)']) if not df_vp.empty else 0)
         
         # Column groups per timeframe
-        daily_cols = ['Rank', 'Symbol', 'CMP', 'D Zone', 'D Buy Range (VAL)', 'D Target (POC)', 'D Resistance (VAH)', 'D VA%']
-        weekly_cols = ['Rank', 'Symbol', 'CMP', 'W Zone', 'W Buy Range (VAL)', 'W Target (POC)', 'W Resistance (VAH)', 'W VA%']
-        monthly_cols = ['Rank', 'Symbol', 'CMP', 'M Zone', 'M Buy Range (VAL)', 'M Target (POC)', 'M Resistance (VAH)', 'M VA%']
+        daily_cols = ['Rank', 'Symbol', 'Trend', 'CMP', 'D Zone', 'D Buy Range (VAL)', 'D Target (POC)', 'D Resistance (VAH)', 'D VA%']
+        weekly_cols = ['Rank', 'Symbol', 'Trend', 'CMP', 'W Zone', 'W Buy Range (VAL)', 'W Target (POC)', 'W Resistance (VAH)', 'W VA%']
+        monthly_cols = ['Rank', 'Symbol', 'Trend', 'CMP', 'M Zone', 'M Buy Range (VAL)', 'M Target (POC)', 'M Resistance (VAH)', 'M VA%']
         
         # Timeframe Tabs
         tab_all, tab_daily, tab_weekly, tab_monthly = st.tabs(["📊 All Stocks", "📅 Daily", "📅 Weekly", "📅 Monthly"])
         
         vp_col_config = {
             "Symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)"),
+            "Trend": st.column_config.TextColumn("Trend"),
             "CMP": st.column_config.NumberColumn("CMP (₹)", format="%.2f"),
             "D Buy Range (VAL)": st.column_config.NumberColumn("Buy Range (VAL)", format="%.2f"),
             "D Target (POC)": st.column_config.NumberColumn("Target (POC)", format="%.2f"),

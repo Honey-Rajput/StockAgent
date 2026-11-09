@@ -2010,8 +2010,9 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
          daily_zone, daily_pos, daily_poc, daily_val, daily_vah,
          weekly_zone, weekly_pos, weekly_poc, weekly_val, weekly_vah,
          monthly_zone, monthly_pos, monthly_poc, monthly_val, monthly_vah,
+         trend, above_50dma, above_200dma,
          scan_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             cmp = EXCLUDED.cmp,
             market_cap_cr = EXCLUDED.market_cap_cr,
@@ -2020,7 +2021,8 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
             weekly_zone = EXCLUDED.weekly_zone, weekly_pos = EXCLUDED.weekly_pos,
             weekly_poc = EXCLUDED.weekly_poc, weekly_val = EXCLUDED.weekly_val, weekly_vah = EXCLUDED.weekly_vah,
             monthly_zone = EXCLUDED.monthly_zone, monthly_pos = EXCLUDED.monthly_pos,
-            monthly_poc = EXCLUDED.monthly_poc, monthly_val = EXCLUDED.monthly_val, monthly_vah = EXCLUDED.monthly_vah;
+            monthly_poc = EXCLUDED.monthly_poc, monthly_val = EXCLUDED.monthly_val, monthly_vah = EXCLUDED.monthly_vah,
+            trend = EXCLUDED.trend, above_50dma = EXCLUDED.above_50dma, above_200dma = EXCLUDED.above_200dma;
         """
         
         def _extract_tf(v, tf_key):
@@ -2046,6 +2048,9 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
             d_zone, d_pos, d_poc, d_val, d_vah = _extract_tf(v, 'daily')
             w_zone, w_pos, w_poc, w_val, w_vah = _extract_tf(v, 'weekly')
             m_zone, m_pos, m_poc, m_val, m_vah = _extract_tf(v, 'monthly')
+            trend = v.get('trend', '🟢 Uptrend')
+            above_50dma = v.get('above_50dma', True)
+            above_200dma = v.get('above_200dma', True)
             
             vp_data.append((
                 clean_sym, '',
@@ -2063,6 +2068,7 @@ def save_volume_profile_only(date_str: str, vp_results: list[dict]) -> bool:
                 float(m_poc) if m_poc is not None else None,
                 float(m_val) if m_val is not None else None,
                 float(m_vah) if m_vah is not None else None,
+                trend, above_50dma, above_200dma,
                 date_str
             ))
             
@@ -2102,6 +2108,9 @@ def get_cached_volume_profile(date_str: str) -> list[dict]:
                 'company_name': row['company_name'],
                 'cmp': row['cmp'],
                 'market_cap_cr': row['market_cap_cr'],
+                'trend': row.get('trend') if 'trend' in row.keys() and row.get('trend') else '🟢 Uptrend',
+                'above_50dma': row.get('above_50dma') if 'above_50dma' in row.keys() else True,
+                'above_200dma': row.get('above_200dma') if 'above_200dma' in row.keys() else True,
                 'daily': {
                     'zone': row['daily_zone'] or '',
                     'position_pct': row['daily_pos'] if row['daily_pos'] is not None else "",
@@ -2957,6 +2966,10 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
                     except Exception:
                         pass
             except Exception as tbl_err:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
                 print(f"[get_frequent_stocks] Skipping table {table}: {tbl_err}")
 
         cur.close()
