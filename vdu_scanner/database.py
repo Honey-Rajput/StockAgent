@@ -981,8 +981,9 @@ def init_db() -> bool:
             if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', str(col)):
                 raise ValueError(f"Invalid column name: {col!r}")
             # Validate column type against known SQLite/PostgreSQL types
-            col_type_upper = str(col_type).upper()
-            if col_type_upper not in ('TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC', 'VARCHAR', 'DATETIME', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DOUBLE PRECISION'):
+            col_type_upper = str(col_type).upper().strip()
+            valid_pattern = r'^(TEXT|INTEGER|INT|BIGINT|REAL|BLOB|NUMERIC|VARCHAR(\(\d+\))?|DATETIME|BOOLEAN(\s+DEFAULT\s+(FALSE|TRUE|0|1))?|FLOAT|DOUBLE(\s+PRECISION)?)$'
+            if not re.match(valid_pattern, col_type_upper):
                 raise ValueError(f"Invalid column type: {col_type!r}")
             try:
                 if is_pg:
@@ -990,7 +991,8 @@ def init_db() -> bool:
                 else:
                     existing = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
                     if col not in existing:
-                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type_upper}")
+                        sqlite_type = col_type_upper.replace("DEFAULT FALSE", "DEFAULT 0").replace("DEFAULT TRUE", "DEFAULT 1")
+                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
             except Exception as mig_ex:
                 pass  # column already exists or table doesn't exist yet – safe to ignore
 
