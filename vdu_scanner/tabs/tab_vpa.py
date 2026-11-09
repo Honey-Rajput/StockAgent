@@ -217,7 +217,7 @@ def render():
 
     col1, col2 = st.columns([3, 7])
     with col1:
-        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch", disabled=not is_admin, key="run_vpa_scan_btn")
+        run_vpa_btn = st.button("🚀 Run Advanced VPA Scan", width="stretch", key="run_vpa_scan_btn")
     
     if run_vpa_btn:
         st.session_state.vpa_results = []

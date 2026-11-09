@@ -1123,30 +1123,11 @@ if st.session_state.weekly_momentum_results is None:
             print(f"Error loading weekly cache on boot: {e}")
 
 
-# --- Authentication System ---
-if 'authenticated' not in st.session_state:
-    st.session_state['authenticated'] = False
-
-if not st.session_state['authenticated']:
-    with st.sidebar.expander("🔐 Admin Login", expanded=False):
-        with st.form("login_form"):
-            user = st.text_input("Username")
-            pwd = st.text_input("Password", type="password")
-            if st.form_submit_button("Login"):
-                if user == "admin" and pwd == "vdu123":
-                    st.session_state['authenticated'] = True
-                    st.toast("Logged in successfully!", icon="✅")
-                    st.rerun()
-                else:
-                    st.error("Invalid credentials")
-else:
-    if st.sidebar.button("🔓 Logout", use_container_width=True, key="app_sidebar_logout_btn"):
-        st.session_state['authenticated'] = False
-        st.rerun()
-
-is_admin = st.session_state.get('authenticated', False)
-st.session_state['is_admin'] = is_admin
-# -----------------------------
+# --- Permissions: Open Access (No Admin Login Required) ---
+st.session_state['authenticated'] = True
+st.session_state['is_admin'] = True
+is_admin = True
+# ----------------------------------------------------------
 
 # --- Automatic Daily Database Cache Loader ---
 # Runs ONCE per browser session (db_cache_checked stays False until first load).
@@ -1436,7 +1417,7 @@ st.sidebar.markdown('---')
 run_full = st.sidebar.button("🔍 Run Full Scanner", use_container_width=True)
 
 col1, col2 = st.sidebar.columns(2)
-if col1.button("💾 Save Results", help="Force save all current results to the DB for today.", disabled=not is_admin):
+if col1.button("💾 Save Results", help="Force save all current results to the DB for today.", key="app_sidebar_save_results_btn"):
     import database
     from datetime import datetime
     import pytz
