@@ -65,15 +65,13 @@ def render():
     if not st.session_state.get('vcp_minervini_results'):
         try:
             import database
-            today_str = get_market_date()
-            cached = database.get_cached_vcp_minervini(today_str)
-            if cached:
-                st.session_state.vcp_minervini_results = cached
-            else:
-                # fallback: check last 10 days
-                from datetime import timedelta
-                for days_back in range(1, 10):
-                    check_date = (datetime.now(IST_TIMEZONE) - timedelta(days=days_back)).strftime('%Y-%m-%d')
+            vcp_d = database.get_all_latest_scan_dates().get("scanned_vcp_minervini") or database.get_best_scan_date()
+            if vcp_d:
+                cached = database.get_cached_vcp_minervini(vcp_d)
+                if cached:
+                    st.session_state.vcp_minervini_results = cached
+            if not st.session_state.get('vcp_minervini_results'):
+                for check_date in database.get_available_scan_dates():
                     cached = database.get_cached_vcp_minervini(check_date)
                     if cached:
                         st.session_state.vcp_minervini_results = cached

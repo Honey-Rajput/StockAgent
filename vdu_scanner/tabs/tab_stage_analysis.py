@@ -149,10 +149,20 @@ def render():
         st.session_state.stage_analysis_results = None
         
     sa_today_str = get_market_date(for_display=True)
-    if st.session_state.stage_analysis_results is None:
-        st.session_state.stage_analysis_results = database.get_cached_stage_analysis(sa_today_str)
+    if not st.session_state.get('stage_analysis_results'):
+        try:
+            sa_d = database.get_all_latest_scan_dates().get("scanned_stage_analysis") or database.get_best_scan_date()
+            if sa_d:
+                cached_sa = database.get_cached_stage_analysis(sa_d)
+                if cached_sa:
+                    st.session_state.stage_analysis_results = cached_sa
+                    sa_today_str = sa_d
+        except Exception as _e:
+            print(f"Error loading stage analysis cache: {_e}")
+        if not st.session_state.get('stage_analysis_results'):
+            st.session_state.stage_analysis_results = database.get_cached_stage_analysis(sa_today_str)
         
-    if st.session_state.stage_analysis_results is not None:
+    if st.session_state.get('stage_analysis_results'):
         sa_list = st.session_state.stage_analysis_results
         
         # Apply Universe Filter

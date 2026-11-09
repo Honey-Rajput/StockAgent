@@ -2593,6 +2593,17 @@ with tab_monthly:
     if st.session_state.monthly_momentum_results is None and MOMENTUM_SCAN_STATUS["monthly_results"] is not None:
         st.session_state.monthly_momentum_results = MOMENTUM_SCAN_STATUS["monthly_results"]
 
+    if not st.session_state.get('monthly_momentum_results'):
+        try:
+            mm_d = database.get_all_latest_scan_dates().get("scanned_monthly_momentum") or database.get_best_scan_date()
+            if mm_d:
+                mm_cached = database.get_cached_monthly_momentum(mm_d)
+                if mm_cached:
+                    st.session_state.monthly_momentum_results = mm_cached
+                    st.session_state.monthly_momentum_date = mm_d
+        except Exception:
+            pass
+
     mm_data = st.session_state.monthly_momentum_results
 
     # --- Render Background Scan Progress Inside Monthly Tab ---
@@ -2900,6 +2911,17 @@ with tab_weekly:
     # Check if background thread has finished and results are available
     if st.session_state.weekly_momentum_results is None and MOMENTUM_SCAN_STATUS["weekly_results"] is not None:
         st.session_state.weekly_momentum_results = MOMENTUM_SCAN_STATUS["weekly_results"]
+
+    if not st.session_state.get('weekly_momentum_results'):
+        try:
+            wm_d = database.get_all_latest_scan_dates().get("scanned_weekly_momentum") or database.get_best_scan_date()
+            if wm_d:
+                wm_cached = database.get_cached_weekly_momentum(wm_d)
+                if wm_cached:
+                    st.session_state.weekly_momentum_results = wm_cached
+                    st.session_state.weekly_momentum_date = wm_d
+        except Exception:
+            pass
 
     wm_data = st.session_state.weekly_momentum_results
 

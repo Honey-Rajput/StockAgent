@@ -67,16 +67,16 @@ def render():
         if st.session_state.ALL_TAB_SCAN_STATUS.get("stage2_results"):
             st.session_state.stage2_results = st.session_state.ALL_TAB_SCAN_STATUS["stage2_results"]
         else:
-            # Try loading from DB (today first, then last 10 days as fallback)
+            # Try loading from DB (latest table date first, then available dates fallback)
             try:
-                today_str = get_market_date(for_display=True)
-                cached_stage2 = database.get_cached_stage2(today_str)
-                if cached_stage2:
-                    st.session_state.stage2_results = cached_stage2
-                else:
-                    from datetime import timedelta
-                    for days_back in range(1, 10):
-                        check_date = (datetime.now(IST_TIMEZONE) - timedelta(days=days_back)).strftime('%Y-%m-%d')
+                all_latest = database.get_all_latest_scan_dates()
+                s2_d = all_latest.get('scanned_stage2') or database.get_best_scan_date()
+                if s2_d:
+                    cached_stage2 = database.get_cached_stage2(s2_d)
+                    if cached_stage2:
+                        st.session_state.stage2_results = cached_stage2
+                if not st.session_state.get('stage2_results'):
+                    for check_date in database.get_available_scan_dates():
                         cached_stage2 = database.get_cached_stage2(check_date)
                         if cached_stage2:
                             st.session_state.stage2_results = cached_stage2

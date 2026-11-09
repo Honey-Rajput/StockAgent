@@ -68,13 +68,19 @@ def render():
     if "vpa_squeeze_monthly_results" not in st.session_state:
         st.session_state.vpa_squeeze_monthly_results = []
         
-    if not st.session_state.vpa_squeeze_results:
+    if not st.session_state.get('vpa_squeeze_results'):
         try:
-            today_str = get_market_date()
             import database
-            st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str)
-            st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(today_str)
-            st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(today_str)
+            vpa_sq_d = database.get_all_latest_scan_dates().get("scanned_vpa_squeeze") or database.get_best_scan_date()
+            if vpa_sq_d:
+                st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(vpa_sq_d) or []
+                st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(vpa_sq_d) or []
+                st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(vpa_sq_d) or []
+            if not st.session_state.get('vpa_squeeze_results'):
+                today_str = get_market_date()
+                st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str) or []
+                st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(today_str) or []
+                st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(today_str) or []
         except Exception as e:
             pass
         

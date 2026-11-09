@@ -131,12 +131,18 @@ def render():
         st.session_state.flat_base_results = []
         
     # Auto-load cached results on first visit
-    if not st.session_state.flat_base_results:
+    if not st.session_state.get('flat_base_results'):
         try:
-            today_str = get_market_date()
-            cached = database.get_cached_flat_base(today_str)
-            if cached:
-                st.session_state.flat_base_results = cached
+            fb_date = database.get_all_latest_scan_dates().get("scanned_flat_base") or database.get_best_scan_date()
+            if fb_date:
+                cached = database.get_cached_flat_base(fb_date)
+                if cached:
+                    st.session_state.flat_base_results = cached
+            if not st.session_state.get('flat_base_results'):
+                today_str = get_market_date()
+                cached = database.get_cached_flat_base(today_str)
+                if cached:
+                    st.session_state.flat_base_results = cached
         except Exception as e:
             print(f"Error loading cached flat base: {e}")
             

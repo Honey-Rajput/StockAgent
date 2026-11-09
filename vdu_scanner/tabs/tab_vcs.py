@@ -61,7 +61,7 @@ def render():
     st.markdown("### 📉 Dan Zanger Breakout Scanner")
     st.markdown("Identifies stocks meeting Dan Zanger's criteria: Uptrend stack, prior massive run, shallow base, and high-volume breakout.")
     
-    if "zanger_results" not in st.session_state:
+    if not st.session_state.get("zanger_results"):
         import database
         zanger_dates = database.get_zanger_scan_dates()
         if zanger_dates:
@@ -69,7 +69,7 @@ def render():
                 st.session_state.zanger_results = database.get_cached_zanger(zanger_dates[0], timeframe="Daily")
                 st.session_state.zanger_tf = "Daily"
             except Exception:
-                st.session_state.zanger_results = []
+                pass
                 
     st.markdown("#### Scanner Parameters (Tweak if 0 results)")
     col_z1, col_z2, col_z3 = st.columns(3)

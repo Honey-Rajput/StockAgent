@@ -78,8 +78,13 @@ def render():
         with rw_col1:
             rw_rsi_thresh = st.slider("RSI Threshold (Oversold)", min_value=20.0, max_value=45.0, value=35.0, step=1.0, key="rw_rsi_thresh_v2")
 
-        # Load from DB cache instantly
-        st.session_state.rsi_oversold_results = database.get_rsi_oversold(rw_today_str, rsi_threshold=rw_rsi_thresh)
+        # Load from DB cache instantly (today first, then fallback to most recent support scan date)
+        rw_res = database.get_rsi_oversold(rw_today_str, rsi_threshold=rw_rsi_thresh)
+        if not rw_res:
+            latest_sup, latest_d = database.get_latest_support_rsi()
+            if latest_d:
+                rw_res = database.get_rsi_oversold(latest_d, rsi_threshold=rw_rsi_thresh)
+        st.session_state.rsi_oversold_results = rw_res or []
         rw_data = st.session_state.get('rsi_oversold_results', [])
 
         # Metrics
