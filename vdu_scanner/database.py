@@ -3782,7 +3782,9 @@ def get_latest_date_ohlcv(symbol: str) -> str | None:
     conn = get_connection()
     try:
         cur = conn.cursor()
-        cur.execute("SELECT MAX(date) FROM ohlcv_daily WHERE symbol = ?;", (symbol.strip().upper(),))
+        sym_clean = symbol.strip().upper()
+        sym_ns = sym_clean if sym_clean.endswith(".NS") else f"{sym_clean}.NS"
+        cur.execute("SELECT MAX(date) FROM ohlcv_daily WHERE symbol IN (?, ?);", (sym_clean, sym_ns))
         row = cur.fetchone()
         if row and row[0]:
             val = row[0]
@@ -3802,20 +3804,31 @@ def get_latest_date_ohlcv(symbol: str) -> str | None:
 def get_historical_data_ohlcv(symbol: str, limit: int = 1100) -> pd.DataFrame | None:
     conn = get_connection()
     try:
+        sym_clean = symbol.strip().upper()
+        sym_ns = sym_clean if sym_clean.endswith(".NS") else f"{sym_clean}.NS"
         query = """
-            SELECT date as Date, open as Open, high as High, low as Low, close as Close, volume as Volume 
+            SELECT date, open, high, low, close, volume 
             FROM ohlcv_daily 
-            WHERE symbol = ? 
+            WHERE symbol IN (?, ?) 
             ORDER BY date DESC
             LIMIT ?
         """
-        df = pd.read_sql_query(query, conn, params=(symbol.strip().upper(), limit))
+        df = pd.read_sql_query(query, conn, params=(sym_clean, sym_ns, limit))
         if df.empty:
             return None
         
+        # Standardize column names to TitleCase regardless of DB engine
+        df.rename(columns={
+            'date': 'Date', 'open': 'Open', 'high': 'High',
+            'low': 'Low', 'close': 'Close', 'volume': 'Volume'
+        }, inplace=True)
+        col_map = {c: c.capitalize() for c in df.columns}
+        df.rename(columns=col_map, inplace=True)
+        
         # Reverse to get chronological order (oldest to newest)
         df = df.iloc[::-1].reset_index(drop=True)
-        df['Date'] = pd.to_datetime(df['Date'])
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'])
         return df
     except Exception as e:
         print(f"Error reading from ohlcv_daily for {symbol}: {e}")

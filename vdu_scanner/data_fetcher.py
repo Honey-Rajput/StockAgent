@@ -130,14 +130,17 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
                 
                 # Assume weekend/holiday diff up to 3 days is normal and doesn't need fetch if it's the weekend
                 if days_diff <= 0 or (days_diff <= 2 and today.weekday() >= 5):
-                    if db_df is not None and not db_df.empty:
+                    if db_df is not None and len(db_df) >= 60:
                         _ohlcv_cache.set(formatted_symbol, db_df)
                         return db_df.copy()
                 
-                if days_diff < LOOKBACK_DAYS:
+                if db_df is not None and len(db_df) >= 60 and days_diff < LOOKBACK_DAYS:
                     # Incremental update: fetch missing days plus a 5 day buffer
                     fetch_period = f"{min(days_diff + 5, LOOKBACK_DAYS)}d"
                     need_full_fetch = False
+                else:
+                    need_full_fetch = True
+                    fetch_period = f"{LOOKBACK_DAYS}d"
             except Exception as e:
                 logger.debug("Date parsing error in fetch_ohlcv: %s", e)
                 
