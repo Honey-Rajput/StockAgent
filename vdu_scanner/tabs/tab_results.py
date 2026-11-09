@@ -84,7 +84,10 @@ def render():
         # Show which date the data is from (critical transparency for cached results)
         _scan_date_display = st.session_state.get('scan_results_date') or st.session_state.get('last_scanned', '')
         if _scan_date_display and scan_data:
-            st.info(f"📅 **Showing scan results from: {_scan_date_display}** — Refresh auto-loaded these from the database. Click **'Run Scanner'** in the sidebar to get today's fresh results.")
+            if st.session_state.get('fresh_scan_executed', False):
+                st.success(f"🟢 **Showing fresh live scan results ({_scan_date_display})** — {flagged_count} VDU Breakout(s) identified across {total_scanned} stocks.")
+            else:
+                st.info(f"📅 **Showing scan results from: {_scan_date_display}** — Refresh auto-loaded these from the database. Click **'Run Full Scanner'** in the sidebar to get today's fresh results.")
 
         # 2. Main Scan Table
         # NOTE: Use len(scan_data) not total_scanned==0 because DB-loaded results

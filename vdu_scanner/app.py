@@ -2167,14 +2167,17 @@ if run_full or run_sma:
             st.session_state.monthly_momentum_results = monthly_momentum_list
             st.session_state.weekly_momentum_results = weekly_momentum_list
             
+            today_ist_str = get_market_date()
             st.session_state.total_scanned = n_stocks
             st.session_state.failed_count = failed_count
             st.session_state.last_scanned = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %I:%M:%S %p")
+            st.session_state['scan_results_date'] = today_ist_str
+            st.session_state['fresh_scan_executed'] = True
+            st.session_state.scan_executed = True
             
             # Save to database cache daily
             db_save_succeeded = False
             try:
-                today_ist_str = get_market_date()
                 trend_setups_list = above_ma_list + support_ma_list + crossover_ma_list + minervini_list
                 
                 if scan_mode_flag == "sma_only":
@@ -2248,10 +2251,8 @@ if run_full or run_sma:
             st.success("✅ Scanner complete! Results have been updated.")
             import time
             time.sleep(1.5)
-            # Only reset db_cache_checked if DB save succeeded so results reload from DB.
-            # If save failed, keep session state results as-is (user can still see them).
-            if db_save_succeeded:
-                st.session_state['db_cache_checked'] = False
+            # Keep db_cache_checked True so the live scan results are retained and not overwritten
+            st.session_state['db_cache_checked'] = True
             st.rerun()
 
       except Exception as _scan_top_err:

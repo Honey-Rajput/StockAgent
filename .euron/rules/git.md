@@ -1,0 +1,3 @@
+- Never commit, push, rebase or change branches unless the user asks.
+- Never run `git push --force`, `git reset --hard` or `git clean -fd` without an explicit request.
+- Keep diffs small and focused; do not reformat or touch unrelated files.

@@ -1,0 +1,4 @@
+- After changing code, run the tests that cover it and fix failures before finishing.
+- Every bug fix gets a test that fails without the fix.
+- Tests must be deterministic: no network, no real external services, no sleeps; use the existing fixtures and mocks.
+- Use the test framework already in the project; do not add a new one.

@@ -22,3 +22,10 @@ vdu_scanner/*_cache.json
 *.db
 vdu_scanner/scratch/
 *.xlsx
+
+# Added by Euron Code
+.euron/cache/
+.euron/knowledge/
+.euron/security/
+.euron/settings.local.json
+!.env.example

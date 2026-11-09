@@ -37,6 +37,7 @@ import sqlite3
 import json
 import threading
 import time
+from typing import Final, Optional, Any
 
 def safe_date_str(val):
     if val is None:
@@ -225,6 +226,9 @@ ALLOWED_TABLES: Final[set[str]] = {
     "scanned_ema_support",
     # VPA / squeeze tables
     "vpa_trend_data", "vpa_squeeze_data",
+    # System and log tables
+    "scan_logs", "historical_ohlcv", "ohlcv_daily", "ai_chart_patterns",
+    "scanned_rsi_wt_combo",
     # Other tables
     "ohlcv_data", "stock_meta", "symbol_universe",
     "scan_history", "all_scans", "top_signals",
