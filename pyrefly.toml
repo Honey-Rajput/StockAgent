@@ -1,16 +1,8 @@
-# Pyrefly configuration for Antigravity / Euron Code IDE
-python-version = "3.12"
-python-platform = "win32"
-
 search-path = [
     ".",
     "vdu_scanner",
     "C:/Users/Honey/AppData/Local/Programs/Python/Python312/Lib/site-packages"
 ]
 
-site-package-path = [
-    "C:/Users/Honey/AppData/Local/Programs/Python/Python312/Lib/site-packages"
-]
-
 [errors]
-missing-import = "none"
+missing-import = "ignore"
