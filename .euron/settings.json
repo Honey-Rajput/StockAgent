@@ -6,5 +6,11 @@
       "Bash(git log:*)"
     ],
     "deny": []
-  }
+  },
+  "python.defaultInterpreterPath": "C:\\Users\\Honey\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/vdu_scanner",
+    "C:\\Users\\Honey\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\site-packages"
+  ]
 }
