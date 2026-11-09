@@ -1147,14 +1147,14 @@ if not st.session_state.get('db_cache_checked', False):
                 d = all_latest_dates.get(table)
                 data = getter_fn(d) if d else None
                 
-                # 2. If own table's date returned no data and it's breakouts, check best_scan_date
-                if not data and table == "scanned_breakouts" and best_scan_date and best_scan_date != d:
+                # 2. If own table's date returned no data, check best_scan_date then search available scan dates
+                if not data and best_scan_date and best_scan_date != d:
                     data = getter_fn(best_scan_date)
                     if data:
                         d = best_scan_date
 
-                # 3. If still no data for breakouts, search available scan dates for any cached records
-                if not data and table == "scanned_breakouts":
+                # 3. If still no data, search all available scan dates for the latest cached records with data
+                if not data:
                     avail_dates = database.get_available_scan_dates()
                     for fallback_d in avail_dates:
                         if fallback_d not in (d, best_scan_date):

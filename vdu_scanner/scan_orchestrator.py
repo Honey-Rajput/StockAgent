@@ -31,6 +31,25 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                           min_dry=None, max_dry=None, min_vol_ratio=None, min_price_chg=None, min_dry_spikes=None,
                           min_signal_str=None, above_50dma_only=False, above_200dma_only=False, vcp_max_tightness=None,
                           sma20_lower_bound=None, sma20_upper_bound=None, sma50_lower_bound=None, sma50_upper_bound=None, sma20_min_volume=None, sma_timeframe="Daily", scan_mode="all"):
+    # Robust default initialization so None never causes TypeErrors
+    min_dry = int(min_dry) if min_dry is not None else 30
+    max_dry = int(max_dry) if max_dry is not None else 60
+    min_vol_ratio = float(min_vol_ratio) if min_vol_ratio is not None else 1.8
+    min_price_chg = float(min_price_chg) if min_price_chg is not None else 2.0
+    min_dry_spikes = int(min_dry_spikes) if min_dry_spikes is not None else 2
+    min_signal_str = float(min_signal_str) if min_signal_str is not None else 25.0
+    sma20_lower_bound = float(sma20_lower_bound) if sma20_lower_bound is not None else 0.94
+    sma20_upper_bound = float(sma20_upper_bound) if sma20_upper_bound is not None else 1.06
+    sma50_lower_bound = float(sma50_lower_bound) if sma50_lower_bound is not None else 0.92
+    sma50_upper_bound = float(sma50_upper_bound) if sma50_upper_bound is not None else 1.08
+    sma20_min_volume = float(sma20_min_volume) if sma20_min_volume is not None else 100000.0
+    vcp_max_tightness = float(vcp_max_tightness) if vcp_max_tightness is not None else 7.0
+    open_price_map = open_price_map or {}
+    close_price_map = close_price_map or {}
+    high_price_map = high_price_map or {}
+    low_price_map = low_price_map or {}
+    volume_map = volume_map or {}
+
     res = {
         "failed": False,
         "gapup": None,
@@ -122,7 +141,7 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
     today_open_val = float(df['Open'].iloc[-1])
     today_close_val = float(df['Close'].iloc[-1])
     yesterday_close_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else today_open_val
-    if scan_mode == "all":
+    if scan_mode in ("all", "full"):
         if today_open_val > yesterday_close_val and today_close_val > yesterday_close_val and today_close_val >= (today_open_val * 0.97):
             gap_pct = (today_open_val - yesterday_close_val) / yesterday_close_val * 100
             # EXPERT FIX: Larger gaps have GREATER continuation potential (High Tight Flag logic)
@@ -455,14 +474,20 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                 res["wt"] = wt_res
                 
         if df is not None:
-            res["vcs"] = scan_vcs(sym, df, indicators=ind)
-            res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df=df, benchmark_df=benchmark_df).run()
-            res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
-            res["vpa_squeeze"] = scan_vpa_ma_squeeze(sym, df, indicators=ind)
+            try: res["vcs"] = scan_vcs(sym, df, indicators=ind)
+            except Exception: pass
             
-            # --- New Scanners ---
+            try: res["structural_vcp"] = MinerviniVCPAnalyzer(sym, df=df, benchmark_df=benchmark_df).run()
+            except Exception: pass
+            
+            try: res["vpa"] = scan_vpa_trend(sym, df, indicators=ind)
+            except Exception: pass
+            
+            try: res["vpa_squeeze"] = scan_vpa_ma_squeeze(sym, df, indicators=ind)
+            except Exception: pass
+            
+            # Dan Zanger
             try:
-                # Dan Zanger
                 from zanger_scanner import scan_zanger, ZangerConfig, get_latest_signal
                 cfg_zanger = ZangerConfig()
                 z_df = scan_zanger(df, cfg_zanger)
@@ -473,43 +498,66 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
                         last_zanger["symbol"] = sym
                         last_zanger["sector"] = get_stock_sector(sym)
                         res["zanger"] = last_zanger
-                        
-                # Volume Profile
-                res["volume_profile"] = scan_volume_profile(sym, df, market_cap=0.0)
-                
-                # Support RSI
-                res["support_rsi"] = scan_support_rsi(sym, df, market_cap=0.0, rsi_threshold=35.0)
-                
-                # Weekly & Monthly Resampled Data
-                m_df = resample_ohlcv(df, '1ME')
-                w_df = resample_ohlcv(df, '1W-MON')
-                
-                if m_df is not None and not m_df.empty and w_df is not None and not w_df.empty:
-                    # EMA Support (repurposed from ema_support)
-                    from scanner import scan_ema_support
-                    res["ema_support"] = scan_ema_support(sym, df)
-                    
-                    if scan_mode in ("all", "full", "near_30sma"):
-                        from scanner import scan_near_30sma
-                        res["near_30sma"] = scan_near_30sma(sym, df)
-                        res["near_30sma_weekly"] = scan_near_30sma(sym, w_df)
-                        res["near_30sma_monthly"] = scan_near_30sma(sym, m_df)
-
-                    if res["minervini"] or res["gapup"] or res["structural_vcp"] or res["vpa"]:
-                        bRet = 0.0
-                        if benchmark_df is not None and len(benchmark_df) > 250:
-                            bC = float(benchmark_df['Close'].iloc[-1])
-                            bCold = float(benchmark_df['Close'].iloc[-250])
-                            if bCold > 0:
-                                bRet = (bC - bCold) / bCold
-                        res["stage_analysis"] = scan_stage_analysis(sym, df, bench_ret=bRet)
-                        
-                    # Evaluate Monthly Early Stage 2 and Momentum universally
-                    res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
-                    res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
-                    res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
-            except Exception as e:
-                # print(f"Error running extended background scans for {sym}: {e}")
+            except Exception:
                 pass
+                
+            # Volume Profile
+            try:
+                res["volume_profile"] = scan_volume_profile(sym, df, market_cap=0.0)
+            except Exception:
+                pass
+            
+            # Support RSI
+            try:
+                res["support_rsi"] = scan_support_rsi(sym, df, market_cap=0.0, rsi_threshold=35.0)
+            except Exception:
+                pass
+            
+            # Weekly & Monthly Resampled Data
+            m_df = resample_ohlcv(df, '1ME')
+            w_df = resample_ohlcv(df, '1W-MON')
+            
+            # EMA Support
+            try:
+                from scanner import scan_ema_support
+                res["ema_support"] = scan_ema_support(sym, df)
+            except Exception:
+                pass
+                
+            # Near 30 SMA
+            if scan_mode in ("all", "full", "near_30sma"):
+                try:
+                    from scanner import scan_near_30sma
+                    res["near_30sma"] = scan_near_30sma(sym, df)
+                    if w_df is not None and not w_df.empty:
+                        res["near_30sma_weekly"] = scan_near_30sma(sym, w_df)
+                    if m_df is not None and not m_df.empty:
+                        res["near_30sma_monthly"] = scan_near_30sma(sym, m_df)
+                except Exception:
+                    pass
+
+            # Stage Analysis
+            try:
+                if res["minervini"] or res["gapup"] or res["structural_vcp"] or res["vpa"]:
+                    bRet = 0.0
+                    if benchmark_df is not None and len(benchmark_df) > 250:
+                        bC = float(benchmark_df['Close'].iloc[-1])
+                        bCold = float(benchmark_df['Close'].iloc[-250])
+                        if bCold > 0:
+                            bRet = (bC - bCold) / bCold
+                    res["stage_analysis"] = scan_stage_analysis(sym, df, bench_ret=bRet)
+            except Exception:
+                pass
+                
+            # Monthly Early Stage 2 and Momentum
+            if m_df is not None and not m_df.empty:
+                try: res["stage2"] = scan_monthly_early_stage2(sym, m_df, max_run_up_pct=20.0, market_cap_cr=0.0)
+                except Exception: pass
+                try: res["monthly_momentum"] = scan_monthly_momentum(sym, m_df, market_cap_cr=0.0)
+                except Exception: pass
+            
+            if w_df is not None and not w_df.empty:
+                try: res["weekly_momentum"] = scan_weekly_momentum(sym, w_df, market_cap_cr=0.0)
+                except Exception: pass
                 
     return res
