@@ -1,10 +1,13 @@
 # data_fetcher.py
+import logging
 import pandas as pd
 import yfinance as yf
 import streamlit as st
 import requests
 import io
 from config import NIFTY50_SYMBOLS, NIFTY100_SYMBOLS, LOOKBACK_DAYS
+
+logger = logging.getLogger(__name__)
 
 
 def _flatten_yf_dataframe(df: pd.DataFrame, symbol_ns: str = None) -> pd.DataFrame | None:
@@ -136,7 +139,7 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
                     fetch_period = f"{min(days_diff + 5, LOOKBACK_DAYS)}d"
                     need_full_fetch = False
             except Exception as e:
-                print(f"Date parsing error in fetch_ohlcv: {e}")
+                logger.debug("Date parsing error in fetch_ohlcv: %s", e)
                 
     # Fallback to local_cache_manager if db fails and needs full fetch
     if need_full_fetch:
@@ -191,7 +194,7 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
         except Exception as e:
             retries += 1
             if retries > max_retries:
-                print(f"Error fetching OHLCV for symbol {symbol} after {max_retries} retries: {e}")
+                logger.error("Error fetching OHLCV for symbol %s after %d retries: %s", symbol, max_retries, e)
                 # Return whatever we have in DB if fetch fails
                 if db_df is not None and not db_df.empty:
                     _ohlcv_cache.set(formatted_symbol, db_df)
@@ -244,10 +247,10 @@ def get_all_nse_symbols() -> list[str]:
                 symbols = json.load(f)
             if symbols and len(symbols) > 100:
                 symbols = symbols[:MAX_NSE_SYMBOLS]
-                print(f"Successfully loaded {len(symbols)} active NSE symbols from local JSON cache (capped at {MAX_NSE_SYMBOLS}).")
+                logger.info("Successfully loaded %d active NSE symbols from local JSON cache (capped at %d).", len(symbols), MAX_NSE_SYMBOLS)
                 return symbols
     except Exception as e:
-        print(f"Failed to load local JSON cache: {e}")
+        logger.error("Failed to load local JSON cache: %s", e)
 
     # Try the newer, more stable nsearchives URL first
     urls = [
@@ -257,7 +260,7 @@ def get_all_nse_symbols() -> list[str]:
 
     for url in urls:
         try:
-            print(f"Fetching all NSE listed equities from: {url}")
+            logger.info("Fetching all NSE listed equities from: %s", url)
             res = requests.get(url, headers=headers, timeout=12)
             if res.status_code == 200:
                 df = pd.read_csv(io.StringIO(res.text))
@@ -272,13 +275,13 @@ def get_all_nse_symbols() -> list[str]:
                     clean_symbols = [s.strip() for s in symbols if s.strip() and s.strip() != 'SYMBOL']
                     if len(clean_symbols) > 100:
                         clean_symbols = clean_symbols[:MAX_NSE_SYMBOLS]
-                        print(f"Successfully loaded {len(clean_symbols)} active NSE symbols from {url} (capped at {MAX_NSE_SYMBOLS}).")
+                        logger.info("Successfully loaded %d active NSE symbols from %s (capped at %d).", len(clean_symbols), url, MAX_NSE_SYMBOLS)
                         return clean_symbols
         except Exception as e:
-            print(f"Failed to fetch from {url}: {e}")
+            logger.error("Failed to fetch from %s: %s", url, e)
 
     # Graceful fallback to NIFTY 500 constituents if all downloads fail
-    print("WARNING: Falling back to NIFTY 500 constituent list.")
+    logger.warning("Falling back to NIFTY 500 constituent list.")
     return fetch_nifty500_constituent_symbols()
 
 
@@ -303,7 +306,7 @@ def fetch_nifty500_constituent_symbols() -> list[str]:
                 if len(clean_symbols) > 50:
                     return clean_symbols
     except Exception as ex:
-        print(f"NSE direct constituent list download failed: {ex}")
+        logger.error("NSE direct constituent list download failed: %s", ex)
         
     # Step B: Fallback to niftyindices.com (more reliable alternative)
     try:
@@ -318,10 +321,10 @@ def fetch_nifty500_constituent_symbols() -> list[str]:
                 if len(clean_symbols) > 50:
                     return clean_symbols
     except Exception as ex:
-        print(f"Niftyindices fallback download failed: {ex}")
+        logger.error("Niftyindices fallback download failed: %s", ex)
 
     # Step C: Fallback to static NIFTY 100 lists if everything fails
-    print("WARNING: Returning static NIFTY 100 constituent list as backup.")
+    logger.warning("Returning static NIFTY 100 constituent list as backup.")
     return NIFTY100_SYMBOLS
 
 
@@ -343,7 +346,7 @@ def fetch_nse_company_names() -> dict:
     name_map = {}
     for url in urls:
         try:
-            print(f"Downloading NSE company names from: {url}")
+            logger.info("Downloading NSE company names from: %s", url)
             res = requests.get(url, headers=headers, timeout=8)
             if res.status_code == 200:
                 df = pd.read_csv(io.StringIO(res.text))
@@ -355,10 +358,10 @@ def fetch_nse_company_names() -> dict:
                         if sym and name:
                             name_map[sym] = name
                     if len(name_map) > 100:
-                        print(f"Successfully mapped {len(name_map)} company names from {url}.")
+                        logger.info("Successfully mapped %d company names from %s.", len(name_map), url)
                         return name_map
         except Exception as e:
-            print(f"Failed to fetch company names from {url}: {e}")
+            logger.error("Failed to fetch company names from %s: %s", url, e)
     return {}
 
 @st.cache_data(ttl=86400 * 7)
@@ -388,7 +391,7 @@ def fetch_sector_map() -> dict:
             with open(map_path, "r") as f:
                 sector_map.update(json.load(f))
         except Exception as e:
-            print(f"Warning: Failed to load sector_map.json: {e}")
+            logger.warning("Failed to load sector_map.json: %s", e)
 
     for url in urls:
         try:
@@ -402,7 +405,7 @@ def fetch_sector_map() -> dict:
                         if sym and ind and ind.lower() != 'nan':
                             sector_map[sym] = ind
         except Exception as ex:
-            print(f"Failed to fetch sectors from {url}: {ex}")
+            logger.error("Failed to fetch sectors from %s: %s", url, ex)
             
     return sector_map
 
@@ -497,7 +500,7 @@ def fetch_ohlcv_timeframe(symbol: str, interval: str = "1d", period: str = None)
         except Exception as e:
             retries += 1
             if retries > max_retries:
-                print(f"Error fetching OHLCV for {symbol} ({interval}, {period}): {e}")
+                logger.error("Error fetching OHLCV for %s (%s, %s): %s", symbol, interval, period, e)
                 return None
             time.sleep(backoff)
             backoff *= 2.0
@@ -556,7 +559,7 @@ def get_market_condition() -> dict:
             'change_pct': change_pct,
         }
     except Exception as e:
-        print(f"get_market_condition error: {e}")
+        logger.error("get_market_condition error: %s", e)
         return {'status': 'Unknown', 'emoji': '⚪', 'cmp': 0.0, 'sma50': 0.0, 'sma200': 0.0, 'change_pct': 0.0}
 
 
@@ -594,7 +597,7 @@ def fetch_nifty50_returns() -> dict:
             '12m': round(_ret(252), 2),
         }
     except Exception as e:
-        print(f"fetch_nifty50_returns error: {e}")
+        logger.error("fetch_nifty50_returns error: %s", e)
         return {}
 
 
@@ -644,7 +647,7 @@ def calculate_rs_rating(df: pd.DataFrame, nifty_returns: dict) -> float:
         rs_rating = max(1.0, min(99.0, 50.0 + rs_delta))
         return round(rs_rating, 1)
     except Exception as e:
-        print(f"calculate_rs_rating error: {e}")
+        logger.error("calculate_rs_rating error: %s", e)
         return 50.0
 
 

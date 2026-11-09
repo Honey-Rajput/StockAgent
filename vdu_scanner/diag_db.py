@@ -7,7 +7,7 @@ conn = sqlite3.connect('scanner_data.db')
 cur = conn.cursor()
 
 # Check if we need to add a log entry for 2026-07-21
-cur.execute("SELECT * FROM scan_logs WHERE scan_date = '2026-07-21'")
+cur.execute("SELECT * FROM scan_logs WHERE scan_date = ?", ('2026-07-21',))
 existing = cur.fetchone()
 print(f"Existing log for 2026-07-21: {existing}")
 
@@ -15,19 +15,22 @@ if not existing:
     # Add a log entry so has_scanned_today works correctly
     # Count how many results exist in each table for that date
     counts = {}
-    for tbl in ['scanned_zanger', 'scanned_ema_support', 'scanned_stage_analysis',
-                'scanned_volume_profile', 'scanned_stage2', 'scanned_support_rsi']:
-        cur.execute(f"SELECT COUNT(*) FROM {tbl} WHERE scan_date = '2026-07-21'")
+    allowed = {'scanned_zanger', 'scanned_ema_support', 'scanned_stage_analysis',
+                'scanned_volume_profile', 'scanned_stage2', 'scanned_support_rsi'}
+    for tbl in allowed:
+        if not tbl.isidentifier() or tbl not in allowed:
+            continue
+        cur.execute(f"SELECT COUNT(*) FROM {tbl} WHERE scan_date = ?", ('2026-07-21',))
         counts[tbl] = cur.fetchone()[0]
     print(f"Counts for 2026-07-21: {counts}")
     
     total = sum(counts.values())
     cur.execute("""
         INSERT INTO scan_logs (scan_date, total_scanned, breakouts_found, squeezes_found)
-        VALUES ('2026-07-21', 1000, 0, 0)
+        VALUES (?, 1000, 0, 0)
         ON CONFLICT(scan_date) DO UPDATE SET
             total_scanned = EXCLUDED.total_scanned
-    """)
+    """, ('2026-07-21',))
     conn.commit()
     print("Added scan_log entry for 2026-07-21")
 else:

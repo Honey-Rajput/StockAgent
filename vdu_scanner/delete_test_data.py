@@ -4,7 +4,7 @@ conn = database.get_connection()
 cur = conn.cursor()
 
 # Delete stale scan_log for 2026-07-17 (had TEST dummy data with breakouts_found=1)
-cur.execute("DELETE FROM scan_logs WHERE scan_date = '2026-07-17'")
+cur.execute("DELETE FROM scan_logs WHERE scan_date = ?;", ('2026-07-17',))
 print(f"Deleted {cur.rowcount} scan_log rows for 2026-07-17")
 
 # Also clean ALL remaining test/dummy data from all breakout tables
@@ -18,7 +18,7 @@ tables = [
 ]
 for table in tables:
     try:
-        cur.execute(f"DELETE FROM {table} WHERE scan_date = '2026-07-17'")
+        cur.execute(f"DELETE FROM {table} WHERE scan_date = ?;", ('2026-07-17',))
         if cur.rowcount > 0:
             print(f"  Cleared {cur.rowcount} rows from {table} for 2026-07-17")
     except Exception as e:

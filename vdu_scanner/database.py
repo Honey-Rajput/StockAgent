@@ -199,6 +199,54 @@ def get_connection():
                 _conn.execute('pragma journal_mode=wal')
     return PooledConnection(_conn)
 
+
+# --- Table-name whitelist & validation (SQL injection prevention) ---
+ALLOWED_TABLES: Final[set[str]] = {
+    # Core scan result tables
+    "scanned_breakouts", "scanned_trend_setups", "scanned_vcs",
+    "scanned_monthly_momentum", "scanned_stage2", "scanned_wt_cross",
+    "scanned_vpa", "scanned_volume_profile", "scanned_support_rsi",
+    "scanned_weekly_momentum", "scanned_gapups",
+    # Squeeze / stage / vcp tables
+    "scanned_squeezes", "scanned_vpa_squeeze",
+    "scanned_vpa_squeeze_weekly", "scanned_vpa_squeeze_monthly",
+    "scanned_flat_base", "scanned_stage_analysis",
+    "scanned_zanger", "scanned_vcp_minervini",
+    # Near-EMA / SMA tables
+    "scanned_near_200ema", "scanned_near_30sma",
+    "scanned_near_200ema_weekly", "scanned_near_30sma_weekly",
+    "scanned_near_200ema_monthly", "scanned_near_30sma_monthly",
+    "scanned_near_50ema", "scanned_near_50ema_weekly", "scanned_near_50ema_monthly",
+    "scanned_near_20ema", "scanned_near_20ema_weekly", "scanned_near_20ema_monthly",
+    "scanned_20ema_weekly", "scanned_20ema_monthly",
+    "scanned_50ema_weekly", "scanned_50ema_monthly",
+    "scanned_200ema_weekly", "scanned_200ema_monthly",
+    "scanned_30sma_weekly", "scanned_30sma_monthly",
+    "scanned_ema_support",
+    # VPA / squeeze tables
+    "vpa_trend_data", "vpa_squeeze_data",
+    # Other tables
+    "ohlcv_data", "stock_meta", "symbol_universe",
+    "scan_history", "all_scans", "top_signals",
+    "minervini_stock_data", "ema_support_data",
+    "stock_company_names", "sector_map",
+}
+
+
+def validate_table(table: str) -> str:
+    """Return the table name if it is in ALLOWED_TABLES; raise ValueError otherwise.
+
+    Call this before interpolating any table name into an f-string SQL query
+    where the name comes from a function parameter or any non-literal source.
+    """
+    clean = str(table).strip().lower()
+    if clean in ALLOWED_TABLES:
+        return clean
+    raise ValueError(
+        f"Table name '{table}' not in ALLOWED_TABLES — rejected to prevent SQL injection."
+    )
+
+
 def execute_values(cur, query, argslist, page_size=100):
     cur.executemany(query, argslist)
 
@@ -924,13 +972,21 @@ def init_db() -> bool:
             
         # Column migration helper
         def add_col(table, col, col_type):
+            # Sanitize column name: only alphanumeric + underscore, must start with letter
+            import re
+            if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', str(col)):
+                raise ValueError(f"Invalid column name: {col!r}")
+            # Validate column type against known SQLite/PostgreSQL types
+            col_type_upper = str(col_type).upper()
+            if col_type_upper not in ('TEXT', 'INTEGER', 'REAL', 'BLOB', 'NUMERIC', 'VARCHAR', 'DATETIME', 'BOOLEAN', 'FLOAT', 'DOUBLE', 'DOUBLE PRECISION'):
+                raise ValueError(f"Invalid column type: {col_type!r}")
             try:
                 if is_pg:
-                    cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type};")
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type_upper};")
                 else:
                     existing = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
                     if col not in existing:
-                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                        cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type_upper}")
             except Exception as mig_ex:
                 pass  # column already exists or table doesn't exist yet – safe to ignore
 
@@ -1345,7 +1401,9 @@ def get_available_scan_dates() -> list[str]:
                 pass
             cur = conn.cursor()
 
+        # All scan tables are from a hardcoded list; validate each before use
         for table in scan_tables:
+            validate_table(table)
             try:
                 if table == "scan_logs":
                     cur.execute(f"SELECT DISTINCT scan_date FROM {table} WHERE total_scanned > 0")
@@ -1424,7 +1482,9 @@ def cleanup_old_data(days: int = 30):
         conn = get_connection()
         cur = conn.cursor()
         
+        # Validate all tables before deletion
         for table in tables:
+            validate_table(table)
             try:
                 cur.execute(f"DELETE FROM {table} WHERE scan_date < ?", (cutoff_date,))
             except Exception as e:
@@ -1482,6 +1542,7 @@ def get_all_latest_scan_dates() -> dict[str, str]:
         conn = get_connection()
         cur = conn.cursor()
         for table in tables:
+            validate_table(table)
             try:
                 cur.execute(f"SELECT MAX(scan_date) FROM {table};")
                 row = cur.fetchone()
@@ -1504,6 +1565,7 @@ def _get_cached_scan(table_name: str, date_str: str, extra_conditions: dict = No
     """
     Generalized helper to fetch cached scan results.
     """
+    validate_table(table_name)
     conditions = ["scan_date = ?"]
     params = [date_str]
     if extra_conditions:
@@ -2150,6 +2212,7 @@ def save_vpa_squeeze_monthly_only(date_str: str, results: list[dict]) -> bool:
     return _save_vpa_squeeze_to_table("scanned_vpa_squeeze_monthly", date_str, results)
 
 def _save_vpa_squeeze_to_table(table_name: str, date_str: str, results: list[dict]) -> bool:
+    validate_table(table_name)
     if not results:
         return True
     conn = None
@@ -2311,10 +2374,11 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                 print(f"Skipping save: existing scan for {date_str} has {existing_log['total_scanned']} stocks and existing breakouts.")
                 return False
         
-        # 1. Clean existing records for this date
+        # 1. Clean existing records for this date (validate all tables first)
         for tbl in ['scanned_breakouts', 'scanned_squeezes', 'scanned_gapups',
                     'scanned_trend_setups', 'scanned_wt_cross', 'scanned_vcs',
                     'scanned_vpa', 'scanned_near_30sma', 'scan_logs']:
+            validate_table(tbl)
             try:
                 cur.execute(f"DELETE FROM {tbl} WHERE scan_date = ?;", (date_str,))
             except Exception as _de:
@@ -3896,8 +3960,9 @@ def prune_old_data_ohlcv(days: int = 5):
             "scanned_zanger", "scanned_ema_support", "scanned_vcp_minervini",
             "scan_logs"
         ]
-        
+
         for table in scan_tables:
+            validate_table(table)
             try:
                 cur.execute(f"DELETE FROM {table} WHERE scan_date < CURRENT_DATE - INTERVAL '{days} days';")
             except Exception as e:
