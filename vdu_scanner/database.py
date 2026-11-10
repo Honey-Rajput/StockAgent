@@ -3481,8 +3481,13 @@ def save_sma_scan_results(date_str: str, trend_setups: list[dict], total_scanned
         conn = get_connection()
         cur = conn.cursor()
         
-        # 1. Clean existing SMA records for this date
-        cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = ?;", (date_str,))
+        # 1. Clean existing SMA records for this date only for matching setup types
+        setup_types_to_replace = list({str(r['setup_type']) for r in trend_setups if r.get('setup_type')})
+        if setup_types_to_replace:
+            placeholders = ','.join(['?' for _ in setup_types_to_replace])
+            cur.execute(f"DELETE FROM scanned_trend_setups WHERE scan_date = ? AND setup_type IN ({placeholders});", [date_str] + setup_types_to_replace)
+        elif not trend_setups:
+            cur.execute("DELETE FROM scanned_trend_setups WHERE scan_date = ?;", (date_str,))
         
         # 2. Insert new trend setups
         insert_trend_query = """

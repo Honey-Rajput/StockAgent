@@ -1,5 +1,12 @@
 """Shared fixtures for vdu_scanner unit tests (no network)."""
 
+import sys
+from pathlib import Path
+
+_vdu_dir = Path(__file__).resolve().parent.parent
+if str(_vdu_dir) not in sys.path:
+    sys.path.insert(0, str(_vdu_dir))
+
 import numpy as np
 import pandas as pd
 import pytest

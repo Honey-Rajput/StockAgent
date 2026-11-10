@@ -14,8 +14,11 @@ def test_process_single_symbol_rejects_short_history(process_symbol_defaults):
 
 
 def test_process_single_symbol_rejects_low_price(process_symbol_defaults):
-    res = _run("TEST", make_ohlcv_df(n=60, base_close=150.0), process_symbol_defaults)
-    assert res["failed"] is True
+    df_penny = make_ohlcv_df(n=60, base_close=2.0)
+    df_penny["Close"] = 3.0
+    res = _run("TEST", df_penny, process_symbol_defaults)
+    assert res["failed"] is False
+    assert res["flagged"] is None
 
 
 def test_process_single_symbol_returns_expected_shape(process_symbol_defaults, ohlcv_260):

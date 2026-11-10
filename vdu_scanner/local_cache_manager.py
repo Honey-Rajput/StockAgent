@@ -34,9 +34,21 @@ def resample_ohlcv(df: pd.DataFrame, freq: str) -> pd.DataFrame:
         resampled = resampled.reset_index()
     return resampled
 
+def _normalize_tf(tf: str) -> str:
+    """Normalizes any timeframe representation (e.g., 'Daily (1d)', '1d') to canonical short string."""
+    if not tf:
+        return "1d"
+    tf_lower = str(tf).lower()
+    if "week" in tf_lower or "1wk" in tf_lower:
+        return "1wk"
+    if "month" in tf_lower or "1mo" in tf_lower:
+        return "1mo"
+    return "1d"
+
 def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = False) -> pd.DataFrame | None:
     """Returns the cached DataFrame if it exists and is not stale (unless ignore_ttl=True)."""
     clean_sym = symbol.strip().upper().replace(".NS", "")
+    timeframe = _normalize_tf(timeframe)
     conn = None
     try:
         conn = database.get_connection()
@@ -45,7 +57,8 @@ def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = Fals
         rows = cur.fetchall()
         cur.close()
         
-        if not rows:
+        # Require at least 30 historical bars to avoid poisoning charts and indicators with truncated history
+        if not rows or len(rows) < 30:
             return None
             
         columns = [desc[0] for desc in cur.description]
@@ -65,6 +78,7 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
     if not symbols:
         return {}
         
+    timeframe = _normalize_tf(timeframe)
     clean_syms = [s.strip().upper().replace(".NS", "") for s in symbols]
     result_dict = {}
     conn = None
@@ -91,7 +105,9 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
                 df_all['Date'] = pd.to_datetime(df_all['Date'])
                 for sym, group in df_all.groupby('Symbol'):
                     df_sym = group.drop(columns=['Symbol']).reset_index(drop=True)
-                    result_dict[sym] = df_sym
+                    # Filter out truncated caches with fewer than 30 bars
+                    if len(df_sym) >= 30:
+                        result_dict[sym] = df_sym
                     
         cur.close()
         return result_dict
@@ -107,6 +123,7 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
     if df is None or df.empty:
         return
         
+    timeframe = _normalize_tf(timeframe)
     clean_sym = symbol.strip().upper().replace(".NS", "")
     conn = None
     
@@ -165,6 +182,7 @@ def save_to_cache_bulk(data_dict: dict, timeframe: str = "1d"):
     """Saves multiple symbol DataFrames in a single DB connection."""
     if not data_dict:
         return
+    timeframe = _normalize_tf(timeframe)
     conn = None
     try:
         conn = database.get_connection()
