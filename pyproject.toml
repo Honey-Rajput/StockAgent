@@ -4,7 +4,7 @@ search-path = [
     "vdu_scanner"
 ]
 python-interpreter-path = "C:/Users/Honey/AppData/Local/Programs/Python/Python312/python.exe"
-site-package-path = [
+site-packages-path = [
     "C:/Users/Honey/AppData/Local/Programs/Python/Python312/Lib/site-packages"
 ]
 

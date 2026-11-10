@@ -1,0 +1,15 @@
+search-path = [
+    ".",
+    ".."
+]
+python-interpreter-path = "C:/Users/Honey/AppData/Local/Programs/Python/Python312/python.exe"
+site-packages-path = [
+    "C:/Users/Honey/AppData/Local/Programs/Python/Python312/Lib/site-packages"
+]
+
+[errors]
+missing-import = "warning"
+ignore-missing-imports = [
+    "yfinance",
+    "yfinance.*"
+]
