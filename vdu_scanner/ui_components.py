@@ -2,6 +2,7 @@
 # Shared Streamlit UI helpers for strategy result tables and trade setup cards.
 
 import json
+import re
 
 import streamlit as st
 

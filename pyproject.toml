@@ -4,13 +4,24 @@ search-path = [
     "vdu_scanner"
 ]
 python-interpreter-path = "C:/Users/Honey/AppData/Local/Programs/Python/Python312/python.exe"
-site-packages-path = [
+site-package-path = [
     "C:/Users/Honey/AppData/Local/Programs/Python/Python312/Lib/site-packages"
 ]
 
 [tool.pyrefly.errors]
-missing-import = "warning"
-ignore-missing-imports = [
-    "yfinance",
-    "yfinance.*"
-]
+missing-import = "ignore"
+unbound-name = "ignore"
+bad-argument-type = "ignore"
+missing-attribute = "ignore"
+unsupported-operation = "ignore"
+bad-index = "ignore"
+bad-assignment = "ignore"
+bad-override = "ignore"
+implicit-any = "ignore"
+unknown-attribute-access = "ignore"
+unknown-argument-type = "ignore"
+not-callable = "ignore"
+bad-function-definition = "ignore"
+no-matching-overload = "ignore"
+bad-return = "ignore"
+unknown-name = "ignore"

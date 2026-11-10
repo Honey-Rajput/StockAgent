@@ -192,7 +192,7 @@ def process_single_symbol(sym, df, benchmark_df=None, open_price_map=None, close
 
         def check_sma_conditions(d_frame):
             if len(d_frame) < 50:
-                return False
+                return False, False
             try:
                 d_close = float(d_frame['Close'].iloc[-1])
                 

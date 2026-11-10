@@ -70,7 +70,6 @@ def render():
         
     if not st.session_state.get('vpa_squeeze_results'):
         try:
-            import database
             vpa_sq_d = database.get_all_latest_scan_dates().get("scanned_vpa_squeeze") or database.get_best_scan_date()
             if vpa_sq_d:
                 st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(vpa_sq_d) or []

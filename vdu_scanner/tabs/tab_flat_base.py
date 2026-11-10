@@ -16,7 +16,7 @@ except Exception:
     scan_flat_base_squeeze = None
 
 if scan_flat_base_squeeze is None:
-    def scan_flat_base_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None,
+    def scan_flat_base_squeeze(symbol: str, df: pd.DataFrame, indicators: dict | None = None,
                                max_gap_pct: float = 3.5, max_base_range_pct: float = 16.0,
                                strict_bullish_alignment: bool = True):
         if df is None or len(df) < 50:
