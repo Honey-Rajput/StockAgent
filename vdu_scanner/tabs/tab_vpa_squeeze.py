@@ -103,6 +103,45 @@ def render():
                 # Fetch all cached data at once
                 bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
                 
+                # Check for missing symbols or stubs (< 200 bars)
+                missing_symbols = [s for s in symbols_to_scan if s not in bulk_cached or len(bulk_cached[s]) < 200]
+                if missing_symbols:
+                    chunk_size = 40
+                    sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
+                    downloaded_dict = {}
+                    for c_idx, chunk in enumerate(sym_chunks):
+                        prog.progress((c_idx + 1) / (len(sym_chunks) + 1))
+                        status.text(f"Downloading historical data chunk {c_idx+1}/{len(sym_chunks)}...")
+                        chunk_ns = [f"{s}.NS" for s in chunk]
+                        try:
+                            df_bulk = yf.download(tickers=chunk_ns, period="1y", interval="1d", progress=False, threads=False, timeout=20)
+                            if df_bulk is not None and not df_bulk.empty:
+                                for s in chunk:
+                                    s_ns = f"{s}.NS"
+                                    if isinstance(df_bulk.columns, pd.MultiIndex):
+                                        all_t = df_bulk.columns.get_level_values(1).unique().tolist()
+                                        matched = next((t for t in all_t if t.upper() == s_ns.upper()), None)
+                                        if matched:
+                                            s_df = df_bulk.xs(matched, axis=1, level=1).dropna(subset=['Close']).copy()
+                                        else:
+                                            continue
+                                    else:
+                                        s_df = df_bulk.dropna(subset=['Close']).copy()
+                                    if not s_df.empty and len(s_df) >= 50:
+                                        s_df = s_df.reset_index()
+                                        s_df.rename(columns={s_df.columns[0]: 'Date'}, inplace=True)
+                                        bulk_cached[s] = s_df
+                                        downloaded_dict[s] = s_df
+                        except Exception:
+                            pass
+                    
+                    if downloaded_dict:
+                        try:
+                            from local_cache_manager import save_to_cache_bulk
+                            save_to_cache_bulk(downloaded_dict, "1d")
+                        except Exception:
+                            pass
+
                 st.info("Step 2/2 — Calculating MA Squeeze (Instant)...")
                 status.empty()
                 prog.progress(1.0)

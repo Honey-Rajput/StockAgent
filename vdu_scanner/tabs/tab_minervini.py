@@ -73,6 +73,55 @@ def render():
     )
     
     if min_mode == "🟢 View Today's Minervini Setups":
+        col_m_btn, _ = st.columns([1, 2])
+        run_min_btn = col_m_btn.button("🔍 Run Minervini Scan", type="primary", use_container_width=True, key="run_min_tab_btn")
+        if run_min_btn:
+            with st.spinner("Running Minervini Stage-2 scan across NSE stocks..."):
+                from data_fetcher import get_index_stocks, get_all_nse_symbols
+                from scan_orchestrator import process_single_symbol
+                raw_syms = get_index_stocks("NIFTY 500") or get_all_nse_symbols()[:500]
+                syms = [s.strip().upper().replace('.NS', '') for s in raw_syms if str(s).strip()]
+                chunk_size = 40
+                sym_chunks = [syms[i:i+chunk_size] for i in range(0, len(syms), chunk_size)]
+                min_results = []
+                prog_bar = st.progress(0.0)
+                for c_idx, chunk in enumerate(sym_chunks):
+                    prog_bar.progress((c_idx + 1) / len(sym_chunks))
+                    chunk_ns = [f"{s}.NS" for s in chunk]
+                    try:
+                        df_bulk = yf.download(tickers=chunk_ns, period="2y", interval="1d", progress=False, threads=False, timeout=20)
+                        if df_bulk is not None and not df_bulk.empty:
+                            for s in chunk:
+                                s_ns = f"{s}.NS"
+                                if isinstance(df_bulk.columns, pd.MultiIndex):
+                                    all_t = df_bulk.columns.get_level_values(1).unique().tolist()
+                                    matched = next((t for t in all_t if t.upper() == s_ns.upper()), None)
+                                    if matched:
+                                        s_df = df_bulk.xs(matched, axis=1, level=1).dropna(subset=['Close']).copy()
+                                    else:
+                                        continue
+                                else:
+                                    s_df = df_bulk.dropna(subset=['Close']).copy()
+                                if not s_df.empty and len(s_df) >= 200:
+                                    s_df = s_df.reset_index()
+                                    s_df.rename(columns={s_df.columns[0]: 'Date'}, inplace=True)
+                                    res = process_single_symbol(s, s_df, scan_mode='full')
+                                    if res.get('minervini'):
+                                        min_results.append(res['minervini'])
+                    except Exception:
+                        pass
+                prog_bar.empty()
+                if min_results:
+                    min_results = ensure_minervini_fields(min_results)
+                    st.session_state.minervini_results = min_results
+                    today_d = get_market_date()
+                    database.save_sma_scan_results(today_d, min_results, len(syms))
+                    st.success(f"Found {len(min_results)} Minervini Stage-2 setups!")
+                    st.rerun()
+                else:
+                    st.session_state.minervini_results = []
+                    st.info("No stocks matched Minervini criteria in this run.")
+
         minervini_data = st.session_state.get('minervini_results')
         if not minervini_data:
             try:
