@@ -1813,8 +1813,10 @@ if run_full or run_sma:
                     
                     for sym in scan_symbols:
                         clean_sym = sym.strip().upper().replace(".NS", "")
-                        if clean_sym in bulk_cached and not bulk_cached[clean_sym].empty:
-                            bulk_data[sym.strip().upper()] = bulk_cached[clean_sym]
+                        cached_entry = bulk_cached.get(clean_sym)
+                        # Require at least 50 historical bars to be considered valid cached data for technical indicators
+                        if cached_entry is not None and len(cached_entry) >= 50:
+                            bulk_data[sym.strip().upper()] = cached_entry
                         else:
                             missing_symbols.append(sym)
                     
@@ -1966,11 +1968,22 @@ if run_full or run_sma:
             # Parallel Execution Core
             def process_and_fetch_if_needed(sym, df, benchmark_df, *args):
                 try:
-                    if df is None or len(df) == 0:
+                    if df is None or len(df) < 50:
                         clean_sym = sym.strip().upper().replace(".NS", "")
                         from local_cache_manager import get_cached_ohlcv
-                        df = get_cached_ohlcv(clean_sym, _tf_db_key, ignore_ttl=True)
-                    if df is None or len(df) < 5:
+                        cached_cand = get_cached_ohlcv(clean_sym, _tf_db_key, ignore_ttl=True)
+                        if cached_cand is not None and len(cached_cand) >= 50:
+                            df = cached_cand
+                        else:
+                            # Fallback to direct fetch via data_fetcher
+                            try:
+                                from data_fetcher import fetch_ohlcv
+                                fb_df = fetch_ohlcv(sym)
+                                if fb_df is not None and len(fb_df) >= 30:
+                                    df = fb_df
+                            except Exception:
+                                pass
+                    if df is None or len(df) < 15:
                         return {"failed": True, "error": "No historical data available"}
                     return process_single_symbol(sym, df, benchmark_df, *args)
                 except Exception as e:

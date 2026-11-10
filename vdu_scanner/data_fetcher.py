@@ -148,7 +148,7 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
     if need_full_fetch:
         from local_cache_manager import get_cached_ohlcv, save_to_cache
         cached_parquet_df = get_cached_ohlcv(formatted_symbol, "1d")
-        if cached_parquet_df is not None and not cached_parquet_df.empty:
+        if cached_parquet_df is not None and len(cached_parquet_df) >= 60:
             if database:
                 database.save_data_ohlcv(formatted_symbol, cached_parquet_df)
             _ohlcv_cache.set(formatted_symbol, cached_parquet_df)

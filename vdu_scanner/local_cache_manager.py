@@ -114,10 +114,10 @@ def save_to_cache(symbol: str, df: pd.DataFrame, timeframe: str = "1d"):
         conn = database.get_connection()
         cur = conn.cursor()
         
-        # Optimization: Only upsert the most recent day (which might update) and any new days
-        cur.execute("SELECT MAX(date) as max_date FROM historical_ohlcv WHERE symbol=? AND timeframe=?", (clean_sym, timeframe))
+        # Optimization: Only filter to dates >= max_date if existing table already has substantial history (>= 50 bars)
+        cur.execute("SELECT MAX(date) as max_date, COUNT(*) as cnt FROM historical_ohlcv WHERE symbol=? AND timeframe=?", (clean_sym, timeframe))
         max_date_row = cur.fetchone()
-        if max_date_row and max_date_row['max_date']:
+        if max_date_row and max_date_row['max_date'] and (max_date_row['cnt'] or 0) >= 50:
             max_date = pd.to_datetime(max_date_row['max_date'])
             # Filter df to only keep dates >= max_date
             df = df[df['Date'] >= max_date]

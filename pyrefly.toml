@@ -1,8 +1,15 @@
 search-path = [
     ".",
-    "vdu_scanner",
+    "vdu_scanner"
+]
+python-interpreter-path = "C:/Users/Honey/AppData/Local/Programs/Python/Python312/python.exe"
+site-package-path = [
     "C:/Users/Honey/AppData/Local/Programs/Python/Python312/Lib/site-packages"
 ]
 
 [errors]
-missing-import = "ignore"
+missing-import = "warning"
+ignore-missing-imports = [
+    "yfinance",
+    "yfinance.*"
+]

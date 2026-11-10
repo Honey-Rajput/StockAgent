@@ -140,7 +140,7 @@ def render():
     if detail_data:
         selected_sym = detail_data['symbol']
         # Lazy-load historical OHLCV data for charting if loaded from daily database cache
-        if 'df' not in detail_data or detail_data['df'] is None or detail_data['df'].empty or len(detail_data['df']) < 20:
+        if 'df' not in detail_data or detail_data['df'] is None or detail_data['df'].empty or len(detail_data['df']) < 50:
             with st.spinner(f"Lazy-loading historical candle data for {selected_sym}..."):
                 detail_data['df'] = fetch_ohlcv(selected_sym)
         
