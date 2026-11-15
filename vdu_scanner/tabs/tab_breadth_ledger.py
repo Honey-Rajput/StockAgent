@@ -169,10 +169,24 @@ def render():
             unsafe_allow_html=True
         )
 
+        def _date_sort_key(d):
+            raw = str(d.get("date", "")).strip().lower()
+            if raw == "live":
+                return "99999999"  # Live session always on top
+            return raw
+
+        sorted_days = sorted(recent_days, key=_date_sort_key, reverse=True)
+
         hist_rows = []
-        for d in reversed(recent_days):
-            date_raw = str(d.get("date", ""))
-            date_fmt = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:]}" if len(date_raw) == 8 else date_raw
+        for d in sorted_days:
+            date_raw = str(d.get("date", "")).strip()
+            if date_raw.lower() == "live":
+                date_fmt = "Live"
+            elif len(date_raw) == 8 and date_raw.isdigit():
+                date_fmt = f"{date_raw[:4]}-{date_raw[4:6]}-{date_raw[6:]}"
+            else:
+                date_fmt = date_raw
+
             hist_rows.append({
                 "Date": date_fmt,
                 "Advancing": d.get("upN", 0),
