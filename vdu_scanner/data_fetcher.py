@@ -220,12 +220,40 @@ def get_index_stocks(index_name: str) -> list[str]:
 
 
 def get_top1000_nse_symbols() -> list[str]:
-    """Returns the top 1000 NSE equity symbols (capped from the full NSE list)."""
-    symbols = get_all_nse_symbols()
-    return symbols[:1000]
+    """
+    Returns the curated Top 1000 NSE liquid equities, combining:
+    1. NIFTY 100 / NIFTY 500 constituents (RELIANCE, SBIN, TCS, PNB, etc.)
+    2. The Breadth Ledger (markets.manasarora.com) 788-stock liquid momentum universe
+    3. Active NSE mainboard equities across all letters A-Z.
+    """
+    import json
+    import os
+    json_path = os.path.join(os.path.dirname(__file__), 'nse_top1000_symbols.json')
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r') as f:
+                syms = json.load(f)
+            if syms and len(syms) >= 100:
+                return syms[:1000]
+        except Exception:
+            pass
+
+    # Fallback: prioritize NIFTY100 before taking remainder
+    all_syms = get_all_nse_symbols()
+    seen = set()
+    combined = []
+    for s in NIFTY100_SYMBOLS:
+        if s not in seen:
+            combined.append(s)
+            seen.add(s)
+    for s in all_syms:
+        if s not in seen:
+            combined.append(s)
+            seen.add(s)
+    return combined[:1000]
 
 
-MAX_NSE_SYMBOLS = 1000  # Hardcapped to top 1000 NSE stocks only
+MAX_NSE_SYMBOLS = 2500  # Allows full universe of active NSE stocks
 
 def get_all_nse_symbols() -> list[str]:
     """

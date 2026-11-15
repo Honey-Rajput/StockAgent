@@ -677,6 +677,14 @@ def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=N
         elif cmp > ema20:
             triggers.append("✔️ Fast Trend: Sustained buying velocity holding above the short-term 20 EMA.")
             
+        try:
+            from breadth_ledger import get_stock_cluster_tag
+            cluster_name = get_stock_cluster_tag(symbol)
+            if cluster_name:
+                triggers.insert(0, f"🌟 Leading Industry Cluster: Belongs to institutional accumulation group '{cluster_name}'.")
+        except Exception:
+            pass
+
         if not triggers:
             triggers.append("✔️ Value Consolidation: Standard technical entry on strategy parameters.")
             
