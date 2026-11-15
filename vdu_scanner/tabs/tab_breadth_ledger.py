@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from datetime import datetime
 from breadth_ledger import fetch_breadth_data, get_market_breadth_summary, get_leading_clusters, get_breadth_stock_picks
@@ -107,52 +108,53 @@ def render():
                 clean_sym = str(sym).strip().upper().replace(".NS", "")
                 if clean_sym:
                     link_html = (
-                        f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{clean_sym}" target="_blank" rel="noopener noreferrer" '
-                        f'style="display: inline-block; margin: 2px 3px; padding: 3px 8px; background: rgba(56, 189, 248, 0.12); '
-                        f'color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-weight: 600; '
-                        f'font-size: 0.78rem; text-decoration: none; transition: all 0.15s ease;" '
-                        f'title="Open {clean_sym} on TradingView">{clean_sym} ↗</a>'
+                        '<a href="https://in.tradingview.com/chart/?symbol=NSE:' + clean_sym + '" '
+                        'target="_blank" rel="noopener noreferrer" '
+                        'style="display:inline-block;margin:2px 3px;padding:3px 8px;'
+                        'background:rgba(56,189,248,0.12);color:#38bdf8;'
+                        'border:1px solid rgba(56,189,248,0.3);border-radius:4px;'
+                        'font-weight:600;font-size:0.78rem;text-decoration:none;" '
+                        'title="Open ' + clean_sym + ' on TradingView">' + clean_sym + ' &#8599;</a>'
                     )
                     stock_links.append(link_html)
-            stocks_cell = " ".join(stock_links) if stock_links else '<span style="color: #64748b;">—</span>'
+            stocks_cell = " ".join(stock_links) if stock_links else '<span style="color:#64748b;">—</span>'
 
-            row_html = f"""
-            <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); transition: background 0.15s ease;">
-                <td style="padding: 10px 12px; text-align: center; color: #64748b; font-weight: 600;">{rank}</td>
-                <td style="padding: 10px 12px; font-weight: 600; color: #f1f5f9;">{c['industry']}</td>
-                <td style="padding: 10px 12px; text-align: center; color: #94a3b8;">{c['total_stocks']}</td>
-                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #38bdf8;">{c['highs_1m']}</td>
-                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #22d3ee;">{c['highs_3m']}</td>
-                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #00e676;">{c['highs_6m']}</td>
-                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #ffa000;">{c['score']}</td>
-                <td style="padding: 10px 12px;">{stocks_cell}</td>
-            </tr>
-            """
-            table_rows.append(row_html)
+            table_rows.append(
+                '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'
+                '<td style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;">' + str(rank) + '</td>'
+                '<td style="padding:10px 12px;font-weight:600;color:#f1f5f9;">' + str(c["industry"]) + '</td>'
+                '<td style="padding:10px 12px;text-align:center;color:#94a3b8;">' + str(c["total_stocks"]) + '</td>'
+                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#38bdf8;">' + str(c["highs_1m"]) + '</td>'
+                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#22d3ee;">' + str(c["highs_3m"]) + '</td>'
+                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#00e676;">' + str(c["highs_6m"]) + '</td>'
+                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#ffa000;">' + str(c["score"]) + '</td>'
+                '<td style="padding:10px 12px;">' + stocks_cell + '</td>'
+                '</tr>'
+            )
 
         tbody_html = "".join(table_rows)
-
-        st.markdown(f"""
-        <div style="overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; background: rgba(9, 13, 22, 0.6); margin-top: 10px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);">
-            <table style="width: 100%; border-collapse: collapse; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.85rem; color: #cbd5e1;">
-                <thead>
-                    <tr style="background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(255, 255, 255, 0.1); color: #94a3b8; text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.5px;">
-                        <th style="padding: 10px 12px; text-align: center; width: 45px;">#</th>
-                        <th style="padding: 10px 12px; text-align: left; width: 220px;">Industry Group</th>
-                        <th style="padding: 10px 12px; text-align: center; width: 65px;">Total</th>
-                        <th style="padding: 10px 12px; text-align: center; width: 80px; color: #38bdf8;">1M Highs</th>
-                        <th style="padding: 10px 12px; text-align: center; width: 80px; color: #22d3ee;">3M Highs</th>
-                        <th style="padding: 10px 12px; text-align: center; width: 80px; color: #00e676;">6M Highs</th>
-                        <th style="padding: 10px 12px; text-align: center; width: 70px; color: #ffa000;">Score</th>
-                        <th style="padding: 10px 12px; text-align: left;">Leading Institutional Stocks <span style="color:#38bdf8; font-weight:normal; font-size:0.7rem;">(Click ticker to open TradingView chart)</span></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {tbody_html}
-                </tbody>
-            </table>
-        </div>
-        """, unsafe_allow_html=True)
+        cluster_table_html = (
+            '<div style="font-family:\'Segoe UI\',system-ui,sans-serif;color:#cbd5e1;">'
+            '<div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;'
+            'background:rgba(9,13,22,0.9);box-shadow:0 4px 20px rgba(0,0,0,0.25);">'
+            '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
+            '<thead><tr style="background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.1);'
+            'color:#94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.5px;">'
+            '<th style="padding:10px 12px;text-align:center;width:45px;">#</th>'
+            '<th style="padding:10px 12px;text-align:left;width:220px;">Industry Group</th>'
+            '<th style="padding:10px 12px;text-align:center;width:65px;">Total</th>'
+            '<th style="padding:10px 12px;text-align:center;width:80px;color:#38bdf8;">1M Highs</th>'
+            '<th style="padding:10px 12px;text-align:center;width:80px;color:#22d3ee;">3M Highs</th>'
+            '<th style="padding:10px 12px;text-align:center;width:80px;color:#00e676;">6M Highs</th>'
+            '<th style="padding:10px 12px;text-align:center;width:70px;color:#ffa000;">Score</th>'
+            '<th style="padding:10px 12px;text-align:left;">Leading Institutional Stocks '
+            '<span style="color:#38bdf8;font-weight:normal;font-size:0.7rem;">'
+            '(Click ticker to open TradingView chart)</span></th>'
+            '</tr></thead>'
+            '<tbody>' + tbody_html + '</tbody>'
+            '</table></div></div>'
+        )
+        components.html(cluster_table_html, height=min(100 + len(clusters[:20]) * 55, 1200), scrolling=True)
     else:
         st.info("No industry cluster data currently available.")
 
@@ -254,49 +256,42 @@ def render():
                 f'{"&nbsp;<span style=\\'font-size:0.72rem;color:#fbbf24;\\'>+"+str(p["cluster_boost"])+"✦</span>" if p["cluster_boost"] else ""}'
             )
 
-            row_bg = "rgba(250,191,36,0.04)" if p["in_leading_cluster"] else "transparent"
-            pick_rows_html.append(f"""
-            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);background:{row_bg};">
-                <td style="padding:9px 10px;text-align:center;color:#475569;font-size:0.8rem;">{idx}</td>
-                <td style="padding:9px 10px;">{sym_link}{cl_badge}</td>
-                <td style="padding:9px 10px;color:#94a3b8;font-size:0.82rem;">{p["industry"]}</td>
-                <td style="padding:9px 10px;text-align:center;">{momo_bar}</td>
-                <td style="padding:9px 10px;text-align:center;">{score_pill}</td>
-                <td style="padding:9px 10px;font-size:0.82rem;color:{p["trend_color"]};font-weight:600;">{p["trend_label"]}</td>
-            </tr>
-            """)
+            row_bg = "rgba(250,191,36,0.04)" if p["in_leading_cluster"] else "rgba(0,0,0,0)"
+            pick_rows_html.append(
+                '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);background:' + row_bg + ';">'
+                '<td style="padding:9px 10px;text-align:center;color:#475569;font-size:0.8rem;">' + str(idx) + '</td>'
+                '<td style="padding:9px 10px;">' + sym_link + cl_badge + '</td>'
+                '<td style="padding:9px 10px;color:#94a3b8;font-size:0.82rem;">' + p["industry"] + '</td>'
+                '<td style="padding:9px 10px;text-align:center;">' + momo_bar + '</td>'
+                '<td style="padding:9px 10px;text-align:center;">' + score_pill + '</td>'
+                '<td style="padding:9px 10px;font-size:0.82rem;color:' + p["trend_color"] + ';font-weight:600;">' + p["trend_label"] + '</td>'
+                '</tr>'
+            )
 
         tbody = "".join(pick_rows_html)
-        st.markdown(f"""
-        <div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;
-                    background:rgba(9,13,22,0.6);margin-top:8px;box-shadow:0 4px 20px rgba(0,0,0,0.25);">
-            <table style="width:100%;border-collapse:collapse;font-family:'Segoe UI',system-ui,sans-serif;
-                          font-size:0.85rem;color:#cbd5e1;">
-                <thead>
-                    <tr style="background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.1);
-                               color:#94a3b8;text-transform:uppercase;font-size:0.73rem;letter-spacing:0.5px;">
-                        <th style="padding:10px;text-align:center;width:36px;">#</th>
-                        <th style="padding:10px;text-align:left;width:150px;">Stock</th>
-                        <th style="padding:10px;text-align:left;">Industry</th>
-                        <th style="padding:10px;text-align:center;width:120px;">
-                            Momentum Bars
-                            <div style="font-size:0.65rem;color:#475569;font-weight:normal;margin-top:1px;">
-                                5d·10d·20d·30d·60d·90d·125d·180d·250d
-                            </div>
-                        </th>
-                        <th style="padding:10px;text-align:center;width:90px;">Score</th>
-                        <th style="padding:10px;text-align:left;width:180px;">Trend</th>
-                    </tr>
-                </thead>
-                <tbody>{tbody}</tbody>
-            </table>
-        </div>
-        <p style="font-size:0.72rem;color:#475569;margin-top:6px;">
-            ✦ Cluster boost applied for stocks in Top-10 leading industry groups.
-            Green bars = positive momentum for that timeframe. Click stock name to open TradingView chart.
-            <b>Not financial advice — do your own due diligence.</b>
-        </p>
-        """, unsafe_allow_html=True)
+        picks_html = (
+            '<div style="font-family:\'Segoe UI\',system-ui,sans-serif;color:#cbd5e1;">'
+            '<div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;'
+            'background:rgba(9,13,22,0.9);margin-top:8px;box-shadow:0 4px 20px rgba(0,0,0,0.25);">'
+            '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
+            '<thead><tr style="background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.1);'
+            'color:#94a3b8;text-transform:uppercase;font-size:0.73rem;letter-spacing:0.5px;">'
+            '<th style="padding:10px;text-align:center;width:36px;">#</th>'
+            '<th style="padding:10px;text-align:left;width:150px;">Stock</th>'
+            '<th style="padding:10px;text-align:left;">Industry</th>'
+            '<th style="padding:10px;text-align:center;width:120px;">Momentum Bars'
+            '<div style="font-size:0.65rem;color:#475569;font-weight:normal;margin-top:1px;">5d·10d·20d·30d·60d·90d·125d·180d·250d</div></th>'
+            '<th style="padding:10px;text-align:center;width:90px;">Score</th>'
+            '<th style="padding:10px;text-align:left;width:180px;">Trend</th>'
+            '</tr></thead>'
+            '<tbody>' + tbody + '</tbody>'
+            '</table></div>'
+            '<p style="font-size:0.72rem;color:#475569;margin-top:6px;padding:0 4px;">'
+            '&#10022; Cluster boost applied for stocks in Top-10 leading industry groups. '
+            'Green bars = positive momentum for that timeframe. Click stock name to open TradingView chart. '
+            '<b>Not financial advice — do your own due diligence.</b></p></div>'
+        )
+        components.html(picks_html, height=min(120 + len(filtered) * 46, 1800), scrolling=True)
     else:
         st.info("No stock picks available at this time. The market breadth data may still be loading.")
 
