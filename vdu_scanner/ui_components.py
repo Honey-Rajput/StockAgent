@@ -426,9 +426,19 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         tv_sym = r["symbol"].replace('.NS', '').strip()
         cells.append(f'<td style="padding: 10px 12px; font-weight: bold; color: #29b6f6;"><a href="https://in.tradingview.com/chart/?symbol=NSE:{tv_sym}" target="_blank" rel="noopener noreferrer" style="color: #29b6f6; text-decoration: none;">{tv_sym}</a></td>')
                 
-        # Sector column
+        # Sector column with Breadth Ledger Leading Cluster tag
         sector = get_stock_sector(r["symbol"])
-        cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1; font-size: 0.8rem; font-style: italic;">{sector}</td>')
+        try:
+            from breadth_ledger import get_stock_cluster_tag
+            cluster_tag = get_stock_cluster_tag(r["symbol"])
+        except Exception:
+            cluster_tag = None
+
+        if cluster_tag:
+            cluster_html = f'<br><span style="background: rgba(56, 189, 248, 0.18); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.35); font-size: 0.68rem; font-weight: 600; padding: 1px 5px; border-radius: 3px; white-space: nowrap;" title="Active Leading Industry Cluster from Breadth Ledger">🌟 {cluster_tag}</span>'
+        else:
+            cluster_html = ""
+        cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1; font-size: 0.8rem; font-style: italic;">{sector}{cluster_html}</td>')
         
         cells.append(f'<td style="padding: 10px 12px; color: #e2e8f0; font-weight: 500;">₹{float(r.get("cmp") or 0.0):,.2f}</td>')
         

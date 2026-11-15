@@ -1315,6 +1315,27 @@ try:
     _mc_sma50   = _mc.get('sma50', 0.0)
     _mc_sma200  = _mc.get('sma200', 0.0)
     _chg_color  = '#00e676' if _mc_chg >= 0 else '#ef4444'
+
+    # Pull in live Breadth Ledger data if available
+    try:
+        from breadth_ledger import get_market_breadth_summary
+        _bl = get_market_breadth_summary()
+    except Exception:
+        _bl = {}
+
+    _breadth_html = ""
+    if _bl and _bl.get("universe_size", 0) > 0:
+        _adv_dec_color = "#00e676" if _bl["up_stocks"] >= _bl["down_stocks"] else "#ef4444"
+        _breadth_html = f"""
+        <div style='margin-top:8px; padding-top:6px; border-top:1px dashed rgba(255,255,255,0.1); font-size:0.76rem;'>
+            <div style='color:#38bdf8; font-weight:600; margin-bottom:2px;'>The Breadth Ledger ({_bl["universe_size"]} stocks):</div>
+            <div style='color:#94a3b8;'>Adv/Dec: <b style='color:{_adv_dec_color};'>{_bl["up_stocks"]} ▲ / {_bl["down_stocks"]} ▼</b> ({_bl["up_pct"]}%)</div>
+            <div style='color:#94a3b8;'>52W High/Low: <b style='color:#00e676;'>{_bl["highs_52w"]} 🚀</b> / <b style='color:#ef4444;'>{_bl["lows_52w"]} 🔻</b></div>
+            <div style='color:#94a3b8;'>Stocks > 50 DMA: <b style='color:#38bdf8;'>{_bl["stocks_above_50dma"]}%</b></div>
+            <div style='margin-top:4px;'><span style='font-size:0.7rem; font-weight:700;'>{_bl["regime_badge"]}</span></div>
+        </div>
+        """
+
     _card_color = 'rgba(0,230,118,0.06)'  if _mc_status == 'Bullish' else \
                   'rgba(255,160,0,0.06)'   if _mc_status == 'Caution' else \
                   'rgba(239,68,68,0.06)'
@@ -1329,12 +1350,13 @@ try:
             {_mc_emoji} Market Health — <span style='color:{_border_color.replace('0.35','1')};'>{_mc_status}</span>
           </div>
           <div style='font-size:0.85rem; color:#94a3b8; margin-top:4px;'>
-            CMP: <b style='color:#e2e8f0;'>₹{_mc_cmp:,.2f}</b>
+            NIFTY CMP: <b style='color:#e2e8f0;'>₹{_mc_cmp:,.2f}</b>
             &nbsp;<span style='color:{_chg_color};'>({'▲' if _mc_chg>=0 else '▼'} {abs(_mc_chg):.2f}%)</span>
           </div>
           <div style='font-size:0.78rem; color:#64748b; margin-top:2px;'>
             50-SMA: ₹{_mc_sma50:,.0f} &nbsp;|&nbsp; 200-SMA: ₹{_mc_sma200:,.0f}
           </div>
+          {_breadth_html}
           {'<div style="font-size:0.75rem; color:#ffa000; margin-top:5px;">⚠️ Market in caution zone — be selective with new buys</div>' if _mc_status == 'Caution' else ''}
           {'<div style="font-size:0.75rem; color:#ef4444; margin-top:5px;">🚨 Bear market — avoid new breakout trades, prioritize capital preservation</div>' if _mc_status == 'Bearish' else ''}
         </div>
@@ -1355,24 +1377,24 @@ st.sidebar.markdown(
 st.sidebar.markdown('---')
 st.sidebar.markdown('### 🔍 VDU Strategy Filters')
 
-# Algorithmic parameter sliders
+# Algorithmic parameter sliders (User default preferences: 3.0x vol ratio, 6.0% price change, 30-60d dry, 9 spikes, 60 score)
 min_vol_ratio = st.sidebar.slider(
     "Min Volume Ratio",
     min_value=1.2,
     max_value=10.0,
-    value=float(MIN_VOLUME_RATIO),
+    value=3.0,
     step=0.1,
-    key="vdu_min_vol_ratio_v9",
-    help="Breakout day volume compared to dry average volume (e.g., 1.8 = 1.8x surge)"
+    key="vdu_min_vol_ratio_v10",
+    help="Breakout day volume compared to dry average volume (e.g., 3.0 = 3x surge)"
 )
 
 min_price_chg = st.sidebar.slider(
     "Min Price Change %",
     min_value=1.0,
     max_value=30.0,
-    value=float(MIN_PRICE_CHANGE),
+    value=6.0,
     step=0.5,
-    key="vdu_min_price_chg_v9",
+    key="vdu_min_price_chg_v10",
     help="Minimum price percentage increase on the breakout day (Close vs Open)"
 )
 
@@ -1380,9 +1402,9 @@ dry_zone_range = st.sidebar.slider(
     "Dry Zone Range (Trading Days)",
     min_value=0,
     max_value=150,
-    value=(int(DRY_ZONE_MIN_DAYS), int(DRY_ZONE_MAX_DAYS)),
+    value=(30, 60),
     step=5,
-    key="vdu_dry_zone_range_v5",
+    key="vdu_dry_zone_range_v6",
     help="Configure the minimum and maximum duration of the dry zone consolidation period (up to 150 days)"
 )
 
@@ -1390,9 +1412,9 @@ min_dry_spikes = st.sidebar.slider(
     "Min Spikes in Dry Zone",
     min_value=0,
     max_value=20,
-    value=2,
+    value=9,
     step=1,
-    key="vdu_min_dry_spikes_v9",
+    key="vdu_min_dry_spikes_v10",
     help="Requires at least this many volume accumulation spikes inside the dry zone window (up to 20 spikes)"
 )
 
@@ -1400,9 +1422,9 @@ min_signal_str = st.sidebar.slider(
     "Min Signal Strength Score",
     min_value=0,
     max_value=100,
-    value=25,
+    value=60,
     step=5,
-    key="vdu_min_signal_str_v6",
+    key="vdu_min_signal_str_v10",
     help="Filter stocks based on overall calculated algorithmic rating"
 )
 
@@ -2417,10 +2439,10 @@ st.markdown("---")
 # Get scan cache (used by multiple tabs)
 scan_data = st.session_state.scan_results
 
-(tab_results, tab_detail, tab_watchlist, tab_ai, tab_sma, tab_sma65,
+(tab_results, tab_detail, tab_watchlist, tab_breadth, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
  tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_pva_matrix, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_flat_base, tab_near_30sma) = st.tabs([
-    "📊 Results", "📈 Detail", "📋 Watchlist", "🤖 AI Pattern",
+    "📊 Results", "📈 Detail", "📋 Watchlist", "🌐 Breadth Ledger", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
@@ -2446,6 +2468,13 @@ with tab_detail:
 # ==============================================================================
 with tab_watchlist:
     tabs.tab_watchlist.render()
+
+# ==============================================================================
+# TAB 4: MARKET BREADTH & SECTOR CLUSTERS (The Breadth Ledger)
+# ==============================================================================
+with tab_breadth:
+    import tabs.tab_breadth_ledger
+    tabs.tab_breadth_ledger.render()
 
 with tab_ai:
     import tabs.tab_ai
