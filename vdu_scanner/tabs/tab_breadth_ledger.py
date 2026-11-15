@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from breadth_ledger import fetch_breadth_data, get_market_breadth_summary, get_leading_clusters
+from breadth_ledger import fetch_breadth_data, get_market_breadth_summary, get_leading_clusters, get_breadth_stock_picks
 
 
 def render():
@@ -158,7 +158,151 @@ def render():
 
     st.markdown("---")
 
-    # 4. Rolling Breadth History
+    # 4. Breadth-Powered Stock Recommendations
+    st.markdown("### 🧭 Breadth-Powered Stock Recommendations")
+    st.markdown(
+        "<p style='font-size:0.85rem; color:#94a3b8; margin-top:-6px;'>"
+        "Stocks ranked by <b>multi-timeframe momentum</b> (5-day to 250-day) from The Breadth Ledger universe. "
+        "Stocks in <b>Top-10 leading industry clusters</b> receive a boost. "
+        "Use the regime above to calibrate your exposure."
+        "</p>",
+        unsafe_allow_html=True
+    )
+
+    regime_m50 = summary["stocks_above_50dma"]
+    if regime_m50 >= 60.0:
+        regime_note = "🟢 <b>AGGRESSIVE:</b> Broad market supports full-sized positions. All picks below are actionable."
+        regime_note_color = "#00e676"
+    elif regime_m50 >= 40.0:
+        regime_note = "🟡 <b>SELECTIVE:</b> Trade only <b>Top Leading Cluster</b> stocks (shown with cluster badge). Keep positions smaller."
+        regime_note_color = "#fbbf24"
+    else:
+        regime_note = "🔴 <b>DEFENSIVE:</b> Avoid new longs. The picks below are watchlist candidates only — wait for breadth improvement."
+        regime_note_color = "#ef4444"
+
+    st.markdown(
+        f"<div style='margin: -6px 0 14px 0; padding: 8px 14px; border-left: 3px solid {regime_note_color}; "
+        f"background: rgba(0,0,0,0.2); border-radius: 4px; font-size:0.85rem; color:#cbd5e1;'>"
+        f"{regime_note}</div>",
+        unsafe_allow_html=True
+    )
+
+    picks = get_breadth_stock_picks(min_momo_score=28, top_n=40)
+
+    if picks:
+        # Controls row
+        col_filter, col_sort = st.columns([2, 2])
+        with col_filter:
+            only_leading = st.checkbox(
+                "🌟 Only Leading Cluster Stocks",
+                value=(regime_m50 < 60.0),
+                key="picks_only_leading",
+                help="Show only stocks from the Top-10 leading industry clusters"
+            )
+        with col_sort:
+            sort_by = st.selectbox(
+                "Sort by",
+                ["Final Score (default)", "Momentum Score", "Cluster Rank"],
+                key="picks_sort_by",
+                label_visibility="collapsed"
+            )
+
+        filtered = [p for p in picks if (not only_leading or p["in_leading_cluster"])]
+
+        if sort_by == "Momentum Score":
+            filtered.sort(key=lambda x: -x["momo_score"])
+        elif sort_by == "Cluster Rank":
+            filtered.sort(key=lambda x: (x["cluster_rank"], -x["momo_score"]))
+
+        # Build HTML table rows
+        pick_rows_html = []
+        for idx, p in enumerate(filtered, 1):
+            sym = p["symbol"]
+            tv_url = f"https://in.tradingview.com/chart/?symbol=NSE:{sym}"
+            sym_link = (
+                f'<a href="{tv_url}" target="_blank" rel="noopener noreferrer" '
+                f'style="font-weight:700; font-size:0.92rem; color:#38bdf8; text-decoration:none;" '
+                f'title="Open {sym} chart on TradingView">{sym} ↗</a>'
+            )
+
+            # Cluster badge
+            if p["in_leading_cluster"]:
+                cl_badge = (
+                    f'<span style="display:inline-block; padding:2px 7px; margin-left:5px; '
+                    f'background:rgba(250,191,36,0.15); color:#fbbf24; border:1px solid rgba(250,191,36,0.4); '
+                    f'border-radius:4px; font-size:0.72rem; font-weight:600;">★ #{p["cluster_rank"]}</span>'
+                )
+            else:
+                cl_badge = ""
+
+            # Momentum bar: 9 boxes, green if tf present, grey if not
+            lb_all = [5, 10, 20, 30, 60, 90, 125, 180, 250]
+            pos_set = set(p["positive_tfs"])
+            bar_cells = "".join(
+                f'<span title="{tf}d" style="display:inline-block;width:9px;height:14px;margin:0 1px;'
+                f'border-radius:2px;background:{"#22c55e" if tf in pos_set else "#334155"};"></span>'
+                for tf in lb_all
+            )
+            momo_bar = f'<div style="display:inline-flex;align-items:center;gap:1px;">{bar_cells}</div>'
+
+            # Score pill
+            score_pct = int((p["momo_score"] / 45) * 100)
+            score_color = "#00e676" if score_pct >= 90 else ("#4ade80" if score_pct >= 70 else "#fbbf24")
+            score_pill = (
+                f'<span style="font-weight:700;color:{score_color}">{p["momo_score"]}</span>'
+                f'<span style="color:#475569;font-size:0.74rem;">/45</span>'
+                f'{"&nbsp;<span style=\\'font-size:0.72rem;color:#fbbf24;\\'>+"+str(p["cluster_boost"])+"✦</span>" if p["cluster_boost"] else ""}'
+            )
+
+            row_bg = "rgba(250,191,36,0.04)" if p["in_leading_cluster"] else "transparent"
+            pick_rows_html.append(f"""
+            <tr style="border-bottom:1px solid rgba(255,255,255,0.05);background:{row_bg};">
+                <td style="padding:9px 10px;text-align:center;color:#475569;font-size:0.8rem;">{idx}</td>
+                <td style="padding:9px 10px;">{sym_link}{cl_badge}</td>
+                <td style="padding:9px 10px;color:#94a3b8;font-size:0.82rem;">{p["industry"]}</td>
+                <td style="padding:9px 10px;text-align:center;">{momo_bar}</td>
+                <td style="padding:9px 10px;text-align:center;">{score_pill}</td>
+                <td style="padding:9px 10px;font-size:0.82rem;color:{p["trend_color"]};font-weight:600;">{p["trend_label"]}</td>
+            </tr>
+            """)
+
+        tbody = "".join(pick_rows_html)
+        st.markdown(f"""
+        <div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;
+                    background:rgba(9,13,22,0.6);margin-top:8px;box-shadow:0 4px 20px rgba(0,0,0,0.25);">
+            <table style="width:100%;border-collapse:collapse;font-family:'Segoe UI',system-ui,sans-serif;
+                          font-size:0.85rem;color:#cbd5e1;">
+                <thead>
+                    <tr style="background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.1);
+                               color:#94a3b8;text-transform:uppercase;font-size:0.73rem;letter-spacing:0.5px;">
+                        <th style="padding:10px;text-align:center;width:36px;">#</th>
+                        <th style="padding:10px;text-align:left;width:150px;">Stock</th>
+                        <th style="padding:10px;text-align:left;">Industry</th>
+                        <th style="padding:10px;text-align:center;width:120px;">
+                            Momentum Bars
+                            <div style="font-size:0.65rem;color:#475569;font-weight:normal;margin-top:1px;">
+                                5d·10d·20d·30d·60d·90d·125d·180d·250d
+                            </div>
+                        </th>
+                        <th style="padding:10px;text-align:center;width:90px;">Score</th>
+                        <th style="padding:10px;text-align:left;width:180px;">Trend</th>
+                    </tr>
+                </thead>
+                <tbody>{tbody}</tbody>
+            </table>
+        </div>
+        <p style="font-size:0.72rem;color:#475569;margin-top:6px;">
+            ✦ Cluster boost applied for stocks in Top-10 leading industry groups.
+            Green bars = positive momentum for that timeframe. Click stock name to open TradingView chart.
+            <b>Not financial advice — do your own due diligence.</b>
+        </p>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No stock picks available at this time. The market breadth data may still be loading.")
+
+    st.markdown("---")
+
+    # 6. Rolling Breadth History
     recent_days = raw_data.get("recentDays", [])
     if recent_days:
         st.markdown("### 📜 Rolling Session Breadth History")
@@ -201,7 +345,7 @@ def render():
             })
         st.dataframe(pd.DataFrame(hist_rows), use_container_width=True, hide_index=True)
 
-    # 5. Position Sizing Rules Box
+    # 7. Position Sizing Rules Box
     with st.expander("💡 How to Trade with Breadth Ledger (Position Sizing & Exposure Matrix)", expanded=False):
         st.markdown("""
         **Institutional Rule of Market Breadth (Minervini & Breadth Ledger Framework):**

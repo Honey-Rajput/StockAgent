@@ -175,3 +175,120 @@ def get_stock_cluster_tag(symbol: str) -> str | None:
     sym_clean = str(symbol).strip().upper().replace(".NS", "")
     cluster_map = get_cluster_stocks_map()
     return cluster_map.get(sym_clean)
+
+
+def get_breadth_stock_picks(
+    min_momo_score: int = 36,
+    top_n: int = 30,
+    prefer_leading_clusters: bool = True,
+) -> list[dict]:
+    """
+    Returns stock picks based on multi-timeframe momentum (momo) data from Breadth Ledger,
+    optionally biased toward stocks that are also in the leading industry clusters.
+
+    Scoring system:
+      - momo_score: sum of weights across 9 lookback periods (5d to 250d).
+        Each period contributes (index+1) if the stock has positive momentum.
+        Max possible = 1+2+3+4+5+6+7+8+9 = 45.
+      - cluster_boost: +10 if stock is in a Top-5 leading cluster, +5 if Top-10.
+      - final_score = momo_score + cluster_boost
+
+    Returns list of dicts sorted by final_score descending.
+    """
+    data = fetch_breadth_data()
+    momo = data.get("momo", {})
+    lb = momo.get("lb", [])  # e.g. [5, 10, 20, 30, 60, 90, 125, 180, 250]
+    groups = momo.get("groups", [])
+
+    if not groups or not lb:
+        return []
+
+    clusters = get_leading_clusters()
+    # Build cluster rank map: symbol -> (cluster_rank, cluster_score, industry)
+    cluster_rank_map: dict[str, dict] = {}
+    for rank, c in enumerate(clusters, 1):
+        for s in c.get("leading_stocks", []):
+            sym = str(s).strip().upper().replace(".NS", "")
+            if sym and sym not in cluster_rank_map:
+                cluster_rank_map[sym] = {
+                    "cluster_rank": rank,
+                    "cluster_score": c["score"],
+                    "industry": c["industry"],
+                    "highs_1m": c["highs_1m"],
+                    "highs_3m": c["highs_3m"],
+                    "highs_6m": c["highs_6m"],
+                }
+
+    picks = []
+    for grp in groups:
+        industry = grp.get("industry", "")
+        for sym, code in grp.get("stocks", []):
+            code_str = str(code)
+            if len(code_str) < len(lb):
+                continue
+            # Calculate weighted momentum score
+            momo_score = 0
+            positive_tfs = []
+            for i in range(len(lb)):
+                ch = code_str[i] if i < len(code_str) else "0"
+                if ch not in ("0", "-"):
+                    weight = i + 1
+                    momo_score += weight
+                    positive_tfs.append(lb[i])
+
+            if momo_score < min_momo_score:
+                continue
+
+            sym_clean = str(sym).strip().upper().replace(".NS", "")
+            cl_info = cluster_rank_map.get(sym_clean, {})
+            cluster_rank = cl_info.get("cluster_rank", 999)
+
+            # Cluster boost
+            if prefer_leading_clusters:
+                if cluster_rank <= 5:
+                    cluster_boost = 10
+                elif cluster_rank <= 10:
+                    cluster_boost = 5
+                else:
+                    cluster_boost = 0
+            else:
+                cluster_boost = 0
+
+            final_score = momo_score + cluster_boost
+
+            # Trend label based on how many timeframes are green
+            n_green = len(positive_tfs)
+            if n_green >= 8:
+                trend_label = "🟢 Very Strong Uptrend"
+                trend_color = "#00e676"
+            elif n_green >= 6:
+                trend_label = "🟢 Strong Uptrend"
+                trend_color = "#4ade80"
+            elif n_green >= 4:
+                trend_label = "🟡 Moderate Momentum"
+                trend_color = "#fbbf24"
+            else:
+                trend_label = "🟠 Early / Mixed"
+                trend_color = "#fb923c"
+
+            picks.append({
+                "symbol": sym_clean,
+                "industry": cl_info.get("industry", industry),
+                "momo_score": momo_score,
+                "cluster_boost": cluster_boost,
+                "final_score": final_score,
+                "in_leading_cluster": cluster_rank <= 10,
+                "cluster_rank": cluster_rank,
+                "cluster_score": cl_info.get("cluster_score", 0),
+                "positive_tfs": positive_tfs,
+                "n_green_tfs": n_green,
+                "trend_label": trend_label,
+                "trend_color": trend_color,
+                "highs_1m": cl_info.get("highs_1m", 0),
+                "highs_3m": cl_info.get("highs_3m", 0),
+                "highs_6m": cl_info.get("highs_6m", 0),
+            })
+
+    # Sort by final_score desc, then by momo_score desc
+    picks.sort(key=lambda x: (-x["final_score"], -x["momo_score"]))
+    return picks[:top_n]
