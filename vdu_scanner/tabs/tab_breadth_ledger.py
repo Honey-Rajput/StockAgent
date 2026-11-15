@@ -100,34 +100,59 @@ def render():
     )
 
     if clusters:
-        cluster_rows = []
-        for rank, c in enumerate(clusters[:18], 1):
-            cluster_rows.append({
-                "Rank": rank,
-                "Industry Group": c["industry"],
-                "Total Stocks": c["total_stocks"],
-                "1M Highs": c["highs_1m"],
-                "3M Highs": c["highs_3m"],
-                "6M Highs": c["highs_6m"],
-                "Breadth Score": c["score"],
-                "Leading Tickers": ", ".join(c.get("leading_stocks", [])[:6])
-            })
-        df_clusters = pd.DataFrame(cluster_rows)
-        st.dataframe(
-            df_clusters,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Rank": st.column_config.NumberColumn("#", width="small"),
-                "Industry Group": st.column_config.TextColumn("Industry Group", width="medium"),
-                "Total Stocks": st.column_config.NumberColumn("Total", width="small"),
-                "1M Highs": st.column_config.NumberColumn("1M Highs", width="small"),
-                "3M Highs": st.column_config.NumberColumn("3M Highs", width="small"),
-                "6M Highs": st.column_config.NumberColumn("6M Highs", width="small"),
-                "Breadth Score": st.column_config.NumberColumn("Score", width="small"),
-                "Leading Tickers": st.column_config.TextColumn("Leading Institutional Stocks", width="large"),
-            }
-        )
+        table_rows = []
+        for rank, c in enumerate(clusters[:20], 1):
+            stock_links = []
+            for sym in c.get("leading_stocks", []):
+                clean_sym = str(sym).strip().upper().replace(".NS", "")
+                if clean_sym:
+                    link_html = (
+                        f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{clean_sym}" target="_blank" rel="noopener noreferrer" '
+                        f'style="display: inline-block; margin: 2px 3px; padding: 3px 8px; background: rgba(56, 189, 248, 0.12); '
+                        f'color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 4px; font-weight: 600; '
+                        f'font-size: 0.78rem; text-decoration: none; transition: all 0.15s ease;" '
+                        f'title="Open {clean_sym} on TradingView">{clean_sym} ↗</a>'
+                    )
+                    stock_links.append(link_html)
+            stocks_cell = " ".join(stock_links) if stock_links else '<span style="color: #64748b;">—</span>'
+
+            row_html = f"""
+            <tr style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); transition: background 0.15s ease;">
+                <td style="padding: 10px 12px; text-align: center; color: #64748b; font-weight: 600;">{rank}</td>
+                <td style="padding: 10px 12px; font-weight: 600; color: #f1f5f9;">{c['industry']}</td>
+                <td style="padding: 10px 12px; text-align: center; color: #94a3b8;">{c['total_stocks']}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #38bdf8;">{c['highs_1m']}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #22d3ee;">{c['highs_3m']}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #00e676;">{c['highs_6m']}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: #ffa000;">{c['score']}</td>
+                <td style="padding: 10px 12px;">{stocks_cell}</td>
+            </tr>
+            """
+            table_rows.append(row_html)
+
+        tbody_html = "".join(table_rows)
+
+        st.markdown(f"""
+        <div style="overflow-x: auto; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; background: rgba(9, 13, 22, 0.6); margin-top: 10px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);">
+            <table style="width: 100%; border-collapse: collapse; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 0.85rem; color: #cbd5e1;">
+                <thead>
+                    <tr style="background: rgba(255, 255, 255, 0.03); border-bottom: 1px solid rgba(255, 255, 255, 0.1); color: #94a3b8; text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.5px;">
+                        <th style="padding: 10px 12px; text-align: center; width: 45px;">#</th>
+                        <th style="padding: 10px 12px; text-align: left; width: 220px;">Industry Group</th>
+                        <th style="padding: 10px 12px; text-align: center; width: 65px;">Total</th>
+                        <th style="padding: 10px 12px; text-align: center; width: 80px; color: #38bdf8;">1M Highs</th>
+                        <th style="padding: 10px 12px; text-align: center; width: 80px; color: #22d3ee;">3M Highs</th>
+                        <th style="padding: 10px 12px; text-align: center; width: 80px; color: #00e676;">6M Highs</th>
+                        <th style="padding: 10px 12px; text-align: center; width: 70px; color: #ffa000;">Score</th>
+                        <th style="padding: 10px 12px; text-align: left;">Leading Institutional Stocks <span style="color:#38bdf8; font-weight:normal; font-size:0.7rem;">(Click ticker to open TradingView chart)</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {tbody_html}
+                </tbody>
+            </table>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.info("No industry cluster data currently available.")
 
