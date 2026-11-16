@@ -1977,7 +1977,7 @@ if run_full or run_sma:
             import joblib
             import os
             
-            status_box.text(f"Phase 3/3: Fetching Benchmark Data (^NSEI)...")
+            status_box.text("Phase 3/3: Fetching Benchmark Data (^NSEI)...")
             try:
                 nifty_benchmark_df = yf.download("^NSEI", period=yf_period, interval=yf_interval, progress=False, threads=False, timeout=15)
             except Exception as _nsei_err:
@@ -2118,7 +2118,7 @@ if run_full or run_sma:
                         print(f"Retry chunk {rc_idx+1} failed: {retry_ex}")
                     import random
                     time.sleep(random.uniform(1.5, 2.5))
-                status_box.text(f"Retry complete. Re-scanning recovered symbols...")
+                status_box.text("Retry complete. Re-scanning recovered symbols...")
                 # Re-run process_single_symbol only for the symbols that now have data
                 recovered = [s for s in failed_syms_retry if bulk_data.get(s.strip().upper()) is not None and not bulk_data.get(s.strip().upper()).empty]
                 for sym in recovered:

@@ -450,10 +450,10 @@ def render():
     st.markdown("---")
     st.markdown(
         f"<h3 style='color:#ff4444; margin-bottom:4px;'>🔥 Blast Watchlist — Stocks Prime to Shoot in Coming Days</h3>"
-        f"<p style='font-size:0.85rem; color:#94a3b8; margin-top:0;'>"
+        "<p style='font-size:0.85rem; color:#94a3b8; margin-top:0;'>"
         f"Selected using multi-timeframe trend alignment, institutional volume surge, and explosive RWI momentum. "
         f"<b style='color:#ff9900;'>{len(blast_stocks)} stocks</b> qualify with Blast Score ≥ 55/100."
-        f"</p>",
+        "</p>",
         unsafe_allow_html=True
     )
 
@@ -598,10 +598,10 @@ def render():
     # ─────────────────────────────────────────────────────────────────────────
     st.markdown("---")
     st.markdown(
-        f"<h3 style='color:#38bdf8; margin-bottom:4px;'>🔬 6-Condition Price + Volume Matrix (Wyckoff / PVA Analysis)</h3>"
-        f"<p style='font-size:0.85rem; color:#94a3b8; margin-top:0;'>"
-        f"Simultaneously correlates <b>Price Movement</b> and <b>Volume Movement</b> to classify stocks into 6 precise market regimes with automated interpretations."
-        f"</p>",
+        "<h3 style='color:#38bdf8; margin-bottom:4px;'>🔬 6-Condition Price + Volume Matrix (Wyckoff / PVA Analysis)</h3>"
+        "<p style='font-size:0.85rem; color:#94a3b8; margin-top:0;'>"
+        "Simultaneously correlates <b>Price Movement</b> and <b>Volume Movement</b> to classify stocks into 6 precise market regimes with automated interpretations."
+        "</p>",
         unsafe_allow_html=True
     )
 

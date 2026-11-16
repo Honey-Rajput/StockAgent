@@ -189,7 +189,7 @@ def render():
                     shared_xaxes=True,
                     vertical_spacing=0.03,
                     row_heights=[0.7, 0.3],
-                    subplot_titles=(f"📈 {selected_sym} Candlestick Chart & 50 DMA", f"📊 Volume Analysis")
+                    subplot_titles=(f"📈 {selected_sym} Candlestick Chart & 50 DMA", "📊 Volume Analysis")
                 )
 
                 # Top Candlestick trace

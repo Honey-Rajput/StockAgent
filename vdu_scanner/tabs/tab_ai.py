@@ -149,7 +149,7 @@ def render():
                                 price_data_snapshot=snap_str,
                                 date_str=today_date_str
                             )
-                            st.toast(f"💾 Analysis cached in Neon PostgreSQL for today!", icon="✅")
+                            st.toast("💾 Analysis cached in Neon PostgreSQL for today!", icon="✅")
             
             if analysis_dict:
                 if analysis_dict.get("pattern_name") == "Error":

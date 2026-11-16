@@ -95,7 +95,7 @@ def render():
                 raw_symbols = get_all_nse_symbols()
                 symbols_to_scan = [s.strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]
                 
-                st.info(f"Step 1/2 — Fetching history from Master Cache...")
+                st.info("Step 1/2 — Fetching history from Master Cache...")
                 prog = st.progress(0)
                 status = st.empty()
                 

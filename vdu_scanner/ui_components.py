@@ -445,9 +445,9 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         if strategy_type == "vdu_breakout":
             setup_val = r.get('setup_type') or 'VDU Breakout'
             if 'Pre-Breakout' in setup_val:
-                setup_badge = f'<span class="custom-badge" style="background: rgba(255,160,0,0.15); color: #ffa000; border: 1px solid #ffa000; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">⏳ Pre-Breakout</span>'
+                setup_badge = '<span class="custom-badge" style="background: rgba(255,160,0,0.15); color: #ffa000; border: 1px solid #ffa000; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">⏳ Pre-Breakout</span>'
             else:
-                setup_badge = f'<span class="custom-badge" style="background: rgba(0,230,118,0.15); color: #00e676; border: 1px solid #00e676; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">🚀 Breakout</span>'
+                setup_badge = '<span class="custom-badge" style="background: rgba(0,230,118,0.15); color: #00e676; border: 1px solid #00e676; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;">🚀 Breakout</span>'
             cells.append(f'<td style="padding: 10px 12px; font-weight: 600;">{setup_badge}</td>')
             
             chg_badge = get_day_change_badge_html(r.get('day_change_pct', 0.0))

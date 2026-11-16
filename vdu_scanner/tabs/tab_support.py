@@ -180,7 +180,7 @@ def render():
         sup_m4.markdown(f'<div class="glass-card metric-glow-purple"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">🔁 Max Support Touches</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ce93d8;">{sup_max_touches}</h3></div>', unsafe_allow_html=True)
 
         if not sup_data:
-            st.info(f"No support bounce results found. Click '🔍 Run Support Bounce Scan' above to scan.")
+            st.info("No support bounce results found. Click '🔍 Run Support Bounce Scan' above to scan.")
 
         else:
             # Build table

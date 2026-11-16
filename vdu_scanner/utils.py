@@ -285,5 +285,5 @@ def get_day_change_badge_html(pct: float) -> str:
     elif pct < 0:
         return f'<span class="custom-badge badge-red">▼ {pct:.2f}%</span>'
     else:
-        return f'<span class="custom-badge badge-grey">0.00%</span>'
+        return '<span class="custom-badge badge-grey">0.00%</span>'
 

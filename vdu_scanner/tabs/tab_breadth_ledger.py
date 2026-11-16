@@ -1,7 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
-from datetime import datetime
 from breadth_ledger import fetch_breadth_data, get_market_breadth_summary, get_leading_clusters, get_breadth_stock_picks
 
 
