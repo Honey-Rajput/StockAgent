@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import streamlit.components.v1 as components
 
 from config import IST_TIMEZONE
 from utils import get_day_change_badge_html
@@ -125,6 +126,176 @@ def render():
     k4.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #94a3b8;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">⚪ Neutral</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#94a3b8;">{pva_counts.get("Neutral", 0)}</h3><span style="font-size:0.68rem; color:#64748b;">Vol ▼ Price ◼</span></div>', unsafe_allow_html=True)
     k5.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #c084fc;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">🟣 Reversal</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#c084fc;">{pva_counts.get("Watch reversal", 0)}</h3><span style="font-size:0.68rem; color:#64748b;">Vol ▼ Price ▼</span></div>', unsafe_allow_html=True)
     k6.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #ef4444;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">🔴 Bearish</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#ef4444;">{pva_counts.get("Bearish", 0)}</h3><span style="font-size:0.68rem; color:#64748b;">Vol ▲ Price ▼</span></div>', unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 2b. PERSISTENT ALL-UP BUY CANDIDATES + DIP ALERT SECTION
+    # ─────────────────────────────────────────────────────────────────────────
+    with st.expander("🔥 Persistently Strong — Buy Candidates (All Timeframes Green)", expanded=True):
+        st.markdown(
+            "<p style='font-size:0.88rem; color:#94a3b8; margin-top:-4px;'>"
+            "Stocks where Minor (Daily), Mid (Daily), <b>AND</b> Major (Daily) have all been "
+            "<span style='color:#00e676;'>▲ Up</span> simultaneously across multiple scan sessions. "
+            "Persistent alignment across all three timeframes indicates <b>institutional accumulation in progress</b>. "
+            "<br><span style='color:#fbbf24; font-size:0.80rem;'>⚠️ Not financial advice — always apply your own risk management.</span>"
+            "</p>",
+            unsafe_allow_html=True
+        )
+
+        try:
+            leaders = database.get_pva_persistent_leaders(min_days=2, limit=40)
+        except Exception as _e:
+            leaders = []
+            st.warning(f"Could not load persistent leaders: {_e}")
+
+        if leaders:
+            def _streak_badge(days):
+                if days >= 5:
+                    return "<span style='background:#7f1d1d;color:#fca5a5;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:700;'>🔥 " + str(days) + "d streak</span>"
+                elif days >= 4:
+                    return "<span style='background:#7c2d12;color:#fdba74;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:700;'>🔴 " + str(days) + "d</span>"
+                elif days >= 3:
+                    return "<span style='background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:700;'>🟠 " + str(days) + "d</span>"
+                else:
+                    return "<span style='background:#1c1917;color:#a8a29e;padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:700;'>🟡 " + str(days) + "d</span>"
+
+            def _row_bg(days):
+                if days >= 5:
+                    return "background:rgba(239,68,68,0.08);"
+                elif days >= 4:
+                    return "background:rgba(234,88,12,0.09);"
+                elif days >= 3:
+                    return "background:rgba(234,179,8,0.07);"
+                return ""
+
+            def _score_color(score):
+                if score >= 55:
+                    return "#00e676"
+                elif score >= 40:
+                    return "#38bdf8"
+                elif score >= 25:
+                    return "#fbbf24"
+                return "#94a3b8"
+
+            rows_html = ""
+            for i, r in enumerate(leaders, 1):
+                sym = r.get('symbol', '')
+                company = r.get('company_name', '')[:28]
+                days = r.get('days_all_up', 0)
+                cmp_val = r.get('latest_cmp', 0)
+                avg_sc = r.get('avg_score', 0)
+                chg = r.get('latest_chg', 0)
+                last_seen = r.get('last_seen', '')[:10]
+                tv_link = "https://in.tradingview.com/chart/?symbol=NSE:" + sym
+                streak = _streak_badge(days)
+                row_bg = _row_bg(days)
+                chg_color = "#00e676" if chg >= 0 else "#ef4444"
+                chg_sign = "+" if chg >= 0 else ""
+                sc_color = _score_color(avg_sc)
+                rows_html += (
+                    "<tr style='border-bottom:1px solid rgba(255,255,255,0.05); transition:background 0.15s ease; " + row_bg + "'>"
+                    "<td style='padding:9px 10px; color:#64748b; font-weight:600; text-align:center;'>" + str(i) + "</td>"
+                    "<td style='padding:9px 10px;'>"
+                    "<a href='" + tv_link + "' target='_blank' rel='noopener noreferrer' "
+                    "style='color:#38bdf8; font-weight:700; text-decoration:none; font-size:0.92rem; letter-spacing:0.5px;'>"
+                    + sym + "</a></td>"
+                    "<td style='padding:9px 10px; color:#f1f5f9; font-size:0.82rem;'>" + company + "</td>"
+                    "<td style='padding:9px 10px; text-align:center;'>" + streak + "</td>"
+                    "<td style='padding:9px 10px; color:#f1f5f9; font-weight:600; text-align:right;'>₹" + (f"{cmp_val:,.2f}" if cmp_val else "—") + "</td>"
+                    "<td style='padding:9px 10px; color:" + chg_color + "; font-weight:600; text-align:center;'>" + chg_sign + f"{chg:.2f}%" + "</td>"
+                    "<td style='padding:9px 10px; color:" + sc_color + "; font-weight:700; text-align:center;'>" + f"{avg_sc:.0f}" + "</td>"
+                    "<td style='padding:9px 10px; color:#64748b; font-size:0.78rem; text-align:center;'>" + last_seen + "</td>"
+                    "</tr>"
+                )
+
+            leaders_html = (
+                "<div style='overflow-x:auto; border-radius:10px; border:1px solid rgba(56,189,248,0.15);'>"
+                "<table style='width:100%; border-collapse:collapse; font-family:monospace;'>"
+                "<thead>"
+                "<tr style='background:rgba(15,23,42,0.85); border-bottom:2px solid rgba(56,189,248,0.25);'>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>#</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:left;'>Stock</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:left;'>Company</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>All-Up Streak</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:right;'>Latest CMP</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>Chg%</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>Avg Score</th>"
+                "<th style='padding:10px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>Last Seen</th>"
+                "</tr>"
+                "</thead>"
+                "<tbody style='background:rgba(10,15,30,0.7);'>" + rows_html + "</tbody>"
+                "</table></div>"
+                "<p style='color:#64748b; font-size:0.74rem; margin-top:6px;'>"
+                "🔗 Click any symbol to open TradingView chart &nbsp;|&nbsp; "
+                "Score threshold: ≥55 <span style='color:#00e676;'>■</span> Strong, ≥40 <span style='color:#38bdf8;'>■</span> Good, ≥25 <span style='color:#fbbf24;'>■</span> Moderate"
+                "</p>"
+            )
+            components.html(leaders_html, height=min(80 + len(leaders) * 42, 760), scrolling=True)
+        else:
+            st.info("No stocks found with All-Up (Minor + Mid + Major) alignment across 2+ scan sessions yet. Run more daily scans to build streak data.")
+
+        # ── EARLY DIP CAUTION ──────────────────────────────────────────────
+        st.markdown(
+            "<hr style='border:1px solid rgba(239,68,68,0.2); margin:14px 0;'>"
+            "<p style='color:#fbbf24; font-size:0.88rem; font-weight:600; margin:0;'>"
+            "📉 Early Dip Caution — Buy-the-Dip Candidates</p>"
+            "<p style='color:#94a3b8; font-size:0.80rem; margin:2px 0 8px 0;'>"
+            "These stocks have a 3+ day All-Up streak but are pulling back today (Chg% &lt; -1.5%). "
+            "The institutional trend is still intact — this dip may be a re-entry opportunity.</p>",
+            unsafe_allow_html=True
+        )
+
+        try:
+            dip_candidates = database.get_pva_dip_candidates(min_streak_days=3)
+        except Exception as _e2:
+            dip_candidates = []
+            st.warning(f"Could not load dip candidates: {_e2}")
+
+        if dip_candidates:
+            dip_rows_html = ""
+            for r in dip_candidates:
+                sym = r.get('symbol', '')
+                company = r.get('company_name', '')[:28]
+                cmp_val = r.get('cmp', 0)
+                chg = r.get('day_change_pct', 0)
+                sc = r.get('vpa_score', 0)
+                streak_d = r.get('streak_days', 0)
+                tv_link = "https://in.tradingview.com/chart/?symbol=NSE:" + sym
+                dip_rows_html += (
+                    "<tr style='border-bottom:1px solid rgba(255,255,255,0.04);'>"
+                    "<td style='padding:8px 10px;'>"
+                    "<a href='" + tv_link + "' target='_blank' rel='noopener noreferrer' "
+                    "style='color:#38bdf8; font-weight:700; text-decoration:none;'>" + sym + "</a></td>"
+                    "<td style='padding:8px 10px; color:#f1f5f9; font-size:0.82rem;'>" + company + "</td>"
+                    "<td style='padding:8px 10px; color:#f1f5f9; font-weight:600; text-align:right;'>₹" + (f"{cmp_val:,.2f}" if cmp_val else "—") + "</td>"
+                    "<td style='padding:8px 10px; color:#ef4444; font-weight:700; text-align:center;'>" + f"{chg:.2f}%" + "</td>"
+                    "<td style='padding:8px 10px; color:#fbbf24; font-weight:700; text-align:center;'>" + str(streak_d) + "d streak</td>"
+                    "<td style='padding:8px 10px; color:#94a3b8; text-align:center;'>" + f"{sc:.0f}" + "</td>"
+                    "</tr>"
+                )
+
+            dip_html = (
+                "<div style='overflow-x:auto; border-radius:8px; border:1px solid rgba(239,68,68,0.2);'>"
+                "<table style='width:100%; border-collapse:collapse; font-family:monospace;'>"
+                "<thead>"
+                "<tr style='background:rgba(15,23,42,0.85); border-bottom:2px solid rgba(239,68,68,0.25);'>"
+                "<th style='padding:9px 10px; color:#94a3b8; font-size:0.78rem; text-align:left;'>Stock</th>"
+                "<th style='padding:9px 10px; color:#94a3b8; font-size:0.78rem; text-align:left;'>Company</th>"
+                "<th style='padding:9px 10px; color:#94a3b8; font-size:0.78rem; text-align:right;'>CMP</th>"
+                "<th style='padding:9px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>Dip Today</th>"
+                "<th style='padding:9px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>Prior Streak</th>"
+                "<th style='padding:9px 10px; color:#94a3b8; font-size:0.78rem; text-align:center;'>Score</th>"
+                "</tr></thead>"
+                "<tbody style='background:rgba(10,15,30,0.7);'>" + dip_rows_html + "</tbody>"
+                "</table></div>"
+            )
+            components.html(dip_html, height=min(60 + len(dip_candidates) * 40, 400), scrolling=True)
+        else:
+            st.markdown(
+                "<p style='color:#22c55e; font-size:0.84rem;'>✅ No significant dips today among persistent All-Up stocks — trend is holding strong.</p>",
+                unsafe_allow_html=True
+            )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
