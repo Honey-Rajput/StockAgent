@@ -144,6 +144,9 @@ def render():
         )
 
         try:
+            if not hasattr(database, 'get_pva_persistent_leaders'):
+                import importlib
+                importlib.reload(database)
             leaders = database.get_pva_persistent_leaders(min_days=2, limit=40)
         except Exception as _e:
             leaders = []
@@ -247,6 +250,9 @@ def render():
         )
 
         try:
+            if not hasattr(database, 'get_pva_dip_candidates'):
+                import importlib
+                importlib.reload(database)
             dip_candidates = database.get_pva_dip_candidates(min_streak_days=3)
         except Exception as _e2:
             dip_candidates = []
@@ -383,7 +389,22 @@ def render():
         tv_link = f"https://in.tradingview.com/chart/?symbol=NSE:{sym.replace('.NS','')}"
 
         vr = float(r.get('vol_ratio_5d') or r.get('vol_ratio') or 1.0)
-        vol_mov_badge = "<span style='color:#00e676; font-weight:600;'>▲ Increasing</span>" if pva['vol_movement'] == "Increasing" else "<span style='color:#94a3b8; font-weight:600;'>▼ Decreasing</span>"
+        p_chg = float(r.get('day_change_pct', 0.0))
+        if pva['vol_movement'] == "Increasing":
+            if p_chg > 0.5:
+                vol_mov_badge = "<span style='color:#00e676; font-weight:700;'>▲ Buying (Acc)</span>"
+            elif p_chg < -0.5:
+                vol_mov_badge = "<span style='color:#ef4444; font-weight:700;'>▲ Selling (Dist)</span>"
+            else:
+                vol_mov_badge = "<span style='color:#38bdf8; font-weight:700;'>▲ Absorption</span>"
+        else:
+            if p_chg < -0.5:
+                vol_mov_badge = "<span style='color:#c084fc; font-weight:600;'>▼ Sell Exhaustion</span>"
+            elif p_chg > 0.5:
+                vol_mov_badge = "<span style='color:#fbbf24; font-weight:600;'>▼ Low Vol Rally</span>"
+            else:
+                vol_mov_badge = "<span style='color:#94a3b8; font-weight:600;'>▼ Low Partic.</span>"
+
         if pva['price_movement'] == "Increasing":
             price_mov_badge = "<span style='color:#00e676; font-weight:600;'>▲ Increasing</span>"
         elif pva['price_movement'] == "Decreasing":
@@ -430,7 +451,7 @@ def render():
 <th style="padding:10px 8px; color:#38bdf8;">CMP</th>
 <th style="padding:10px 8px; color:#38bdf8;">Chg%</th>
 <th style="padding:10px 8px; color:#38bdf8;">Vol Ratio</th>
-<th style="padding:10px 8px; color:#38bdf8;">Volume Movement</th>
+<th style="padding:10px 8px; color:#38bdf8;">Volume Flow (Buy/Sell)</th>
 <th style="padding:10px 8px; color:#38bdf8;">Price Movement</th>
 <th style="padding:10px 8px; color:#38bdf8;">Signal</th>
 <th style="padding:10px 8px; color:#38bdf8;">Automatic Interpretation</th>
