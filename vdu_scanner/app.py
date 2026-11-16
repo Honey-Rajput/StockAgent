@@ -413,6 +413,8 @@ if "ALL_TAB_SCAN_STATUS" not in st.session_state:
         "volume_profile_results": None,
         "vpa_squeeze_results": None,
         "near_30sma_results": None,
+        "hh_hl_results": None,
+        "hh_hl_weekly_results": None,
     }
 
 def run_background_momentum_scans():
@@ -827,8 +829,9 @@ def run_background_all_tab_scans():
             run_s2 = not bool(database.get_cached_stage2(today_str))
             run_vpa_sq = not bool(database.get_cached_vpa_squeeze(today_str))
             run_near_30sma = not bool(database.get_cached_near_30sma(today_str))
+            run_hh_hl = not bool(database.get_cached_hh_hl(today_str))
 
-            if not (run_wt or run_vcs or run_vpa or run_s2 or run_vpa_sq or run_near_30sma):
+            if not (run_wt or run_vcs or run_vpa or run_s2 or run_vpa_sq or run_near_30sma or run_hh_hl):
                 st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "All background tab scans already cached!"
                 st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 1.0
                 st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Complete"
@@ -842,7 +845,7 @@ def run_background_all_tab_scans():
             
             # Phase 2: Shared Daily Download (1y or 2y)
             shared_daily_data = {}
-            if run_wt or run_vcs or run_vpa or run_vpa_sq or run_near_30sma:
+            if run_wt or run_vcs or run_vpa or run_vpa_sq or run_near_30sma or run_hh_hl:
                 st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Downloading Shared Data"
                 st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Downloading shared daily data for NSE symbols..."
                 st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.05
@@ -927,11 +930,22 @@ def run_background_all_tab_scans():
                 results["monthly"] = scan_near_30sma(sym, m_df)
                 return ("near_30sma", results)
 
+            def run_hh_hl_worker(sym, df):
+                from scanner import scan_hh_hl_uptrend
+                from local_cache_manager import resample_ohlcv
+                results = {"daily": None, "weekly": None}
+                results["daily"] = scan_hh_hl_uptrend(sym, df)
+                w_df = resample_ohlcv(df, "W")
+                results["weekly"] = scan_hh_hl_uptrend(sym, w_df)
+                return ("hh_hl", results)
+
             # Phase 3: Parallel Execution
             wt_tf_results, custom_vcs_results, vpa_list, vp_list, vpa_sq_list, near_30sma_list = [], [], [], [], [], []
             vpa_sq_weekly_list, vpa_sq_monthly_list = [], []
             near_30sma_weekly_list = []
             near_30sma_monthly_list = []
+            hh_hl_list = []
+            hh_hl_weekly_list = []
             
             if shared_daily_data:
                 st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Executing Scans"
@@ -945,6 +959,7 @@ def run_background_all_tab_scans():
                     if run_vp: tasks_to_run.append((run_vp_worker, sym, df))
                     if run_vpa_sq: tasks_to_run.append((run_vpa_sq_worker, sym, df))
                     if run_near_30sma: tasks_to_run.append((run_near_30sma_worker, sym, df))
+                    if run_hh_hl: tasks_to_run.append((run_hh_hl_worker, sym, df))
                 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
                     futures = [executor.submit(func, sym, df) for func, sym, df in tasks_to_run]
@@ -966,6 +981,9 @@ def run_background_all_tab_scans():
                                     if result["daily"]: near_30sma_list.append(result["daily"])
                                     if result["weekly"]: near_30sma_weekly_list.append(result["weekly"])
                                     if result["monthly"]: near_30sma_monthly_list.append(result["monthly"])
+                                elif scan_type == "hh_hl":
+                                    if result["daily"]: hh_hl_list.append(result["daily"])
+                                    if result["weekly"]: hh_hl_weekly_list.append(result["weekly"])
                         except Exception:
                             pass
                 
@@ -1001,6 +1019,13 @@ def run_background_all_tab_scans():
                         database.save_near_30sma_weekly_only(today_str, near_30sma_weekly_list)
                         database.save_near_30sma_monthly_only(today_str, near_30sma_monthly_list)
                     except Exception as e: print(f"Save Near 30SMA failed: {e}")
+                if run_hh_hl:
+                    st.session_state.ALL_TAB_SCAN_STATUS["hh_hl_results"] = hh_hl_list
+                    st.session_state.ALL_TAB_SCAN_STATUS["hh_hl_weekly_results"] = hh_hl_weekly_list
+                    try:
+                        database.save_hh_hl_only(today_str, hh_hl_list)
+                        database.save_hh_hl_weekly_only(today_str, hh_hl_weekly_list)
+                    except Exception as e: print(f"Save HH/HL failed: {e}")
 
             # Phase 4: Stage-2 (Monthly)
             if run_s2:
@@ -2441,12 +2466,12 @@ scan_data = st.session_state.scan_results
 
 (tab_results, tab_detail, tab_watchlist, tab_breadth, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
- tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_pva_matrix, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_flat_base, tab_near_30sma) = st.tabs([
+ tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_pva_matrix, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_flat_base, tab_near_30sma, tab_hh_hl) = st.tabs([
     "📊 Results", "📈 Detail", "📋 Watchlist", "🌐 Breadth Ledger", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
-    "🚥 VPA", "🔬 PVA Matrix", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze", "📦 Flat Base Squeeze", "📉 Near 30 SMA"
+    "🚥 VPA", "🔬 PVA Matrix", "🔄 Alerts", "📊 Vol Profile", "🛡️ Support", "🎯 RSI Oversold", "📈 9/21 EMA Support", "🏆 Stage Analysis", "📉 VPA Squeeze", "📦 Flat Base Squeeze", "📉 Near 30 SMA", "📈 HH/HL Uptrend"
 ])
 
 # ==============================================================================
@@ -3272,5 +3297,13 @@ with tab_ema_support:
 with tab_stage_analysis:
     import tabs.tab_stage_analysis
     tabs.tab_stage_analysis.render()
+
+# ==============================================================================
+# TAB: HIGHER HIGH & HIGHER LOW (HH/HL) UPTREND SCANNER
+# ==============================================================================
+with tab_hh_hl:
+    import tabs.tab_hh_hl
+    tabs.tab_hh_hl.render()
+
 
 

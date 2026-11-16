@@ -2917,3 +2917,222 @@ def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 3.0) ->
         print(f"Error in scan_near_30sma for {symbol}: {e}")
         return None
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIGHER HIGH & HIGHER LOW (HH/HL) UPTREND SCANNER (Dow Theory Market Structure)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict | None:
+    """
+    Scans for stocks in a confirmed Uptrend making Higher Highs (HH) and
+    Higher Lows (HL) according to classical Dow Theory and Price Action structure.
+
+    Conditions:
+    1. At least 2 Swing Highs and 2 Swing Lows detected over recent history.
+    2. Last Swing High > Previous Swing High (Ascending Peaks).
+    3. Last Swing Low > Previous Swing Low (Ascending Troughs).
+    4. Current Price (CMP) >= Last Swing Low (Market Structure intact, no lower low breakdown).
+    5. Trend strength score computed based on HH/HL streak, MAs, volume, and RSI.
+    """
+    if df is None or len(df) < 35:
+        return None
+
+    try:
+        from config import get_company_name
+        import json
+
+        df = df.copy()
+        cmp = float(df['Close'].iloc[-1])
+        if cmp <= 0:
+            return None
+
+        prev_close = float(df['Close'].iloc[-2]) if len(df) >= 2 else cmp
+        day_change_pct = ((cmp - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+        volume = int(df['Volume'].iloc[-1]) if 'Volume' in df.columns else 0
+        vol_ma20 = float(df['Volume'].rolling(20).mean().iloc[-1]) if 'Volume' in df.columns and len(df) >= 20 else volume
+        vol_ratio = round(volume / vol_ma20, 2) if vol_ma20 > 0 else 1.0
+
+        # Moving Averages
+        sma20 = float(df['Close'].rolling(20).mean().iloc[-1]) if len(df) >= 20 else cmp
+        sma50 = float(df['Close'].rolling(50).mean().iloc[-1]) if len(df) >= 50 else cmp
+        sma200 = float(df['Close'].rolling(200).mean().iloc[-1]) if len(df) >= 200 else 0.0
+        sma50_prev10 = float(df['Close'].rolling(50).mean().iloc[-10]) if len(df) >= 60 else sma50
+        sma50_slope_up = sma50 > sma50_prev10
+
+        # RSI calculation
+        delta = df['Close'].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(14).mean()
+        avg_loss = loss.rolling(14).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        rsi_series = 100 - (100 / (1 + rs))
+        rsi = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
+
+        # Detect Swing Highs and Swing Lows using pivot window
+        highs = df['High'].values
+        lows = df['Low'].values
+        n = len(df)
+
+        swing_highs = []
+        swing_lows = []
+
+        for i in range(window, n - window):
+            # Swing High
+            is_sh = True
+            for k in range(1, window + 1):
+                if highs[i] <= highs[i - k] or highs[i] < highs[i + k]:
+                    is_sh = False
+                    break
+            if is_sh:
+                d_str = df.index[i].strftime('%Y-%m-%d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
+                swing_highs.append({'idx': i, 'price': float(highs[i]), 'date': d_str, 'bars_ago': n - 1 - i})
+
+            # Swing Low
+            is_sl = True
+            for k in range(1, window + 1):
+                if lows[i] >= lows[i - k] or lows[i] > lows[i + k]:
+                    is_sl = False
+                    break
+            if is_sl:
+                d_str = df.index[i].strftime('%Y-%m-%d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
+                swing_lows.append({'idx': i, 'price': float(lows[i]), 'date': d_str, 'bars_ago': n - 1 - i})
+
+        # Check recent bars (past last confirmed pivot) for dynamic breakout / new high
+        recent_max_offset = int(np.argmax(highs[-window:]))
+        recent_max_idx = (n - window) + recent_max_offset
+        recent_max_price = float(highs[recent_max_idx])
+        if swing_highs and recent_max_price > swing_highs[-1]['price'] * 1.002:
+            if recent_max_idx - swing_highs[-1]['idx'] >= window:
+                d_str = df.index[recent_max_idx].strftime('%Y-%m-%d') if hasattr(df.index[recent_max_idx], 'strftime') else str(df.index[recent_max_idx])[:10]
+                swing_highs.append({'idx': recent_max_idx, 'price': recent_max_price, 'date': d_str, 'bars_ago': n - 1 - recent_max_idx})
+
+        # Need at least 2 swing highs and 2 swing lows
+        if len(swing_highs) < 2 or len(swing_lows) < 2:
+            return None
+
+        last_sh = swing_highs[-1]
+        prev_sh = swing_highs[-2]
+        last_sl = swing_lows[-1]
+        prev_sl = swing_lows[-2]
+
+        # Criteria: Last Swing High > Previous Swing High (Higher High)
+        # Criteria: Last Swing Low > Previous Swing Low (Higher Low)
+        is_hh = last_sh['price'] > prev_sh['price']
+        is_hl = last_sl['price'] > prev_sl['price']
+
+        if not (is_hh and is_hl):
+            return None
+
+        # Critical Structure Invalidation check: CMP must NOT be lower than the latest Higher Low!
+        # If price breaks below the prior swing low, the uptrend structure is broken (Change of Character).
+        if cmp < last_sl['price']:
+            return None
+
+        # Count streak of consecutive Higher Highs & Higher Lows
+        hh_count = 1
+        for j in range(len(swing_highs) - 1, 0, -1):
+            if swing_highs[j]['price'] > swing_highs[j - 1]['price']:
+                hh_count += 1
+            else:
+                break
+
+        hl_count = 1
+        for j in range(len(swing_lows) - 1, 0, -1):
+            if swing_lows[j]['price'] > swing_lows[j - 1]['price']:
+                hl_count += 1
+            else:
+                break
+
+        # Distances to swing high / low %
+        dist_to_sh = ((cmp - last_sh['price']) / last_sh['price']) * 100.0
+        dist_to_sl = ((cmp - last_sl['price']) / last_sl['price']) * 100.0
+
+        # Classify Setup Pattern
+        if cmp >= last_sh['price'] * 0.998:
+            setup_tag = "🔥 Fresh HH Breakout"
+            setup_desc = f"Breaking/Trading at swing high ₹{last_sh['price']:.2f}"
+        elif dist_to_sh >= -2.0:
+            setup_tag = "⚡ Consolidating near Peak"
+            setup_desc = f"{abs(dist_to_sh):.1f}% below swing high ₹{last_sh['price']:.2f}"
+        elif dist_to_sl <= 4.0:
+            setup_tag = "🛡️ Higher Low Pullback"
+            setup_desc = f"Dip setup near swing low support ₹{last_sl['price']:.2f}"
+        else:
+            setup_tag = "📈 Confirmed HH+HL Uptrend"
+            setup_desc = f"Uptrend between ₹{last_sl['price']:.2f} and ₹{last_sh['price']:.2f}"
+
+        # Moving average alignment description
+        if cmp > sma20 and sma20 > sma50:
+            ma_alignment = "Bullish Stack (CMP > 20 > 50 SMA)"
+        elif cmp > sma50:
+            ma_alignment = "Above 50 SMA"
+        elif cmp > sma20:
+            ma_alignment = "Above 20 SMA"
+        else:
+            ma_alignment = "Below 20/50 SMA"
+
+        # Dow Trend Strength Score (0 to 100)
+        score = 30  # Base score for confirmed HH+HL
+        if hh_count >= 3 and hl_count >= 3:
+            score += 25
+        elif hh_count >= 2 and hl_count >= 2:
+            score += 15
+
+        if cmp > sma20 and sma20 > sma50:
+            score += 20
+        elif cmp > sma50:
+            score += 10
+
+        if sma50_slope_up:
+            score += 10
+
+        if vol_ratio >= 1.2:
+            score += 10
+        elif vol_ratio >= 1.0:
+            score += 5
+
+        if 50 <= rsi <= 75:
+            score += 10
+        elif rsi > 75:
+            score += 5
+
+        score = min(score, 100)
+
+        # Serialize recent pivots for interactive chart
+        sh_json = json.dumps([{'price': round(x['price'], 2), 'date': x['date'], 'bars_ago': x['bars_ago']} for x in swing_highs[-4:]])
+        sl_json = json.dumps([{'price': round(x['price'], 2), 'date': x['date'], 'bars_ago': x['bars_ago']} for x in swing_lows[-4:]])
+
+        return {
+            'symbol': symbol,
+            'company_name': get_company_name(symbol),
+            'cmp': round(cmp, 2),
+            'day_change_pct': round(day_change_pct, 2),
+            'volume': volume,
+            'vol_ratio': vol_ratio,
+            'setup_tag': setup_tag,
+            'setup_desc': setup_desc,
+            'hh_count': hh_count,
+            'hl_count': hl_count,
+            'last_swing_high': round(last_sh['price'], 2),
+            'last_sh_date': last_sh['date'],
+            'last_sh_bars_ago': last_sh['bars_ago'],
+            'last_swing_low': round(last_sl['price'], 2),
+            'last_sl_date': last_sl['date'],
+            'last_sl_bars_ago': last_sl['bars_ago'],
+            'dist_to_sh_pct': round(dist_to_sh, 2),
+            'dist_to_sl_pct': round(dist_to_sl, 2),
+            'sma20': round(sma20, 2),
+            'sma50': round(sma50, 2),
+            'sma200': round(sma200, 2),
+            'ma_alignment': ma_alignment,
+            'rsi': round(rsi, 1),
+            'trend_score': score,
+            'swing_highs_json': sh_json,
+            'swing_lows_json': sl_json
+        }
+    except Exception as e:
+        print(f"Error in scan_hh_hl_uptrend for {symbol}: {e}")
+        return None
+
+

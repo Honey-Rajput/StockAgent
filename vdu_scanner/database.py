@@ -227,6 +227,8 @@ ALLOWED_TABLES: Final[set[str]] = {
     "scanned_ema_support",
     # VPA / squeeze tables
     "vpa_trend_data", "vpa_squeeze_data",
+    # HH/HL Uptrend tables
+    "scanned_hh_hl", "scanned_hh_hl_weekly",
     # System and log tables
     "scan_logs", "historical_ohlcv", "ohlcv_daily", "ai_chart_patterns",
     "scanned_rsi_wt_combo",
@@ -402,6 +404,72 @@ def init_db() -> bool:
             volume BIGINT,
             sma30 DOUBLE PRECISION,
             dist_pct DOUBLE PRECISION,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+
+        CREATE TABLE IF NOT EXISTS scanned_hh_hl (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            vol_ratio DOUBLE PRECISION,
+            setup_tag VARCHAR(50),
+            setup_desc VARCHAR(200),
+            hh_count INTEGER,
+            hl_count INTEGER,
+            last_swing_high DOUBLE PRECISION,
+            last_sh_date VARCHAR(20),
+            last_sh_bars_ago INTEGER,
+            last_swing_low DOUBLE PRECISION,
+            last_sl_date VARCHAR(20),
+            last_sl_bars_ago INTEGER,
+            dist_to_sh_pct DOUBLE PRECISION,
+            dist_to_sl_pct DOUBLE PRECISION,
+            sma20 DOUBLE PRECISION,
+            sma50 DOUBLE PRECISION,
+            sma200 DOUBLE PRECISION,
+            ma_alignment VARCHAR(100),
+            rsi DOUBLE PRECISION,
+            trend_score INTEGER,
+            swing_highs_json TEXT,
+            swing_lows_json TEXT,
+            scan_date DATE NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(symbol, scan_date)
+        );
+
+        CREATE TABLE IF NOT EXISTS scanned_hh_hl_weekly (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol VARCHAR(20) NOT NULL,
+            company_name VARCHAR(200),
+            cmp DOUBLE PRECISION,
+            day_change_pct DOUBLE PRECISION,
+            volume BIGINT,
+            vol_ratio DOUBLE PRECISION,
+            setup_tag VARCHAR(50),
+            setup_desc VARCHAR(200),
+            hh_count INTEGER,
+            hl_count INTEGER,
+            last_swing_high DOUBLE PRECISION,
+            last_sh_date VARCHAR(20),
+            last_sh_bars_ago INTEGER,
+            last_swing_low DOUBLE PRECISION,
+            last_sl_date VARCHAR(20),
+            last_sl_bars_ago INTEGER,
+            dist_to_sh_pct DOUBLE PRECISION,
+            dist_to_sl_pct DOUBLE PRECISION,
+            sma20 DOUBLE PRECISION,
+            sma50 DOUBLE PRECISION,
+            sma200 DOUBLE PRECISION,
+            ma_alignment VARCHAR(100),
+            rsi DOUBLE PRECISION,
+            trend_score INTEGER,
+            swing_highs_json TEXT,
+            swing_lows_json TEXT,
             scan_date DATE NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(symbol, scan_date)
@@ -1541,7 +1609,7 @@ def get_all_latest_scan_dates() -> dict[str, str]:
         "scanned_support_rsi", "scanned_monthly_momentum", "scanned_weekly_momentum",
         "scanned_stage_analysis", "scanned_trend_setups", "scanned_zanger", "scanned_vcp_minervini",
         "scanned_near_30sma", "scanned_near_30sma_weekly", "scanned_near_30sma_monthly",
-        "scanned_flat_base"
+        "scanned_flat_base", "scanned_hh_hl", "scanned_hh_hl_weekly"
     ]
     latest_dates = {}
     conn = None
@@ -4055,3 +4123,358 @@ def save_near_30sma_weekly_only(date_str, near_30sma_list):
                 conn.close()
             except Exception:
                 pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIGHER HIGH & HIGHER LOW (HH/HL) UPTREND SCANNER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_cached_hh_hl(date_str: str) -> list[dict]:
+    return _get_cached_scan('scanned_hh_hl', date_str)
+
+
+def get_cached_hh_hl_weekly(date_str: str) -> list[dict]:
+    return _get_cached_scan('scanned_hh_hl_weekly', date_str)
+
+
+def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_hh_hl WHERE scan_date = ?;", (date_str,))
+
+        insert_query = """
+        INSERT INTO scanned_hh_hl (
+            symbol, company_name, cmp, day_change_pct, volume, vol_ratio,
+            setup_tag, setup_desc, hh_count, hl_count,
+            last_swing_high, last_sh_date, last_sh_bars_ago,
+            last_swing_low, last_sl_date, last_sl_bars_ago,
+            dist_to_sh_pct, dist_to_sl_pct,
+            sma20, sma50, sma200, ma_alignment, rsi, trend_score,
+            swing_highs_json, swing_lows_json, scan_date
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?
+        )
+        ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct,
+            volume=EXCLUDED.volume, vol_ratio=EXCLUDED.vol_ratio,
+            setup_tag=EXCLUDED.setup_tag, setup_desc=EXCLUDED.setup_desc,
+            hh_count=EXCLUDED.hh_count, hl_count=EXCLUDED.hl_count,
+            last_swing_high=EXCLUDED.last_swing_high, last_sh_date=EXCLUDED.last_sh_date,
+            last_sh_bars_ago=EXCLUDED.last_sh_bars_ago,
+            last_swing_low=EXCLUDED.last_swing_low, last_sl_date=EXCLUDED.last_sl_date,
+            last_sl_bars_ago=EXCLUDED.last_sl_bars_ago,
+            dist_to_sh_pct=EXCLUDED.dist_to_sh_pct, dist_to_sl_pct=EXCLUDED.dist_to_sl_pct,
+            sma20=EXCLUDED.sma20, sma50=EXCLUDED.sma50, sma200=EXCLUDED.sma200,
+            ma_alignment=EXCLUDED.ma_alignment, rsi=EXCLUDED.rsi, trend_score=EXCLUDED.trend_score,
+            swing_highs_json=EXCLUDED.swing_highs_json, swing_lows_json=EXCLUDED.swing_lows_json;
+        """
+
+        for r in hh_hl_results:
+            cur.execute(insert_query, (
+                str(r.get('symbol', '')),
+                str(r.get('company_name', '')),
+                float(r.get('cmp', 0.0)),
+                float(r.get('day_change_pct', 0.0)),
+                int(r.get('volume', 0)),
+                float(r.get('vol_ratio', 1.0)),
+                str(r.get('setup_tag', '')),
+                str(r.get('setup_desc', '')),
+                int(r.get('hh_count', 0)),
+                int(r.get('hl_count', 0)),
+                float(r.get('last_swing_high', 0.0)),
+                str(r.get('last_sh_date', '')),
+                int(r.get('last_sh_bars_ago', 0)),
+                float(r.get('last_swing_low', 0.0)),
+                str(r.get('last_sl_date', '')),
+                int(r.get('last_sl_bars_ago', 0)),
+                float(r.get('dist_to_sh_pct', 0.0)),
+                float(r.get('dist_to_sl_pct', 0.0)),
+                float(r.get('sma20', 0.0)),
+                float(r.get('sma50', 0.0)),
+                float(r.get('sma200', 0.0)),
+                str(r.get('ma_alignment', '')),
+                float(r.get('rsi', 0.0)),
+                int(r.get('trend_score', 0)),
+                str(r.get('swing_highs_json', '[]')),
+                str(r.get('swing_lows_json', '[]')),
+                date_str
+            ))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving HH/HL Uptrend scan results: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> bool:
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scanned_hh_hl_weekly WHERE scan_date = ?;", (date_str,))
+
+        insert_query = """
+        INSERT INTO scanned_hh_hl_weekly (
+            symbol, company_name, cmp, day_change_pct, volume, vol_ratio,
+            setup_tag, setup_desc, hh_count, hl_count,
+            last_swing_high, last_sh_date, last_sh_bars_ago,
+            last_swing_low, last_sl_date, last_sl_bars_ago,
+            dist_to_sh_pct, dist_to_sl_pct,
+            sma20, sma50, sma200, ma_alignment, rsi, trend_score,
+            swing_highs_json, swing_lows_json, scan_date
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?,
+            ?, ?,
+            ?, ?, ?, ?, ?, ?,
+            ?, ?, ?
+        )
+        ON CONFLICT (symbol, scan_date) DO UPDATE SET
+            cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct,
+            volume=EXCLUDED.volume, vol_ratio=EXCLUDED.vol_ratio,
+            setup_tag=EXCLUDED.setup_tag, setup_desc=EXCLUDED.setup_desc,
+            hh_count=EXCLUDED.hh_count, hl_count=EXCLUDED.hl_count,
+            last_swing_high=EXCLUDED.last_swing_high, last_sh_date=EXCLUDED.last_sh_date,
+            last_sh_bars_ago=EXCLUDED.last_sh_bars_ago,
+            last_swing_low=EXCLUDED.last_swing_low, last_sl_date=EXCLUDED.last_sl_date,
+            last_sl_bars_ago=EXCLUDED.last_sl_bars_ago,
+            dist_to_sh_pct=EXCLUDED.dist_to_sh_pct, dist_to_sl_pct=EXCLUDED.dist_to_sl_pct,
+            sma20=EXCLUDED.sma20, sma50=EXCLUDED.sma50, sma200=EXCLUDED.sma200,
+            ma_alignment=EXCLUDED.ma_alignment, rsi=EXCLUDED.rsi, trend_score=EXCLUDED.trend_score,
+            swing_highs_json=EXCLUDED.swing_highs_json, swing_lows_json=EXCLUDED.swing_lows_json;
+        """
+
+        for r in hh_hl_weekly_results:
+            cur.execute(insert_query, (
+                str(r.get('symbol', '')),
+                str(r.get('company_name', '')),
+                float(r.get('cmp', 0.0)),
+                float(r.get('day_change_pct', 0.0)),
+                int(r.get('volume', 0)),
+                float(r.get('vol_ratio', 1.0)),
+                str(r.get('setup_tag', '')),
+                str(r.get('setup_desc', '')),
+                int(r.get('hh_count', 0)),
+                int(r.get('hl_count', 0)),
+                float(r.get('last_swing_high', 0.0)),
+                str(r.get('last_sh_date', '')),
+                int(r.get('last_sh_bars_ago', 0)),
+                float(r.get('last_swing_low', 0.0)),
+                str(r.get('last_sl_date', '')),
+                int(r.get('last_sl_bars_ago', 0)),
+                float(r.get('dist_to_sh_pct', 0.0)),
+                float(r.get('dist_to_sl_pct', 0.0)),
+                float(r.get('sma20', 0.0)),
+                float(r.get('sma50', 0.0)),
+                float(r.get('sma200', 0.0)),
+                str(r.get('ma_alignment', '')),
+                float(r.get('rsi', 0.0)),
+                int(r.get('trend_score', 0)),
+                str(r.get('swing_highs_json', '[]')),
+                str(r.get('swing_lows_json', '[]')),
+                date_str
+            ))
+
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving Weekly HH/HL Uptrend scan results: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PVA MATRIX — Persistent All-Up Leaders & Dip Candidates
+# ─────────────────────────────────────────────────────────────────────────────
+
+def get_pva_persistent_leaders(min_days: int = 2, limit: int = 40) -> list[dict]:
+    """
+    Return stocks that have appeared with daily_minor=1 AND daily_mid=1 AND
+    daily_major=1 (all three timeframes Up) across multiple distinct scan dates.
+
+    Returns a list of dicts with keys:
+        symbol, company_name, days_all_up, latest_cmp, last_seen,
+        avg_score, latest_chg
+    Ordered by days_all_up DESC, avg_score DESC.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # PostgreSQL path
+        if is_postgres_active():
+            cur.execute(
+                """
+                SELECT
+                    symbol,
+                    company_name,
+                    COUNT(DISTINCT scan_date)                AS days_all_up,
+                    MAX(cmp)                                 AS latest_cmp,
+                    MAX(scan_date)                           AS last_seen,
+                    ROUND(AVG(vpa_score)::numeric, 1)        AS avg_score,
+                    MAX(day_change_pct)                      AS latest_chg
+                FROM scanned_vpa
+                WHERE daily_minor = 1
+                  AND daily_mid   = 1
+                  AND daily_major = 1
+                GROUP BY symbol, company_name
+                HAVING COUNT(DISTINCT scan_date) >= %s
+                ORDER BY days_all_up DESC, avg_score DESC
+                LIMIT %s
+                """,
+                (min_days, limit),
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        else:
+            # SQLite fallback
+            cur.execute(
+                """
+                SELECT
+                    symbol,
+                    company_name,
+                    COUNT(DISTINCT scan_date) AS days_all_up,
+                    MAX(cmp)                  AS latest_cmp,
+                    MAX(scan_date)            AS last_seen,
+                    ROUND(AVG(vpa_score), 1)  AS avg_score,
+                    MAX(day_change_pct)       AS latest_chg
+                FROM scanned_vpa
+                WHERE daily_minor = 1
+                  AND daily_mid   = 1
+                  AND daily_major = 1
+                GROUP BY symbol, company_name
+                HAVING COUNT(DISTINCT scan_date) >= ?
+                ORDER BY days_all_up DESC, avg_score DESC
+                LIMIT ?
+                """,
+                (min_days, limit),
+            )
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        cur.close()
+        # Normalise numeric fields
+        for r in rows:
+            r['days_all_up']  = int(r.get('days_all_up') or 0)
+            r['latest_cmp']   = float(r.get('latest_cmp') or 0)
+            r['avg_score']    = float(r.get('avg_score') or 0)
+            r['latest_chg']   = float(r.get('latest_chg') or 0)
+            r['last_seen']    = str(r.get('last_seen') or '')
+        return rows
+    except Exception as e:
+        print(f"Error in get_pva_persistent_leaders: {e}")
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_pva_dip_candidates(min_streak_days: int = 3) -> list[dict]:
+    """
+    Stocks that have been persistently All-Up for >= min_streak_days sessions
+    but whose LATEST scan shows day_change_pct < -1.5 — potential buy-the-dip
+    setups where institutional trend is intact but short-term price pulled back.
+
+    Returns list of dicts: symbol, company_name, cmp, day_change_pct,
+                           vpa_score, scan_date, streak_days
+    Ordered by day_change_pct ASC (biggest dip first).
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        if is_postgres_active():
+            cur.execute(
+                """
+                WITH streakers AS (
+                    SELECT symbol, COUNT(DISTINCT scan_date) AS streak_days
+                    FROM scanned_vpa
+                    WHERE daily_minor = 1 AND daily_mid = 1 AND daily_major = 1
+                    GROUP BY symbol
+                    HAVING COUNT(DISTINCT scan_date) >= %s
+                ),
+                latest AS (
+                    SELECT symbol, company_name, cmp, day_change_pct, vpa_score, scan_date
+                    FROM scanned_vpa
+                    WHERE scan_date = (SELECT MAX(scan_date) FROM scanned_vpa)
+                )
+                SELECT l.symbol, l.company_name, l.cmp, l.day_change_pct,
+                       l.vpa_score, l.scan_date, s.streak_days
+                FROM latest l
+                JOIN streakers s ON s.symbol = l.symbol
+                WHERE l.day_change_pct < -1.5
+                ORDER BY l.day_change_pct ASC
+                """,
+                (min_streak_days,),
+            )
+        else:
+            cur.execute(
+                """
+                WITH streakers AS (
+                    SELECT symbol, COUNT(DISTINCT scan_date) AS streak_days
+                    FROM scanned_vpa
+                    WHERE daily_minor = 1 AND daily_mid = 1 AND daily_major = 1
+                    GROUP BY symbol
+                    HAVING COUNT(DISTINCT scan_date) >= ?
+                ),
+                latest AS (
+                    SELECT symbol, company_name, cmp, day_change_pct, vpa_score, scan_date
+                    FROM scanned_vpa
+                    WHERE scan_date = (SELECT MAX(scan_date) FROM scanned_vpa)
+                )
+                SELECT l.symbol, l.company_name, l.cmp, l.day_change_pct,
+                       l.vpa_score, l.scan_date, s.streak_days
+                FROM latest l
+                JOIN streakers s ON s.symbol = l.symbol
+                WHERE l.day_change_pct < -1.5
+                ORDER BY l.day_change_pct ASC
+                """,
+                (min_streak_days,),
+            )
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        cur.close()
+        for r in rows:
+            r['cmp']           = float(r.get('cmp') or 0)
+            r['day_change_pct'] = float(r.get('day_change_pct') or 0)
+            r['vpa_score']     = float(r.get('vpa_score') or 0)
+            r['streak_days']   = int(r.get('streak_days') or 0)
+        return rows
+    except Exception as e:
+        print(f"Error in get_pva_dip_candidates: {e}")
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
