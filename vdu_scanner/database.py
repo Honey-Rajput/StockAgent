@@ -429,6 +429,13 @@ def init_db() -> bool:
             last_sl_bars_ago INTEGER,
             dist_to_sh_pct DOUBLE PRECISION,
             dist_to_sl_pct DOUBLE PRECISION,
+            entry DOUBLE PRECISION,
+            stop_loss DOUBLE PRECISION,
+            target1 DOUBLE PRECISION,
+            target2 DOUBLE PRECISION,
+            risk_pct DOUBLE PRECISION,
+            adx DOUBLE PRECISION,
+            weekly_confirmed BOOLEAN DEFAULT FALSE,
             sma20 DOUBLE PRECISION,
             sma50 DOUBLE PRECISION,
             sma200 DOUBLE PRECISION,
@@ -462,6 +469,13 @@ def init_db() -> bool:
             last_sl_bars_ago INTEGER,
             dist_to_sh_pct DOUBLE PRECISION,
             dist_to_sl_pct DOUBLE PRECISION,
+            entry DOUBLE PRECISION,
+            stop_loss DOUBLE PRECISION,
+            target1 DOUBLE PRECISION,
+            target2 DOUBLE PRECISION,
+            risk_pct DOUBLE PRECISION,
+            adx DOUBLE PRECISION,
+            weekly_confirmed BOOLEAN DEFAULT FALSE,
             sma20 DOUBLE PRECISION,
             sma50 DOUBLE PRECISION,
             sma200 DOUBLE PRECISION,
@@ -1197,6 +1211,15 @@ def init_db() -> bool:
         add_col("scanned_zanger", "timeframe", "VARCHAR(20)")
         add_col("scanned_zanger", "confidence_level", "VARCHAR(50)")
         add_col("scanned_zanger", "breakout_status", "VARCHAR(50)")
+
+        for hh_tbl in ["scanned_hh_hl", "scanned_hh_hl_weekly"]:
+            add_col(hh_tbl, "entry", "DOUBLE PRECISION")
+            add_col(hh_tbl, "stop_loss", "DOUBLE PRECISION")
+            add_col(hh_tbl, "target1", "DOUBLE PRECISION")
+            add_col(hh_tbl, "target2", "DOUBLE PRECISION")
+            add_col(hh_tbl, "risk_pct", "DOUBLE PRECISION")
+            add_col(hh_tbl, "adx", "DOUBLE PRECISION")
+            add_col(hh_tbl, "weekly_confirmed", "BOOLEAN DEFAULT FALSE")
 
         conn.commit()
         cur.close()
@@ -4151,6 +4174,7 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
             last_swing_high, last_sh_date, last_sh_bars_ago,
             last_swing_low, last_sl_date, last_sl_bars_ago,
             dist_to_sh_pct, dist_to_sl_pct,
+            entry, stop_loss, target1, target2, risk_pct, adx, weekly_confirmed,
             sma20, sma50, sma200, ma_alignment, rsi, trend_score,
             swing_highs_json, swing_lows_json, scan_date
         ) VALUES (
@@ -4159,6 +4183,7 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
             ?, ?, ?,
             ?, ?, ?,
             ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?
         )
@@ -4172,6 +4197,9 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
             last_swing_low=EXCLUDED.last_swing_low, last_sl_date=EXCLUDED.last_sl_date,
             last_sl_bars_ago=EXCLUDED.last_sl_bars_ago,
             dist_to_sh_pct=EXCLUDED.dist_to_sh_pct, dist_to_sl_pct=EXCLUDED.dist_to_sl_pct,
+            entry=EXCLUDED.entry, stop_loss=EXCLUDED.stop_loss,
+            target1=EXCLUDED.target1, target2=EXCLUDED.target2,
+            risk_pct=EXCLUDED.risk_pct, adx=EXCLUDED.adx, weekly_confirmed=EXCLUDED.weekly_confirmed,
             sma20=EXCLUDED.sma20, sma50=EXCLUDED.sma50, sma200=EXCLUDED.sma200,
             ma_alignment=EXCLUDED.ma_alignment, rsi=EXCLUDED.rsi, trend_score=EXCLUDED.trend_score,
             swing_highs_json=EXCLUDED.swing_highs_json, swing_lows_json=EXCLUDED.swing_lows_json;
@@ -4197,6 +4225,13 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
                 int(r.get('last_sl_bars_ago', 0)),
                 float(r.get('dist_to_sh_pct', 0.0)),
                 float(r.get('dist_to_sl_pct', 0.0)),
+                float(r.get('entry', r.get('cmp', 0.0))),
+                float(r.get('stop_loss', 0.0)),
+                float(r.get('target1', 0.0)),
+                float(r.get('target2', 0.0)),
+                float(r.get('risk_pct', 0.0)),
+                float(r.get('adx', 20.0)),
+                bool(r.get('weekly_confirmed', False)),
                 float(r.get('sma20', 0.0)),
                 float(r.get('sma50', 0.0)),
                 float(r.get('sma200', 0.0)),
@@ -4237,6 +4272,7 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
             last_swing_high, last_sh_date, last_sh_bars_ago,
             last_swing_low, last_sl_date, last_sl_bars_ago,
             dist_to_sh_pct, dist_to_sl_pct,
+            entry, stop_loss, target1, target2, risk_pct, adx, weekly_confirmed,
             sma20, sma50, sma200, ma_alignment, rsi, trend_score,
             swing_highs_json, swing_lows_json, scan_date
         ) VALUES (
@@ -4245,6 +4281,7 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
             ?, ?, ?,
             ?, ?, ?,
             ?, ?,
+            ?, ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?
         )
@@ -4258,6 +4295,9 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
             last_swing_low=EXCLUDED.last_swing_low, last_sl_date=EXCLUDED.last_sl_date,
             last_sl_bars_ago=EXCLUDED.last_sl_bars_ago,
             dist_to_sh_pct=EXCLUDED.dist_to_sh_pct, dist_to_sl_pct=EXCLUDED.dist_to_sl_pct,
+            entry=EXCLUDED.entry, stop_loss=EXCLUDED.stop_loss,
+            target1=EXCLUDED.target1, target2=EXCLUDED.target2,
+            risk_pct=EXCLUDED.risk_pct, adx=EXCLUDED.adx, weekly_confirmed=EXCLUDED.weekly_confirmed,
             sma20=EXCLUDED.sma20, sma50=EXCLUDED.sma50, sma200=EXCLUDED.sma200,
             ma_alignment=EXCLUDED.ma_alignment, rsi=EXCLUDED.rsi, trend_score=EXCLUDED.trend_score,
             swing_highs_json=EXCLUDED.swing_highs_json, swing_lows_json=EXCLUDED.swing_lows_json;
@@ -4283,6 +4323,13 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
                 int(r.get('last_sl_bars_ago', 0)),
                 float(r.get('dist_to_sh_pct', 0.0)),
                 float(r.get('dist_to_sl_pct', 0.0)),
+                float(r.get('entry', r.get('cmp', 0.0))),
+                float(r.get('stop_loss', 0.0)),
+                float(r.get('target1', 0.0)),
+                float(r.get('target2', 0.0)),
+                float(r.get('risk_pct', 0.0)),
+                float(r.get('adx', 20.0)),
+                bool(r.get('weekly_confirmed', False)),
                 float(r.get('sma20', 0.0)),
                 float(r.get('sma50', 0.0)),
                 float(r.get('sma200', 0.0)),

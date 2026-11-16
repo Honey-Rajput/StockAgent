@@ -2969,6 +2969,28 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
         rsi_series = 100 - (100 / (1 + rs))
         rsi = float(rsi_series.iloc[-1]) if not pd.isna(rsi_series.iloc[-1]) else 50.0
 
+        # ATR calculation (Wilder's True Range)
+        prev_close_series = df['Close'].shift(1)
+        tr = pd.concat([
+            df['High'] - df['Low'],
+            (df['High'] - prev_close_series).abs(),
+            (df['Low'] - prev_close_series).abs()
+        ], axis=1).max(axis=1)
+        atr = float(tr.rolling(14).mean().iloc[-1]) if len(tr) >= 14 else float(df['High'].iloc[-1] - df['Low'].iloc[-1])
+        atr = max(atr, cmp * 0.005)
+
+        # ADX calculation
+        up = df['High'].diff()
+        down = -df['Low'].diff()
+        plus_dm = np.where((up > down) & (up > 0), up, 0)
+        minus_dm = np.where((down > up) & (down > 0), down, 0)
+        plus_di = 100 * pd.Series(plus_dm, index=df.index).rolling(14).mean() / atr
+        minus_di = 100 * pd.Series(minus_dm, index=df.index).rolling(14).mean() / atr
+        dx = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)).fillna(0)
+        adx = float(dx.rolling(14).mean().iloc[-1]) if len(dx) >= 14 else 22.0
+        if np.isnan(adx) or np.isinf(adx):
+            adx = 22.0
+
         # Detect Swing Highs and Swing Lows using pivot window
         highs = df['High'].values
         lows = df['Low'].values
@@ -3048,19 +3070,51 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
         dist_to_sh = ((cmp - last_sh['price']) / last_sh['price']) * 100.0
         dist_to_sl = ((cmp - last_sl['price']) / last_sl['price']) * 100.0
 
+        # ATR-based Stop Loss & Trigger
+        stop_loss = round(last_sl['price'] - 0.30 * atr, 2)
+        trigger = round(last_sh['price'] + 0.10 * atr, 2)
+
         # Classify Setup Pattern
-        if cmp >= last_sh['price'] * 0.998:
+        if cmp >= trigger or cmp >= last_sh['price'] * 0.998:
             setup_tag = "🔥 Fresh HH Breakout"
-            setup_desc = f"Breaking/Trading at swing high ₹{last_sh['price']:.2f}"
+            setup_desc = f"Breaking/Trading above swing high ₹{last_sh['price']:.2f}"
+            entry = round(cmp, 2)
         elif dist_to_sh >= -2.0:
             setup_tag = "⚡ Consolidating near Peak"
             setup_desc = f"{abs(dist_to_sh):.1f}% below swing high ₹{last_sh['price']:.2f}"
+            entry = round(trigger, 2)
         elif dist_to_sl <= 4.0:
             setup_tag = "🛡️ Higher Low Pullback"
-            setup_desc = f"Dip setup near swing low support ₹{last_sl['price']:.2f}"
+            setup_desc = f"Dip entry near higher low support ₹{last_sl['price']:.2f}"
+            entry = round(cmp, 2)
         else:
             setup_tag = "📈 Confirmed HH+HL Uptrend"
-            setup_desc = f"Uptrend between ₹{last_sl['price']:.2f} and ₹{last_sh['price']:.2f}"
+            setup_desc = f"Ascending waves between ₹{last_sl['price']:.2f} and ₹{last_sh['price']:.2f}"
+            entry = round(cmp, 2)
+
+        risk = max(round(entry - stop_loss, 2), 0.02 * entry)
+        target1 = round(entry + 2 * risk, 2)
+        target2 = round(entry + 3 * risk, 2)
+        risk_pct = round((risk / entry) * 100.0, 2)
+
+        # Weekly confirmation check
+        weekly_confirmed = False
+        try:
+            if len(df) >= 70:
+                from local_cache_manager import resample_ohlcv
+                w_df = resample_ohlcv(df, "W")
+                if len(w_df) >= 20:
+                    w_close = float(w_df['Close'].iloc[-1])
+                    w_ema20 = float(w_df['Close'].ewm(span=20, adjust=False).mean().iloc[-1])
+                    w_highs = w_df['High'].values
+                    w_lows = w_df['Low'].values
+                    if len(w_highs) >= 8 and len(w_lows) >= 8:
+                        if (float(np.max(w_highs[-4:])) >= float(np.max(w_highs[-8:-4])) and
+                                float(np.min(w_lows[-4:])) >= float(np.min(w_lows[-8:-4])) and
+                                w_close >= w_ema20):
+                            weekly_confirmed = True
+        except Exception:
+            pass
 
         # Moving average alignment description
         if cmp > sma20 and sma20 > sma50:
@@ -3073,7 +3127,7 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
             ma_alignment = "Below 20/50 SMA"
 
         # Dow Trend Strength Score (0 to 100)
-        score = 30  # Base score for confirmed HH+HL
+        score = 25  # Base score for confirmed HH+HL
         if hh_count >= 3 and hl_count >= 3:
             score += 25
         elif hh_count >= 2 and hl_count >= 2:
@@ -3096,6 +3150,12 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
             score += 10
         elif rsi > 75:
             score += 5
+
+        if adx >= 20:
+            score += 10
+
+        if weekly_confirmed:
+            score += 10
 
         score = min(score, 100)
 
@@ -3122,6 +3182,13 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
             'last_sl_bars_ago': last_sl['bars_ago'],
             'dist_to_sh_pct': round(dist_to_sh, 2),
             'dist_to_sl_pct': round(dist_to_sl, 2),
+            'entry': entry,
+            'stop_loss': stop_loss,
+            'target1': target1,
+            'target2': target2,
+            'risk_pct': risk_pct,
+            'adx': round(adx, 1),
+            'weekly_confirmed': weekly_confirmed,
             'sma20': round(sma20, 2),
             'sma50': round(sma50, 2),
             'sma200': round(sma200, 2),

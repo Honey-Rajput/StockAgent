@@ -431,12 +431,19 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     df_disp = pd.DataFrame(filtered)
     # Add clickable TradingView URL
     df_disp['tv_url'] = df_disp['symbol'].apply(lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}")
+    df_disp['weekly_icon'] = df_disp['weekly_confirmed'].apply(lambda x: "✅ Weekly HH+HL" if x else "—")
+
+    # Ensure numeric columns
+    for col in ['entry', 'stop_loss', 'target1', 'target2', 'risk_pct', 'adx']:
+        if col not in df_disp.columns:
+            df_disp[col] = 0.0
 
     st.dataframe(
         df_disp[[
             'tv_url', 'company_name', 'setup_tag', 'cmp', 'day_change_pct',
-            'hh_count', 'hl_count', 'last_swing_high', 'dist_to_sh_pct',
-            'last_swing_low', 'dist_to_sl_pct', 'trend_score', 'vol_ratio', 'ma_alignment'
+            'entry', 'stop_loss', 'target1', 'target2', 'risk_pct',
+            'hh_count', 'hl_count', 'last_swing_high', 'last_swing_low',
+            'trend_score', 'vol_ratio', 'adx', 'weekly_icon', 'ma_alignment'
         ]],
         use_container_width=True,
         column_config={
@@ -445,19 +452,24 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
                 display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)",
                 width="medium"
             ),
-            "company_name": st.column_config.TextColumn("Company", width="large"),
+            "company_name": st.column_config.TextColumn("Company", width="medium"),
             "setup_tag": st.column_config.TextColumn("Setup State", width="medium"),
-            "cmp": st.column_config.NumberColumn("CMP (₹)", format="₹ %.2f", width="small"),
+            "cmp": st.column_config.NumberColumn("CMP", format="₹ %.2f", width="small"),
             "day_change_pct": st.column_config.NumberColumn("Chg %", format="%.2f %%", width="small"),
+            "entry": st.column_config.NumberColumn("Entry Trigger", format="₹ %.2f", width="small"),
+            "stop_loss": st.column_config.NumberColumn("Stop Loss", format="₹ %.2f", width="small"),
+            "target1": st.column_config.NumberColumn("Target 1 (2R)", format="₹ %.2f", width="small"),
+            "target2": st.column_config.NumberColumn("Target 2 (3R)", format="₹ %.2f", width="small"),
+            "risk_pct": st.column_config.NumberColumn("Risk %", format="%.1f %%", width="small"),
             "hh_count": st.column_config.NumberColumn("HHs", width="small"),
             "hl_count": st.column_config.NumberColumn("HLs", width="small"),
-            "last_swing_high": st.column_config.NumberColumn("Swing High (₹)", format="₹ %.2f", width="small"),
-            "dist_to_sh_pct": st.column_config.NumberColumn("Dist to High", format="%.1f %%", width="small"),
-            "last_swing_low": st.column_config.NumberColumn("Swing Low / SL (₹)", format="₹ %.2f", width="small"),
-            "dist_to_sl_pct": st.column_config.NumberColumn("SL Cushion", format="+%.1f %%", width="small"),
-            "trend_score": st.column_config.ProgressColumn("Trend Score", min_value=0, max_value=100, format="%d", width="small"),
+            "last_swing_high": st.column_config.NumberColumn("Swing High", format="₹ %.2f", width="small"),
+            "last_swing_low": st.column_config.NumberColumn("Swing Low", format="₹ %.2f", width="small"),
+            "trend_score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100, format="%d", width="small"),
             "vol_ratio": st.column_config.NumberColumn("Vol Ratio", format="%.2fx", width="small"),
-            "ma_alignment": st.column_config.TextColumn("MA Alignment", width="medium")
+            "adx": st.column_config.NumberColumn("ADX", format="%.1f", width="small"),
+            "weekly_icon": st.column_config.TextColumn("Weekly Trend", width="small"),
+            "ma_alignment": st.column_config.TextColumn("MA Stack", width="medium")
         },
         hide_index=True,
         height=min(450, 45 + len(filtered) * 38)
