@@ -350,10 +350,21 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     # ─────────────────────────────────────────────────────────────────────────
     # 5. FILTERING & SORTING CONTROLS
     # ─────────────────────────────────────────────────────────────────────────
-    f_col1, f_col2, f_col3, f_col4 = st.columns([3, 2, 2, 3])
+    f_col1, f_col2, f_col3, f_col4, f_col5 = st.columns([2.5, 2, 2, 2, 2.5])
     with f_col1:
+        quality_tier = st.selectbox(
+            "⭐ Quality Tier:",
+            [
+                "⭐⭐⭐ Institutional (Score≥75 + Weekly)",
+                "⭐⭐ Strong (Score≥55 + ADX≥20)",
+                "⭐ All Uptrends",
+            ],
+            index=1,
+            key="hh_hl_quality_tier"
+        )
+    with f_col2:
         setup_filter = st.selectbox(
-            "Filter by Setup Type:",
+            "Filter by Setup:",
             [
                 f"All Setups ({total_count})",
                 f"🔥 Fresh HH Breakout ({breakout_count})",
@@ -363,14 +374,14 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
             ],
             key="hh_hl_setup_filter"
         )
-    with f_col2:
+    with f_col3:
         min_cycles = st.selectbox(
             "Min HH/HL Cycles:",
             ["All Cycles (≥1)", "2+ Cycles", "3+ Cycles", "4+ Cycles"],
             index=0,
             key="hh_hl_min_cycles_sel"
         )
-    with f_col3:
+    with f_col4:
         sort_by = st.selectbox(
             "Sort By:",
             [
@@ -385,13 +396,26 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
             index=0,
             key="hh_hl_sort_by_sel"
         )
-    with f_col4:
+    with f_col5:
         search_sym = st.text_input("🔍 Search Symbol:", "", placeholder="e.g. RELIANCE, INFY...", key="hh_hl_sym_search").strip().upper()
 
     # Apply filters
     filtered = []
     for r in active_data:
         tag = r.get('setup_tag', '')
+
+        # ── Quality Tier gate (applied first) ──────────────────────────────
+        ts   = r.get('trend_score', 0)
+        adxv = r.get('adx', 0)
+        wkly = r.get('weekly_confirmed', False)
+        if "Institutional" in quality_tier:
+            if ts < 75 or not wkly:
+                continue
+        elif "Strong" in quality_tier:
+            if ts < 55 or adxv < 20:
+                continue
+        # "All Uptrends" → no extra gate
+
         if "Breakout" in setup_filter and "Breakout" not in tag:
             continue
         if "near Peak" in setup_filter and "Consolidating" not in tag:

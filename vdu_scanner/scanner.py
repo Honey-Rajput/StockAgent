@@ -3051,6 +3051,37 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
         if cmp < breakdown_threshold:
             return None
 
+        # ── QUALITY GATE 1: CMP must be above 50 SMA (not in a downtrend / base)
+        if cmp < sma50:
+            return None
+
+        # ── QUALITY GATE 2: ADX must show a trending (not choppy) market
+        if adx < 20:
+            return None
+
+        # ── QUALITY GATE 3: Weekly timeframe must confirm OR ADX must be strong (≥25)
+        # We compute weekly_confirmed early here for the gate; it's reused later.
+        weekly_confirmed = False
+        try:
+            if len(df) >= 70:
+                from local_cache_manager import resample_ohlcv
+                w_df = resample_ohlcv(df, "W")
+                if len(w_df) >= 20:
+                    w_close = float(w_df['Close'].iloc[-1])
+                    w_ema20 = float(w_df['Close'].ewm(span=20, adjust=False).mean().iloc[-1])
+                    w_highs = w_df['High'].values
+                    w_lows = w_df['Low'].values
+                    if len(w_highs) >= 8 and len(w_lows) >= 8:
+                        if (float(np.max(w_highs[-4:])) >= float(np.max(w_highs[-8:-4])) and
+                                float(np.min(w_lows[-4:])) >= float(np.min(w_lows[-8:-4])) and
+                                w_close >= w_ema20):
+                            weekly_confirmed = True
+        except Exception:
+            pass
+
+        if not weekly_confirmed and adx < 25:
+            return None
+
         # Count streak of consecutive Higher Highs & Higher Lows
         hh_count = 1
         for j in range(len(swing_highs) - 1, 0, -1):
@@ -3114,25 +3145,6 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
         target1 = round(entry + 2 * risk, 2)
         target2 = round(entry + 3 * risk, 2)
         risk_pct = round((risk / entry) * 100.0, 2)
-
-        # Weekly confirmation check
-        weekly_confirmed = False
-        try:
-            if len(df) >= 70:
-                from local_cache_manager import resample_ohlcv
-                w_df = resample_ohlcv(df, "W")
-                if len(w_df) >= 20:
-                    w_close = float(w_df['Close'].iloc[-1])
-                    w_ema20 = float(w_df['Close'].ewm(span=20, adjust=False).mean().iloc[-1])
-                    w_highs = w_df['High'].values
-                    w_lows = w_df['Low'].values
-                    if len(w_highs) >= 8 and len(w_lows) >= 8:
-                        if (float(np.max(w_highs[-4:])) >= float(np.max(w_highs[-8:-4])) and
-                                float(np.min(w_lows[-4:])) >= float(np.min(w_lows[-8:-4])) and
-                                w_close >= w_ema20):
-                            weekly_confirmed = True
-        except Exception:
-            pass
 
         # Moving average alignment description
         if cmp > sma20 and sma20 > sma50:
