@@ -1,25 +1,11 @@
-import threading
-import concurrent.futures
-import re
-import json
-import time
-
-import streamlit as st
-import pandas as pd
-
 from datetime import datetime, timedelta
-import os
+import pandas as pd
+import streamlit as st
 import yfinance as yf
-import requests as _requests_session_lib
-_YF_SESSION = _requests_session_lib.Session()
-_YF_SESSION.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 
-from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
-from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector, get_market_condition, fetch_nifty50_returns, calculate_rs_rating
-from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
-from indicators import precompute_indicators
+from config import IST_TIMEZONE
+import database
+
 
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
@@ -29,45 +15,27 @@ def get_market_date(for_display=False):
         target_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
     else:
         target_date = today.strftime('%Y-%m-%d')
-        
+
     if for_display:
-        import database
         if not database.has_scanned_today(target_date):
             avail = database.get_available_scan_dates()
             if avail:
                 return avail[0]
-                
+
     return target_date
 
 
-import watchlist
-import tabs.tab_watchlist
-from utils import inject_premium_css, get_signal_badge_html, get_day_change_badge_html
-
-from ui_components import (
-    extract_clean_recommendation,
-    matches_sma_timeframe_filter,
-    render_quick_trade_board,
-    render_trading_setup_card,
-    render_unified_strategy_table,
-)
-import database
-import ai_detector
-
-
 def render():
-    scan_data = st.session_state.get('scan_results', [])
-    is_admin = st.session_state.get('is_admin', False)
     st.markdown("### 📉 VPA Green + MA Squeeze")
-    st.info("Finds stocks where VPA is Green (Minor, Mid, Major) and the 10/21/50 SMA are tightly clustered (<6% gap).")
-    
+    st.info("Finds stocks where VPA is Green (Minor, Mid, Major) and the 10/21/50 SMA are tightly clustered. Adjust the parameters below and run a custom scan.")
+
     if "vpa_squeeze_results" not in st.session_state:
         st.session_state.vpa_squeeze_results = []
     if "vpa_squeeze_weekly_results" not in st.session_state:
         st.session_state.vpa_squeeze_weekly_results = []
     if "vpa_squeeze_monthly_results" not in st.session_state:
         st.session_state.vpa_squeeze_monthly_results = []
-        
+
     if not st.session_state.get('vpa_squeeze_results'):
         try:
             vpa_sq_d = database.get_all_latest_scan_dates().get("scanned_vpa_squeeze") or database.get_best_scan_date()
@@ -80,30 +48,74 @@ def render():
                 st.session_state.vpa_squeeze_results = database.get_cached_vpa_squeeze(today_str) or []
                 st.session_state.vpa_squeeze_weekly_results = database.get_cached_vpa_squeeze_weekly(today_str) or []
                 st.session_state.vpa_squeeze_monthly_results = database.get_cached_vpa_squeeze_monthly(today_str) or []
-        except Exception as e:
+        except Exception:
             pass
-        
-    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", width="stretch", key="run_vpa_squeeze_scan_btn")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # PARAMETER PANEL — user-editable scan settings
+    # ─────────────────────────────────────────────────────────────────────────
+    with st.expander("⚙️ Scan Parameters (click to customise)", expanded=True):
+        st.markdown(
+            "<p style='color:#94a3b8; font-size:0.85rem; margin-bottom:8px;'>"
+            "Change these values to tighten or loosen the squeeze filter, then hit <b>🚀 Run VPA Squeeze Scan</b>."
+            "</p>", unsafe_allow_html=True
+        )
+        p1, p2, p3 = st.columns(3)
+        with p1:
+            ma_gap_pct = st.number_input(
+                "📐 Max MA Compression Gap (%)",
+                min_value=1.0, max_value=20.0, value=6.0, step=0.5,
+                help="Maximum % gap allowed between the 10, 21 and 50 SMAs. "
+                     "Lower = tighter squeeze. Default 6%. Try 3–4% for very tight coils.",
+                key="vpa_sq_ma_gap"
+            )
+        with p2:
+            cmp_ext_pct = st.number_input(
+                "🚀 Max CMP Extension above MA (%)",
+                min_value=0.5, max_value=15.0, value=4.0, step=0.5,
+                help="If CMP is more than this % above the highest SMA, the stock is considered "
+                     "'already running' and is excluded. Default 4%.",
+                key="vpa_sq_cmp_ext"
+            )
+        with p3:
+            min_bars = st.number_input(
+                "📊 Min Historical Bars Required",
+                min_value=50, max_value=500, value=200, step=10,
+                help="Minimum number of trading bars needed to run the scan. "
+                     "200 = ~1 year of daily data (required for 200-SMA). "
+                     "Set lower (e.g. 100) to include newer listings.",
+                key="vpa_sq_min_bars"
+            )
+
+        st.markdown(
+            f"<p style='color:#64748b; font-size:0.78rem;'>"
+            f"Current settings → Compression ≤ <b>{ma_gap_pct}%</b> | "
+            f"CMP extension ≤ <b>{cmp_ext_pct}%</b> above MA cluster | "
+            f"Min <b>{int(min_bars)}</b> bars</p>",
+            unsafe_allow_html=True
+        )
+
+    run_vpa_squeeze_btn = st.button("🚀 Run VPA Squeeze Scan", type="primary", use_container_width=True, key="run_vpa_squeeze_scan_btn")
     if run_vpa_squeeze_btn:
         st.session_state.vpa_squeeze_results = []
-        with st.spinner("Running VPA Squeeze Scan..."):
+        with st.spinner(f"Running VPA Squeeze Scan (gap≤{ma_gap_pct}%, ext≤{cmp_ext_pct}%, bars≥{int(min_bars)})..."):
             try:
                 from data_fetcher import get_all_nse_symbols
                 from scanner import scan_vpa_ma_squeeze
                 from local_cache_manager import bulk_get_cached_ohlcv
-                
+
                 raw_symbols = get_all_nse_symbols()
                 symbols_to_scan = [s.strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]
-                
+
                 st.info("Step 1/2 — Fetching history from Master Cache...")
                 prog = st.progress(0)
                 status = st.empty()
-                
+
                 # Fetch all cached data at once
                 bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
-                
-                # Check for missing symbols or stubs (< 200 bars)
-                missing_symbols = [s for s in symbols_to_scan if s not in bulk_cached or len(bulk_cached[s]) < 200]
+
+                # Check for missing symbols or stubs (< min_bars bars)
+                missing_symbols = [s for s in symbols_to_scan if s not in bulk_cached or len(bulk_cached[s]) < int(min_bars)]
                 if missing_symbols:
                     chunk_size = 40
                     sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
@@ -133,7 +145,7 @@ def render():
                                         downloaded_dict[s] = s_df
                         except Exception:
                             pass
-                    
+
                     if downloaded_dict:
                         try:
                             from local_cache_manager import save_to_cache_bulk
@@ -144,27 +156,44 @@ def render():
                 st.info("Step 2/2 — Calculating MA Squeeze (Instant)...")
                 status.empty()
                 prog.progress(1.0)
-                
+
                 results = []
-                for sym, df in bulk_cached.items():
-                    res = scan_vpa_ma_squeeze(sym, df)
+                for sym, df_sym in bulk_cached.items():
+                    res = scan_vpa_ma_squeeze(
+                        sym, df_sym,
+                        max_ma_gap_pct=float(ma_gap_pct),
+                        max_cmp_ext_pct=float(cmp_ext_pct),
+                        min_bars=int(min_bars)
+                    )
                     if res is not None:
                         results.append(res)
-                            
+
                 prog.empty()
                 status.empty()
                 st.session_state.vpa_squeeze_results = results
-                
+
                 # Save to database
                 today_str = get_market_date()
                 database.save_vpa_squeeze_only(today_str, results)
-                
-                st.success(f"Scan complete! Found {len(results)} matches.")
-                
+
+                st.success(f"✅ Scan complete! Found **{len(results)}** matching stocks (gap≤{ma_gap_pct}%, ext≤{cmp_ext_pct}%).")
+
             except Exception as e:
                 st.error(f"Error running scan: {e}")
 
-    tf_vpa_sq = st.selectbox("Select Timeframe", ["Daily", "Weekly", "Monthly"], key="tf_vpa_sq")
+    st.markdown("---")
+    r1, r2, r3 = st.columns([2, 2, 3])
+    with r1:
+        tf_vpa_sq = st.selectbox("📅 Timeframe", ["Daily", "Weekly", "Monthly"], key="tf_vpa_sq")
+    with r2:
+        sort_vpa_sq = st.selectbox(
+            "Sort By",
+            ["Compression Gap ↑ (Tightest)", "Chg % ↓", "RSI ↑", "CMP ↑"],
+            key="vpa_sq_sort"
+        )
+    with r3:
+        search_vpa_sq = st.text_input("🔍 Search Symbol", "", placeholder="e.g. INFY, RELIANCE...", key="vpa_sq_search").strip().upper()
+
     if tf_vpa_sq == "Daily":
         display_results = st.session_state.get('vpa_squeeze_results', [])
     elif tf_vpa_sq == "Weekly":
@@ -172,32 +201,58 @@ def render():
     else:
         display_results = st.session_state.get('vpa_squeeze_monthly_results', [])
 
+    # Apply symbol search
+    if search_vpa_sq:
+        display_results = [r for r in display_results if search_vpa_sq in str(r.get('symbol', '')).upper()]
+
     if display_results:
         df_res = pd.DataFrame(display_results)
-        df_res['symbol'] = df_res['symbol'].apply(lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}")
-        st.write(f"### Found {len(display_results)} stocks")
-        # Sort by Compression Score (Gap %) ascending so tightest squeezes appear first
-        if 'ma_gap_pct' in df_res.columns:
+        df_res['tv_url'] = df_res['symbol'].apply(
+            lambda x: f"https://in.tradingview.com/chart/?symbol=NSE:{str(x).replace('.NS', '')}"
+        )
+
+        # Sort
+        if sort_vpa_sq == "Compression Gap ↑ (Tightest)" and 'ma_gap_pct' in df_res.columns:
             df_res = df_res.sort_values('ma_gap_pct', ascending=True)
-        display_cols = ['symbol', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'dist_to_200_pct', 'rsi', 'cci']
+        elif sort_vpa_sq == "Chg % ↓" and 'day_change_pct' in df_res.columns:
+            df_res = df_res.sort_values('day_change_pct', ascending=False)
+        elif sort_vpa_sq == "RSI ↑" and 'rsi' in df_res.columns:
+            df_res = df_res.sort_values('rsi', ascending=False)
+        elif sort_vpa_sq == "CMP ↑" and 'cmp' in df_res.columns:
+            df_res = df_res.sort_values('cmp', ascending=False)
+
+        st.markdown(f"<p style='color:#94a3b8; font-size:0.85rem;'>Showing <b>{len(df_res)}</b> matching stocks</p>", unsafe_allow_html=True)
+
+        display_cols = ['tv_url', 'company_name', 'cmp', 'day_change_pct', 'sma10', 'sma21', 'sma50', 'ma_gap_pct', 'dist_to_200_pct', 'rsi', 'cci']
         # Keep only columns that actually exist (handles older cached results without the new field)
         display_cols = [c for c in display_cols if c in df_res.columns]
         st.dataframe(
             df_res[display_cols],
             use_container_width=True,
             column_config={
-                "symbol": st.column_config.LinkColumn("Symbol", display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)", width="small"),
-                "cmp": st.column_config.NumberColumn("CMP (₹)", format="%.2f", width="small"),
-                "day_change_pct": st.column_config.NumberColumn("Chg %", format="%.2f", width="small"),
-                "sma10": st.column_config.NumberColumn("10 SMA", format="%.2f", width="small"),
-                "sma21": st.column_config.NumberColumn("21 SMA", format="%.2f", width="small"),
-                "sma50": st.column_config.NumberColumn("50 SMA", format="%.2f", width="small"),
-                "ma_gap_pct": st.column_config.NumberColumn("Compression (Gap %)", format="%.2f%%", width="small", help="Max distance % between the 10, 21, and 50 SMAs."),
+                "tv_url": st.column_config.LinkColumn(
+                    "Stock (TradingView)",
+                    display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)",
+                    width="medium"
+                ),
+                "company_name": st.column_config.TextColumn("Company", width="medium"),
+                "cmp": st.column_config.NumberColumn("CMP (₹)", format="₹ %.2f", width="small"),
+                "day_change_pct": st.column_config.NumberColumn("Chg %", format="%.2f%%", width="small"),
+                "sma10": st.column_config.NumberColumn("10 SMA", format="₹ %.2f", width="small"),
+                "sma21": st.column_config.NumberColumn("21 SMA", format="₹ %.2f", width="small"),
+                "sma50": st.column_config.NumberColumn("50 SMA", format="₹ %.2f", width="small"),
+                "ma_gap_pct": st.column_config.ProgressColumn(
+                    "Compression Gap %",
+                    min_value=0, max_value=10, format="%.2f%%",
+                    help="Max distance % between the 10, 21, and 50 SMAs. Lower = tighter coil.",
+                    width="small"
+                ),
                 "dist_to_200_pct": st.column_config.NumberColumn("Dist to 200 SMA %", format="%.2f%%", width="small"),
                 "rsi": st.column_config.NumberColumn("RSI", format="%.1f", width="small"),
                 "cci": st.column_config.NumberColumn("CCI", format="%.1f", width="small"),
             },
-            hide_index=True
+            hide_index=True,
+            height=min(500, 45 + len(df_res) * 38)
         )
     else:
-        st.info("No stocks found matching the VPA Squeeze criteria. Run the scanner.")
+        st.info("No stocks found matching the VPA Squeeze criteria. Adjust parameters above and run the scanner.")

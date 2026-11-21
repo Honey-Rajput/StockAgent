@@ -1813,20 +1813,34 @@ def scan_vpa_trend(symbol: str, df: pd.DataFrame, indicators: dict = None) -> di
         print(f"Error in VPA scan for {symbol}: {e}")
         return None
 
-def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) -> dict | None:
+def scan_vpa_ma_squeeze(
+    symbol: str,
+    df: pd.DataFrame,
+    indicators: dict = None,
+    max_ma_gap_pct: float = 6.0,
+    max_cmp_ext_pct: float = 4.0,
+    min_bars: int = 200,
+) -> dict | None:
     """
     Scans for stocks where Daily VPA Major, Mid, and Minor are green,
-    and the 10, 21, and 50 SMA are tightly clustered (< 6% gap).
+    and the 10, 21, and 50 SMA are tightly clustered (< max_ma_gap_pct%).
+
+    Args:
+        max_ma_gap_pct  : Max allowed % gap between the 10/21/50 SMAs (default 6%).
+                          Lower = tighter squeeze. Try 3–8%.
+        max_cmp_ext_pct : Max % CMP is allowed above the highest SMA before stock is
+                          considered "already running" (default 4%). Try 2–8%.
+        min_bars        : Minimum historical bars required (default 200).
     """
-    if df is None or len(df) < 200:
+    if df is None or len(df) < min_bars:
         return None
-        
+
     try:
         # Check Daily VPA
         daily_trends = calc_vpa_trends(df)
         if daily_trends['major'] != 1 or daily_trends['mid'] != 1 or daily_trends['minor'] != 1:
-            return None # Must be green for Major, Mid, and Minor.
-            
+            return None  # Must be green for Major, Mid, and Minor.
+
         # Calculate SMAs
         close_series = df['Close']
         sma10 = float(close_series.rolling(window=10).mean().iloc[-1])
@@ -1834,21 +1848,21 @@ def scan_vpa_ma_squeeze(symbol: str, df: pd.DataFrame, indicators: dict = None) 
         sma50 = float(close_series.rolling(window=50).mean().iloc[-1])
         sma200 = float(close_series.rolling(window=200).mean().iloc[-1])
         cmp = float(close_series.iloc[-1])
-        
+
         if pd.isna(sma10) or pd.isna(sma21) or pd.isna(sma50) or pd.isna(sma200):
             return None
-            
+
         # Squeeze logic
         ma_list = [sma10, sma21, sma50]
         max_ma = max(ma_list)
         min_ma = min(ma_list)
-        
-        # Squeeze: (max - min) / min < 0.06
-        if (max_ma - min_ma) / min_ma > 0.06:
+
+        # Squeeze: (max - min) / min < max_ma_gap_pct / 100
+        if (max_ma - min_ma) / min_ma > max_ma_gap_pct / 100.0:
             return None
-            
+
         # Ensure price hasn't already broken out (price should be near the squeeze)
-        if cmp > max_ma * 1.04:  # If price is > 4% above the highest MA, it's already running
+        if cmp > max_ma * (1.0 + max_cmp_ext_pct / 100.0):  # already running check
             return None
 
             
