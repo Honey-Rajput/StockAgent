@@ -2922,19 +2922,23 @@ def scan_near_30sma(symbol: str, df: pd.DataFrame, max_dist_pct: float = 3.0) ->
 # HIGHER HIGH & HIGHER LOW (HH/HL) UPTREND SCANNER (Dow Theory Market Structure)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict | None:
+def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict | None:
     """
     Scans for stocks in a confirmed Uptrend making Higher Highs (HH) and
     Higher Lows (HL) according to classical Dow Theory and Price Action structure.
 
     Conditions:
-    1. At least 2 Swing Highs and 2 Swing Lows detected over recent history.
+    1. At least 2 Swing Highs and 2 Swing Lows detected over recent history,
+       with a minimum pivot window of 5 bars each side (stricter, cleaner pivots).
     2. Last Swing High > Previous Swing High (Ascending Peaks).
     3. Last Swing Low > Previous Swing Low (Ascending Troughs).
-    4. Current Price (CMP) >= Last Swing Low (Market Structure intact, no lower low breakdown).
-    5. Trend strength score computed based on HH/HL streak, MAs, volume, and RSI.
+    4. Each swing must have minimum depth >= 0.5 * ATR (filters noise pivots).
+    5. Trailing region (last window bars) is scanned for a provisional swing low
+       so stocks like HDFCBANK with recent unconfirmed pivots are not wrongly excluded.
+    6. CMP allowed up to 1 ATR below last swing low (support test / dip-entry zone).
+    7. Trend strength score computed based on HH/HL streak, MAs, volume, RSI, ADX.
     """
-    if df is None or len(df) < 35:
+    if df is None or len(df) < 50:
         return None
 
     try:
@@ -2992,42 +2996,50 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
             adx = 22.0
 
         # Detect Swing Highs and Swing Lows using pivot window
+        # FIX: window=5 (stricter than 3) to avoid noise pivots in parabolic/thin stocks
         highs = df['High'].values
         lows = df['Low'].values
         n = len(df)
+        min_pivot_depth = atr * 0.5  # Min meaningful swing depth (noise filter)
 
         swing_highs = []
         swing_lows = []
 
         for i in range(window, n - window):
-            # Swing High
-            is_sh = True
-            for k in range(1, window + 1):
-                if highs[i] <= highs[i - k] or highs[i] < highs[i + k]:
-                    is_sh = False
-                    break
-            if is_sh:
-                d_str = df.index[i].strftime('%Y-%m-%d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
-                swing_highs.append({'idx': i, 'price': float(highs[i]), 'date': d_str, 'bars_ago': n - 1 - i})
+            # Swing High: strictly greater on BOTH sides
+            if (all(highs[i] > highs[i - k] for k in range(1, window + 1)) and
+                    all(highs[i] >= highs[i + k] for k in range(1, window + 1))):
+                # Depth check: swing high must protrude above surrounding bars by min_pivot_depth
+                local_low = min(min(lows[i - k] for k in range(1, window + 1)),
+                                min(lows[i + k] for k in range(1, window + 1)))
+                if highs[i] - local_low >= min_pivot_depth:
+                    d_str = df.index[i].strftime('%Y-%m-%d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
+                    swing_highs.append({'idx': i, 'price': float(highs[i]), 'date': d_str, 'bars_ago': n - 1 - i})
 
-            # Swing Low
-            is_sl = True
-            for k in range(1, window + 1):
-                if lows[i] >= lows[i - k] or lows[i] > lows[i + k]:
-                    is_sl = False
-                    break
-            if is_sl:
-                d_str = df.index[i].strftime('%Y-%m-%d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
-                swing_lows.append({'idx': i, 'price': float(lows[i]), 'date': d_str, 'bars_ago': n - 1 - i})
+            # Swing Low: strictly less on BOTH sides
+            if (all(lows[i] < lows[i - k] for k in range(1, window + 1)) and
+                    all(lows[i] <= lows[i + k] for k in range(1, window + 1))):
+                # Depth check: swing low must dip below surrounding bars by min_pivot_depth
+                local_high = max(max(highs[i - k] for k in range(1, window + 1)),
+                                 max(highs[i + k] for k in range(1, window + 1)))
+                if local_high - lows[i] >= min_pivot_depth:
+                    d_str = df.index[i].strftime('%Y-%m-%d') if hasattr(df.index[i], 'strftime') else str(df.index[i])[:10]
+                    swing_lows.append({'idx': i, 'price': float(lows[i]), 'date': d_str, 'bars_ago': n - 1 - i})
 
-        # Check recent bars (past last confirmed pivot) for dynamic breakout / new high
-        recent_max_offset = int(np.argmax(highs[-window:]))
-        recent_max_idx = (n - window) + recent_max_offset
-        recent_max_price = float(highs[recent_max_idx])
-        if swing_highs and recent_max_price > swing_highs[-1]['price'] * 1.002:
-            if recent_max_idx - swing_highs[-1]['idx'] >= window:
-                d_str = df.index[recent_max_idx].strftime('%Y-%m-%d') if hasattr(df.index[recent_max_idx], 'strftime') else str(df.index[recent_max_idx])[:10]
-                swing_highs.append({'idx': recent_max_idx, 'price': recent_max_price, 'date': d_str, 'bars_ago': n - 1 - recent_max_idx})
+        # FIX: Scan trailing region (last 'window' bars) for a provisional unconfirmed swing high/low.
+        # This prevents stale-pivot false negatives (e.g. HDFCBANK making new HH/HL but not yet confirmed).
+        trail_start = n - window
+        trail_high_idx = trail_start + int(np.argmax(highs[trail_start:]))
+        trail_high_price = float(highs[trail_high_idx])
+        if swing_highs and trail_high_price > swing_highs[-1]['price'] * 1.001 and trail_high_idx - swing_highs[-1]['idx'] >= window:
+            d_str = df.index[trail_high_idx].strftime('%Y-%m-%d') if hasattr(df.index[trail_high_idx], 'strftime') else str(df.index[trail_high_idx])[:10]
+            swing_highs.append({'idx': trail_high_idx, 'price': trail_high_price, 'date': d_str, 'bars_ago': n - 1 - trail_high_idx})
+
+        trail_low_idx = trail_start + int(np.argmin(lows[trail_start:]))
+        trail_low_price = float(lows[trail_low_idx])
+        if swing_lows and trail_low_price > swing_lows[-1]['price'] * 1.001 and trail_low_idx - swing_lows[-1]['idx'] >= window:
+            d_str = df.index[trail_low_idx].strftime('%Y-%m-%d') if hasattr(df.index[trail_low_idx], 'strftime') else str(df.index[trail_low_idx])[:10]
+            swing_lows.append({'idx': trail_low_idx, 'price': trail_low_price, 'date': d_str, 'bars_ago': n - 1 - trail_low_idx})
 
         # Need at least 2 swing highs and 2 swing lows
         if len(swing_highs) < 2 or len(swing_lows) < 2:
@@ -3046,9 +3058,11 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
         if not (is_hh and is_hl):
             return None
 
-        # Critical Structure Invalidation check: CMP must NOT be lower than the latest Higher Low!
-        # If price breaks below the prior swing low, the uptrend structure is broken (Change of Character).
-        if cmp < last_sl['price']:
+        # FIX: Allow CMP up to 1 ATR below last swing low (classic dip-entry / support test).
+        # Hard reject only if price breaks more than 1 ATR below (Change of Character confirmed).
+        # If CMP is between last_sl - 1*ATR and last_sl, classify as "🛡️ Testing Support" setup.
+        breakdown_threshold = last_sl['price'] - atr
+        if cmp < breakdown_threshold:
             return None
 
         # Count streak of consecutive Higher Highs & Higher Lows
@@ -3075,7 +3089,12 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 3) -> dict |
         trigger = round(last_sh['price'] + 0.10 * atr, 2)
 
         # Classify Setup Pattern
-        if cmp >= trigger or cmp >= last_sh['price'] * 0.998:
+        testing_support = cmp < last_sl['price']  # CMP dipped slightly below last HL but above breakdown
+        if testing_support:
+            setup_tag = "🛡️ Testing HL Support"
+            setup_desc = f"Dip-entry: Testing higher low support ₹{last_sl['price']:.2f} (within 1 ATR)"
+            entry = round(last_sl['price'] + 0.10 * atr, 2)  # Entry on reclaim of HL level
+        elif cmp >= trigger or cmp >= last_sh['price'] * 0.998:
             setup_tag = "🔥 Fresh HH Breakout"
             setup_desc = f"Breaking/Trading above swing high ₹{last_sh['price']:.2f}"
             entry = round(cmp, 2)
