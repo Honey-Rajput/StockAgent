@@ -294,7 +294,7 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
                                 else:
                                     continue
                             df = df.dropna(subset=['Close'])
-                            if len(df) >= 35:
+                            if len(df) >= 50:
                                 res = scan_hh_hl_uptrend(clean_sym, df)
                                 if res:
                                     results_list.append(res)
@@ -333,7 +333,7 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     total_count = len(active_data)
     breakout_count = sum(1 for r in active_data if "Breakout" in r.get('setup_tag', ''))
     consolidating_count = sum(1 for r in active_data if "Consolidating" in r.get('setup_tag', ''))
-    pullback_count = sum(1 for r in active_data if "Pullback" in r.get('setup_tag', ''))
+    pullback_count = sum(1 for r in active_data if "Pullback" in r.get('setup_tag', '') or "Testing" in r.get('setup_tag', ''))
     pure_trend_count = sum(1 for r in active_data if "Confirmed" in r.get('setup_tag', ''))
     avg_score = round(sum(r.get('trend_score', 0) for r in active_data) / max(total_count, 1), 1)
 
@@ -358,7 +358,7 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
                 f"All Setups ({total_count})",
                 f"🔥 Fresh HH Breakout ({breakout_count})",
                 f"⚡ Consolidating near Peak ({consolidating_count})",
-                f"🛡️ Higher Low Pullback ({pullback_count})",
+                f"🛡️ HL Pullback / Support Test ({pullback_count})",
                 f"📈 Confirmed Pure Uptrend ({pure_trend_count})"
             ],
             key="hh_hl_setup_filter"
@@ -388,7 +388,7 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
             continue
         if "near Peak" in setup_filter and "Consolidating" not in tag:
             continue
-        if "Pullback" in setup_filter and "Pullback" not in tag:
+        if "HL Pullback" in setup_filter and "Pullback" not in tag and "Testing" not in tag:
             continue
         if "Pure Uptrend" in setup_filter and "Confirmed" not in tag:
             continue

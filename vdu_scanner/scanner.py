@@ -3037,7 +3037,7 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
 
         trail_low_idx = trail_start + int(np.argmin(lows[trail_start:]))
         trail_low_price = float(lows[trail_low_idx])
-        if swing_lows and trail_low_price > swing_lows[-1]['price'] * 1.001 and trail_low_idx - swing_lows[-1]['idx'] >= window:
+        if swing_lows and trail_low_price > swing_lows[-1]['price'] * 1.003 and trail_low_idx - swing_lows[-1]['idx'] >= window:
             d_str = df.index[trail_low_idx].strftime('%Y-%m-%d') if hasattr(df.index[trail_low_idx], 'strftime') else str(df.index[trail_low_idx])[:10]
             swing_lows.append({'idx': trail_low_idx, 'price': trail_low_price, 'date': d_str, 'bars_ago': n - 1 - trail_low_idx})
 
@@ -3165,10 +3165,13 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
         elif vol_ratio >= 1.0:
             score += 5
 
-        if 50 <= rsi <= 75:
-            score += 10
-        elif rsi > 75:
-            score += 5
+        if 60 <= rsi <= 80:
+            score += 10          # Sweet momentum zone
+        elif 40 <= rsi < 60:
+            score += 7           # Healthy, not yet momentum
+        elif rsi > 80:
+            score += 3           # Overextended caution
+        # rsi < 40: 0 pts (weakness)
 
         if adx >= 20:
             score += 10
