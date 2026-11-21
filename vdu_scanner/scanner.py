@@ -1,7 +1,7 @@
 # scanner.py
 import pandas as pd
 import numpy as np
-from config import DRY_VOLUME_THRESHOLD, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS
+from config import MIN_VOLUME_RATIO, MIN_PRICE_CHANGE, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS
 
 def calculate_trade_levels(df: pd.DataFrame, cmp: float, indicators: dict = None) -> tuple[float, float, float, float, float]:
     """
@@ -202,15 +202,12 @@ def scan_stock(
     price_gain_ok = best_pct >= min_price_change
 
     is_breakout = volume_surge_ok and bullish_candle_ok and price_breakout_ok and price_gain_ok
-    is_pre_breakout = False
 
     if not is_breakout:
         today_vol_dry = today['Volume'] <= (0.75 * baseline_avg_vol)
         is_tight = abs(pct_change_close) < 2.0
         
-        if today_vol_dry and is_tight:
-            is_pre_breakout = True
-        else:
+        if not (today_vol_dry and is_tight):
             return None
             
     setup_type = "VDU Breakout" if is_breakout else "VDU Pre-Breakout"
@@ -611,10 +608,7 @@ def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=N
         ema_loss = loss.ewm(com=13, adjust=False).mean()
         rs = ema_gain / (ema_loss + 1e-9)
         rsi_series = 100 - (100 / (1 + rs))
-        rsi_sma = rsi_series.rolling(window=14).mean()
         rsi_val = float(rsi_series.iloc[-1])
-        rsi_sma_val = float(rsi_sma.iloc[-1]) if len(rsi_sma) > 0 else 0.0
-        
         # 2. CCI (14)
         tp = (high_series + low_series + close_series) / 3
         sma_tp = tp.rolling(window=14).mean()
@@ -1537,8 +1531,6 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
             return None
 
         # Base recommendation
-        day_change_pct = ((cmp - float(prev['Close'])) / float(prev['Close']) * 100) if len(df_copy) >= 2 else 0.0
-        
         support = round(sma7, 2)
         buy_price = round(support * 1.01, 2)
         exit_price = round(support * 0.95, 2)
@@ -1567,10 +1559,7 @@ def scan_monthly_early_stage2(symbol: str, df_monthly: pd.DataFrame, max_run_up_
         ema_loss = loss.ewm(com=13, adjust=False).mean()
         rs = ema_gain / (ema_loss + 1e-9)
         rsi_series = 100 - (100 / (1 + rs))
-        rsi_sma = rsi_series.rolling(window=14).mean()
         rsi_val = float(rsi_series.iloc[-1])
-        rsi_sma_val = float(rsi_sma.iloc[-1]) if len(rsi_sma) > 0 else 0.0
-        
         tp = (df_copy['High'] + df_copy['Low'] + close_series) / 3
         sma_tp = tp.rolling(window=14).mean()
         mad_manual = tp.rolling(window=14).apply(lambda x: abs(x - x.mean()).mean(), raw=True)
@@ -2303,7 +2292,7 @@ def scan_volume_profile(symbol: str, df: pd.DataFrame, market_cap: float) -> dic
             'above_50dma': above_50dma,
             'above_200dma': above_200dma
         }
-    except Exception as e:
+    except Exception:
         return None
 
 def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0, 
@@ -2354,8 +2343,6 @@ def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0,
         # Use last 250 bars (~1 year of daily data)
         lookback = min(len(df), 250)
         lows_arr = low[-lookback:]
-        dates_arr = df['Date'].values[-lookback:] if 'Date' in df.columns else list(range(lookback))
-        
         # Find swing lows with a window of 5 bars on each side
         swing_window = 5
         swing_lows = []
@@ -2478,7 +2465,7 @@ def scan_support_rsi(symbol: str, df: pd.DataFrame, market_cap: float = 0.0,
             'recommendation': f"Near {best_zone['touches']}-touch support at ₹{best_zone['support_price']:,.2f} ({best_zone['distance_pct']:.1f}% away). RSI oversold at {current_rsi:.1f}. Wait for bounce confirmation before entry.",
             'market_cap_cr': market_cap
         }
-    except Exception as e:
+    except Exception:
         return None
 
 def _compute_bb_squeeze_for_tf(df: pd.DataFrame, lookback_bars: int, max_width_pct: float) -> tuple:
@@ -2791,7 +2778,6 @@ def scan_stage_analysis(symbol: str, df: pd.DataFrame, bench_ret: float) -> dict
         
     try:
         from config import get_company_name
-        cmp = float(df['Close'].iloc[-1])
         
         # Calculate MAs
         ma50_series = df['Close'].rolling(window=50).mean()

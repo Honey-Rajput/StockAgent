@@ -35,10 +35,9 @@ def get_database_url():
 DATABASE_URL = get_database_url()
 
 import sqlite3
-import json
 import threading
 import time
-from typing import Final, Optional, Any
+from typing import Final
 
 def safe_date_str(val):
     if val is None:
@@ -179,7 +178,6 @@ def get_connection():
                 conn.autocommit = True
                 return PostgresConnectionWrapper(conn, pool)
         except Exception as e:
-            import time
             print(f"PostgreSQL connection error: {e}. Retrying pool in 0.3s...")
             time.sleep(0.3)
             try:
@@ -1050,8 +1048,8 @@ def init_db() -> bool:
                 pg_q = q.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY").replace("PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
                 try:
                     cur.executescript(pg_q)
-                except Exception as _e:
-                    pass
+                except Exception:
+                    pass  # column already exists or type mismatch — safe to ignore
             else:
                 cur.executescript(q)
             
@@ -1076,7 +1074,7 @@ def init_db() -> bool:
                     if col not in existing:
                         sqlite_type = col_type_upper.replace("DEFAULT FALSE", "DEFAULT 0").replace("DEFAULT TRUE", "DEFAULT 1")
                         cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
-            except Exception as mig_ex:
+            except Exception:
                 pass  # column already exists or table doesn't exist yet – safe to ignore
 
         add_col("scanned_breakouts", "buy_price", "DOUBLE PRECISION")
@@ -1492,7 +1490,7 @@ def get_available_scan_dates() -> list[str]:
                         quick_dates.append(s)
             if quick_dates:
                 return quick_dates
-        except Exception as _fast_err:
+        except Exception:
             try:
                 conn.rollback()
             except Exception:
@@ -3010,10 +3008,6 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
 
     latest_date = recent_dates[0]  # Most recent date
 
-    # Step 2: Determine dialect for aggregation function
-    _use_pg = is_postgres_active()
-    agg_fn = "STRING_AGG(DISTINCT source, ',')" if _use_pg else "GROUP_CONCAT(DISTINCT source)"
-
     # Step 3: Build the per-table scan union — only include tables that exist
     # We build a combined scan list in Python from each table individually
     conn = None
@@ -4040,7 +4034,7 @@ def prune_old_data_ohlcv(days: int = 5):
         # Prune AI chart patterns
         try:
             cur.execute(f"DELETE FROM ai_chart_patterns WHERE analyzed_date < CURRENT_DATE - INTERVAL '{days} days';")
-        except Exception as e:
+        except Exception:
             conn.rollback()
             pass
             
