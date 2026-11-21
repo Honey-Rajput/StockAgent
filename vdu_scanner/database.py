@@ -434,6 +434,9 @@ def init_db() -> bool:
             risk_pct DOUBLE PRECISION,
             adx DOUBLE PRECISION,
             weekly_confirmed BOOLEAN DEFAULT FALSE,
+            uptrend_days INTEGER DEFAULT 0,
+            uptrend_bars INTEGER DEFAULT 0,
+            uptrend_start_date VARCHAR(20),
             sma20 DOUBLE PRECISION,
             sma50 DOUBLE PRECISION,
             sma200 DOUBLE PRECISION,
@@ -474,6 +477,9 @@ def init_db() -> bool:
             risk_pct DOUBLE PRECISION,
             adx DOUBLE PRECISION,
             weekly_confirmed BOOLEAN DEFAULT FALSE,
+            uptrend_days INTEGER DEFAULT 0,
+            uptrend_bars INTEGER DEFAULT 0,
+            uptrend_start_date VARCHAR(20),
             sma20 DOUBLE PRECISION,
             sma50 DOUBLE PRECISION,
             sma200 DOUBLE PRECISION,
@@ -1063,7 +1069,7 @@ def init_db() -> bool:
                 raise ValueError(f"Invalid column name: {col!r}")
             # Validate column type against known SQLite/PostgreSQL types
             col_type_upper = str(col_type).upper().strip()
-            valid_pattern = r'^(TEXT|INTEGER|INT|BIGINT|REAL|BLOB|NUMERIC|VARCHAR(\(\d+\))?|DATETIME|BOOLEAN(\s+DEFAULT\s+(FALSE|TRUE|0|1))?|FLOAT|DOUBLE(\s+PRECISION)?)$'
+            valid_pattern = r'^(TEXT|INTEGER(\s+DEFAULT\s+\d+)?|INT(\s+DEFAULT\s+\d+)?|BIGINT|REAL|BLOB|NUMERIC|VARCHAR(\(\d+\))?|DATETIME|BOOLEAN(\s+DEFAULT\s+(FALSE|TRUE|0|1))?|FLOAT|DOUBLE(\s+PRECISION)?)$'
             if not re.match(valid_pattern, col_type_upper):
                 raise ValueError(f"Invalid column type: {col_type!r}")
             try:
@@ -1218,6 +1224,9 @@ def init_db() -> bool:
             add_col(hh_tbl, "risk_pct", "DOUBLE PRECISION")
             add_col(hh_tbl, "adx", "DOUBLE PRECISION")
             add_col(hh_tbl, "weekly_confirmed", "BOOLEAN DEFAULT FALSE")
+            add_col(hh_tbl, "uptrend_days", "INTEGER DEFAULT 0")
+            add_col(hh_tbl, "uptrend_bars", "INTEGER DEFAULT 0")
+            add_col(hh_tbl, "uptrend_start_date", "VARCHAR(20)")
 
         conn.commit()
         cur.close()
@@ -4169,6 +4178,7 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
             last_swing_low, last_sl_date, last_sl_bars_ago,
             dist_to_sh_pct, dist_to_sl_pct,
             entry, stop_loss, target1, target2, risk_pct, adx, weekly_confirmed,
+            uptrend_days, uptrend_bars, uptrend_start_date,
             sma20, sma50, sma200, ma_alignment, rsi, trend_score,
             swing_highs_json, swing_lows_json, scan_date
         ) VALUES (
@@ -4178,6 +4188,7 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
             ?, ?, ?,
             ?, ?,
             ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?
         )
@@ -4194,6 +4205,8 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
             entry=EXCLUDED.entry, stop_loss=EXCLUDED.stop_loss,
             target1=EXCLUDED.target1, target2=EXCLUDED.target2,
             risk_pct=EXCLUDED.risk_pct, adx=EXCLUDED.adx, weekly_confirmed=EXCLUDED.weekly_confirmed,
+            uptrend_days=EXCLUDED.uptrend_days, uptrend_bars=EXCLUDED.uptrend_bars,
+            uptrend_start_date=EXCLUDED.uptrend_start_date,
             sma20=EXCLUDED.sma20, sma50=EXCLUDED.sma50, sma200=EXCLUDED.sma200,
             ma_alignment=EXCLUDED.ma_alignment, rsi=EXCLUDED.rsi, trend_score=EXCLUDED.trend_score,
             swing_highs_json=EXCLUDED.swing_highs_json, swing_lows_json=EXCLUDED.swing_lows_json;
@@ -4226,6 +4239,9 @@ def save_hh_hl_only(date_str: str, hh_hl_results: list[dict]) -> bool:
                 float(r.get('risk_pct', 0.0)),
                 float(r.get('adx', 20.0)),
                 bool(r.get('weekly_confirmed', False)),
+                int(r.get('uptrend_days', 0)),
+                int(r.get('uptrend_bars', 0)),
+                str(r.get('uptrend_start_date', '')),
                 float(r.get('sma20', 0.0)),
                 float(r.get('sma50', 0.0)),
                 float(r.get('sma200', 0.0)),
@@ -4267,6 +4283,7 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
             last_swing_low, last_sl_date, last_sl_bars_ago,
             dist_to_sh_pct, dist_to_sl_pct,
             entry, stop_loss, target1, target2, risk_pct, adx, weekly_confirmed,
+            uptrend_days, uptrend_bars, uptrend_start_date,
             sma20, sma50, sma200, ma_alignment, rsi, trend_score,
             swing_highs_json, swing_lows_json, scan_date
         ) VALUES (
@@ -4276,6 +4293,7 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
             ?, ?, ?,
             ?, ?,
             ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, ?,
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?
         )
@@ -4292,6 +4310,8 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
             entry=EXCLUDED.entry, stop_loss=EXCLUDED.stop_loss,
             target1=EXCLUDED.target1, target2=EXCLUDED.target2,
             risk_pct=EXCLUDED.risk_pct, adx=EXCLUDED.adx, weekly_confirmed=EXCLUDED.weekly_confirmed,
+            uptrend_days=EXCLUDED.uptrend_days, uptrend_bars=EXCLUDED.uptrend_bars,
+            uptrend_start_date=EXCLUDED.uptrend_start_date,
             sma20=EXCLUDED.sma20, sma50=EXCLUDED.sma50, sma200=EXCLUDED.sma200,
             ma_alignment=EXCLUDED.ma_alignment, rsi=EXCLUDED.rsi, trend_score=EXCLUDED.trend_score,
             swing_highs_json=EXCLUDED.swing_highs_json, swing_lows_json=EXCLUDED.swing_lows_json;
@@ -4324,6 +4344,9 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
                 float(r.get('risk_pct', 0.0)),
                 float(r.get('adx', 20.0)),
                 bool(r.get('weekly_confirmed', False)),
+                int(r.get('uptrend_days', 0)),
+                int(r.get('uptrend_bars', 0)),
+                str(r.get('uptrend_start_date', '')),
                 float(r.get('sma20', 0.0)),
                 float(r.get('sma50', 0.0)),
                 float(r.get('sma200', 0.0)),
@@ -4342,6 +4365,29 @@ def save_hh_hl_weekly_only(date_str: str, hh_hl_weekly_results: list[dict]) -> b
         if conn:
             conn.rollback()
         return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_hh_hl_scan_streaks() -> dict[str, int]:
+    """
+    Returns a dict mapping symbol -> count of distinct scan dates in scanned_hh_hl.
+    Indicates how many daily scan sessions this stock has consistently qualified in pure uptrend.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT symbol, COUNT(DISTINCT scan_date) FROM scanned_hh_hl GROUP BY symbol;")
+        rows = cur.fetchall()
+        return {r[0]: int(r[1]) for r in rows}
+    except Exception as e:
+        print(f"Error fetching HH/HL scan streaks: {e}")
+        return {}
     finally:
         if conn:
             try:

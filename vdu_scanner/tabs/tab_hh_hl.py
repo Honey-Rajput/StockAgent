@@ -373,7 +373,15 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     with f_col3:
         sort_by = st.selectbox(
             "Sort By:",
-            ["Trend Score ↓", "Day Change % ↓", "Volume Ratio ↓", "CMP ↑", "Distance to High ↑"],
+            [
+                "Trend Score ↓",
+                "Uptrend Days ↓ (Established)",
+                "Uptrend Days ↑ (Fresh/Early)",
+                "Day Change % ↓",
+                "Volume Ratio ↓",
+                "CMP ↑",
+                "Distance to High ↑"
+            ],
             index=0,
             key="hh_hl_sort_by_sel"
         )
@@ -410,6 +418,10 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     # Sort
     if sort_by == "Trend Score ↓":
         filtered.sort(key=lambda x: x.get('trend_score', 0), reverse=True)
+    elif sort_by == "Uptrend Days ↓ (Established)":
+        filtered.sort(key=lambda x: x.get('uptrend_days', 0), reverse=True)
+    elif sort_by == "Uptrend Days ↑ (Fresh/Early)":
+        filtered.sort(key=lambda x: x.get('uptrend_days', 9999))
     elif sort_by == "Day Change % ↓":
         filtered.sort(key=lambda x: x.get('day_change_pct', 0), reverse=True)
     elif sort_by == "Volume Ratio ↓":
@@ -433,14 +445,31 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     df_disp['tv_url'] = df_disp['symbol'].apply(lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{s}")
     df_disp['weekly_icon'] = df_disp['weekly_confirmed'].apply(lambda x: "✅ Weekly HH+HL" if x else "—")
 
-    # Ensure numeric columns
-    for col in ['entry', 'stop_loss', 'target1', 'target2', 'risk_pct', 'adx']:
+    # Scan streak from database
+    scan_streaks = database.get_hh_hl_scan_streaks() if hasattr(database, 'get_hh_hl_scan_streaks') else {}
+    df_disp['scan_streak'] = df_disp['symbol'].map(scan_streaks).fillna(1).astype(int)
+    df_disp['scan_streak_badge'] = df_disp['scan_streak'].apply(
+        lambda s: f"🔥 {s}d streak" if s >= 3 else (f"🟢 {s}d" if s >= 2 else "1d")
+    )
+
+    # Ensure numeric and string columns
+    for col in ['entry', 'stop_loss', 'target1', 'target2', 'risk_pct', 'adx', 'uptrend_days', 'uptrend_bars']:
         if col not in df_disp.columns:
             df_disp[col] = 0.0
+
+    if 'uptrend_start_date' not in df_disp.columns:
+        df_disp['uptrend_start_date'] = ''
+
+    df_disp['uptrend_age_str'] = df_disp.apply(
+        lambda r: f"🔥 {int(r['uptrend_days'])}d" if r['uptrend_days'] >= 30
+        else (f"⚡ {int(r['uptrend_days'])}d" if r['uptrend_days'] > 0 else "—"),
+        axis=1
+    )
 
     st.dataframe(
         df_disp[[
             'tv_url', 'company_name', 'setup_tag', 'cmp', 'day_change_pct',
+            'uptrend_age_str', 'uptrend_start_date', 'scan_streak_badge',
             'entry', 'stop_loss', 'target1', 'target2', 'risk_pct',
             'hh_count', 'hl_count', 'last_swing_high', 'last_swing_low',
             'trend_score', 'vol_ratio', 'adx', 'weekly_icon', 'ma_alignment'
@@ -456,6 +485,21 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
             "setup_tag": st.column_config.TextColumn("Setup State", width="medium"),
             "cmp": st.column_config.NumberColumn("CMP", format="₹ %.2f", width="small"),
             "day_change_pct": st.column_config.NumberColumn("Chg %", format="%.2f %%", width="small"),
+            "uptrend_age_str": st.column_config.TextColumn(
+                "Uptrend Age",
+                help="Total calendar days since the origin Higher Low of this ascending wave formed",
+                width="small"
+            ),
+            "uptrend_start_date": st.column_config.TextColumn(
+                "Trend Since",
+                help="Date when the ascending wave started",
+                width="small"
+            ),
+            "scan_streak_badge": st.column_config.TextColumn(
+                "Scan Streak",
+                help="Consecutive daily scans this stock appeared in pure uptrend",
+                width="small"
+            ),
             "entry": st.column_config.NumberColumn("Entry Trigger", format="₹ %.2f", width="small"),
             "stop_loss": st.column_config.NumberColumn("Stop Loss", format="₹ %.2f", width="small"),
             "target1": st.column_config.NumberColumn("Target 1 (2R)", format="₹ %.2f", width="small"),
@@ -502,6 +546,12 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
         c2.metric("Latest Swing High (Resistance)", f"₹{stock_row['last_swing_high']:,.2f}", f"{stock_row['dist_to_sh_pct']:+.1f}%")
         c3.metric("Latest Swing Low (Support / SL)", f"₹{stock_row['last_swing_low']:,.2f}", f"+{stock_row['dist_to_sl_pct']:.1f}% cushion")
         c4.metric("Dow Trend Score", f"{stock_row['trend_score']}/100", f"{stock_row['hh_count']} HH / {stock_row['hl_count']} HL")
+
+        u_days = stock_row.get('uptrend_days') or 0
+        u_bars = stock_row.get('uptrend_bars') or 0
+        u_date = stock_row.get('uptrend_start_date') or ''
+        if u_days > 0 and u_date:
+            st.caption(f"🗓️ **Pure Uptrend Duration**: **{u_days} calendar days** ({u_bars} trading sessions) — ascending Higher Low sequence active since base pivot on **{u_date}**.")
 
         # Fetch recent historical data to render chart
         import yfinance as yf

@@ -3066,6 +3066,19 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
             else:
                 break
 
+        # Uptrend origin & duration (from how many days price action is in pure uptrend)
+        base_sl_idx = max(0, len(swing_lows) - hl_count)
+        base_sl = swing_lows[base_sl_idx]
+        uptrend_start_date = str(base_sl['date'])
+        uptrend_bars = int(base_sl['bars_ago'])
+        try:
+            curr_date = df.index[-1]
+            curr_dt = curr_date.date() if hasattr(curr_date, 'date') else pd.to_datetime(curr_date).date()
+            start_dt = pd.to_datetime(uptrend_start_date).date()
+            uptrend_days = max(1, (curr_dt - start_dt).days)
+        except Exception:
+            uptrend_days = uptrend_bars
+
         # Distances to swing high / low %
         dist_to_sh = ((cmp - last_sh['price']) / last_sh['price']) * 100.0
         dist_to_sl = ((cmp - last_sl['price']) / last_sl['price']) * 100.0
@@ -3197,6 +3210,9 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
             'risk_pct': risk_pct,
             'adx': round(adx, 1),
             'weekly_confirmed': weekly_confirmed,
+            'uptrend_days': uptrend_days,
+            'uptrend_bars': uptrend_bars,
+            'uptrend_start_date': uptrend_start_date,
             'sma20': round(sma20, 2),
             'sma50': round(sma50, 2),
             'sma200': round(sma200, 2),
