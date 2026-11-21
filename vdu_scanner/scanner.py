@@ -410,7 +410,14 @@ def scan_stock(
         "recommendation":   recommendation,
     }
 
-def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = -40.0, indicators: dict = None) -> dict | None:
+def scan_wt_cross(
+    symbol: str,
+    df: pd.DataFrame,
+    wt_oversold_threshold: float = -40.0,
+    indicators: dict = None,
+    require_above_200sma: bool = False,
+    min_bars: int = 25
+) -> dict | None:
     """
     Scans a stock's history to calculate WaveTrend with Crosses [LazyBear] (WT_CROSS_LB).
     Returns WT details if wt1 <= wt_oversold_threshold (oversold zone).
@@ -426,7 +433,7 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     
     Buy signal (green dot): wt1 crosses above wt2 while in oversold zone (wt2 <= wt_oversold_threshold)
     """
-    if df is None or len(df) < 40:
+    if df is None or len(df) < min_bars:
         return None
         
     # Use pre-computed WaveTrend from indicators if available
@@ -455,7 +462,7 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     if pd.isna(today_wt1) or pd.isna(today_wt2):
         return None
 
-    # Price filter: exclude stocks below ₹100
+    # Price filter: exclude penny stocks below ₹100
     last_close = float(df.iloc[-1]['Close'])
     if last_close < 100.0:
         return None
@@ -464,13 +471,16 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
     if today_wt1 > wt_oversold_threshold:
         return None
     
-    # EXPERT FIX: WaveTrend oversold bounce only valid in UPTRENDS (above 200 SMA).
-    # An oversold reading in a downtrend = dead cat bounce = losing trade.
-    # Minervini, O'Neil, and Zanger all filter oversold signals by trend first.
+    # 200 SMA trend status
+    today_sma200 = None
+    above_200sma = False
     if len(df) >= 200:
         sma200_val = float(df['Close'].rolling(200).mean().iloc[-1])
-        if not pd.isna(sma200_val) and last_close < sma200_val:
-            return None  # Must be ABOVE 200 SMA — no bounces in downtrends
+        if not pd.isna(sma200_val):
+            today_sma200 = sma200_val
+            above_200sma = bool(last_close >= sma200_val)
+            if require_above_200sma and not above_200sma:
+                return None  # Filtered when require_above_200sma is requested
     
     today = df_copy.iloc[-1]
     yesterday = df_copy.iloc[-2] if len(df_copy) >= 2 else today
@@ -575,7 +585,9 @@ def scan_wt_cross(symbol: str, df: pd.DataFrame, wt_oversold_threshold: float = 
         "confidence": confidence,
         "recommendation": recommendation,
         "above_20sma": above_20sma,
-        "above_50sma": above_50sma
+        "above_50sma": above_50sma,
+        "above_200sma": above_200sma,
+        "sma200": round(today_sma200, 2) if today_sma200 is not None else None
     }
 
 def compute_rich_analysis(df, symbol, strategy_name, base_rec_text, indicators=None):

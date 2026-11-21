@@ -1,25 +1,11 @@
-import threading
-import concurrent.futures
-import re
-import json
-import time
-
-import streamlit as st
 import pandas as pd
-
+import streamlit as st
 from datetime import datetime, timedelta
-import os
-import yfinance as yf
-import requests as _requests_session_lib
-_YF_SESSION = _requests_session_lib.Session()
-_YF_SESSION.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 
-from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
-from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector, get_market_condition, fetch_nifty50_returns, calculate_rs_rating
-from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
-from indicators import precompute_indicators
+from config import IST_TIMEZONE
+import database
+from scanner import scan_wt_cross
+
 
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
@@ -29,317 +15,496 @@ def get_market_date(for_display=False):
         target_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
     else:
         target_date = today.strftime('%Y-%m-%d')
-        
+
     if for_display:
-        import database
         if not database.has_scanned_today(target_date):
             avail = database.get_available_scan_dates()
             if avail:
                 return avail[0]
-                
+
     return target_date
 
 
-import watchlist
-import tabs.tab_watchlist
-from utils import inject_premium_css, get_signal_badge_html, get_day_change_badge_html
+def render_wavetrend_chart(symbol: str, df: pd.DataFrame, oversold_thresh: float = -40.0):
+    """Renders Plotly candlestick chart with 20/50/200 SMAs and WaveTrend (WT1 & WT2) subplot."""
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
-from ui_components import (
-    extract_clean_recommendation,
-    matches_sma_timeframe_filter,
-    render_quick_trade_board,
-    render_trading_setup_card,
-    render_unified_strategy_table,
-)
-import database
-import ai_detector
+    chart_df = df.tail(120).copy()
+    if chart_df.empty or len(chart_df) < 25:
+        st.warning("Insufficient historical data to render chart.")
+        return
+
+    # 1. Moving Averages
+    sma20 = chart_df['Close'].rolling(20).mean()
+    sma50 = chart_df['Close'].rolling(50).mean()
+    sma200 = chart_df['Close'].rolling(200).mean() if len(df) >= 200 else pd.Series(dtype=float)
+
+    # 2. WaveTrend calculation
+    ap = (chart_df['High'] + chart_df['Low'] + chart_df['Close']) / 3.0
+    esa = ap.ewm(span=10, adjust=False).mean()
+    d = (ap - esa).abs().ewm(span=10, adjust=False).mean()
+    ci = (ap - esa) / (0.015 * d + 1e-10)
+    wt1 = ci.ewm(span=21, adjust=False).mean()
+    wt2 = wt1.rolling(window=4).mean()
+
+    # Find crossover points (green dots)
+    cross_dates = []
+    cross_wt1 = []
+    for i in range(1, len(wt1)):
+        if pd.notna(wt1.iloc[i]) and pd.notna(wt2.iloc[i]) and pd.notna(wt1.iloc[i-1]) and pd.notna(wt2.iloc[i-1]):
+            if wt1.iloc[i-1] <= wt2.iloc[i-1] and wt1.iloc[i] > wt2.iloc[i] and wt1.iloc[i] <= (oversold_thresh + 10):
+                cross_dates.append(chart_df.index[i])
+                cross_wt1.append(wt1.iloc[i])
+
+    fig = make_subplots(
+        rows=2, cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        row_heights=[0.65, 0.35],
+        subplot_titles=[f"{symbol} Price & SMAs", "🌊 WaveTrend with Crosses (LazyBear)"]
+    )
+
+    # Candlestick
+    fig.add_trace(
+        go.Candlestick(
+            x=chart_df.index,
+            open=chart_df['Open'],
+            high=chart_df['High'],
+            low=chart_df['Low'],
+            close=chart_df['Close'],
+            name="Price",
+            increasing_line_color='#00e676',
+            decreasing_line_color='#ef4444'
+        ),
+        row=1, col=1
+    )
+
+    # SMAs
+    fig.add_trace(go.Scatter(x=chart_df.index, y=sma20, mode='lines', line=dict(color='#38bdf8', width=1.3), name="20 SMA"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=chart_df.index, y=sma50, mode='lines', line=dict(color='#fbbf24', width=1.5), name="50 SMA"), row=1, col=1)
+    if len(sma200) > 0 and pd.notna(sma200.iloc[-1]):
+        fig.add_trace(go.Scatter(x=chart_df.index, y=sma200, mode='lines', line=dict(color='#f43f5e', width=1.5), name="200 SMA"), row=1, col=1)
+
+    # WaveTrend lines
+    fig.add_trace(go.Scatter(x=chart_df.index, y=wt1, mode='lines', line=dict(color='#00e676', width=1.8), name="WT1 (Fast)"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=chart_df.index, y=wt2, mode='lines', line=dict(color='#ef4444', width=1.4), name="WT2 (Signal)"), row=2, col=1)
+
+    # Threshold horizontal reference lines
+    fig.add_hline(y=oversold_thresh, line_dash="dash", line_color="rgba(0, 230, 118, 0.6)", annotation_text=f"Oversold ({oversold_thresh})", row=2, col=1)
+    fig.add_hline(y=-60.0, line_dash="dot", line_color="rgba(239, 68, 68, 0.5)", annotation_text="Extreme (-60)", row=2, col=1)
+    fig.add_hline(y=60.0, line_dash="dash", line_color="rgba(244, 63, 94, 0.5)", annotation_text="Overbought (+60)", row=2, col=1)
+    fig.add_hline(y=0.0, line_dash="solid", line_color="rgba(148, 163, 184, 0.2)", row=2, col=1)
+
+    # Green dot buy signals
+    if cross_dates:
+        fig.add_trace(
+            go.Scatter(
+                x=cross_dates, y=cross_wt1,
+                mode='markers',
+                marker=dict(symbol='circle', size=9, color='#00e676', line=dict(width=1.5, color='#ffffff')),
+                name="🟢 Buy Cross"
+            ),
+            row=2, col=1
+        )
+
+    fig.update_layout(
+        template="plotly_dark",
+        height=520,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        paper_bgcolor="rgba(10,15,30,0.8)",
+        plot_bgcolor="rgba(10,15,30,0.8)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def render():
-    scan_data = st.session_state.get('scan_results', [])
-    is_admin = st.session_state.get('is_admin', False)
-    # 0. Timeframe & Threshold selector inside tab
-    wt_col1, wt_col2 = st.columns(2)
-    with wt_col1:
+    st.markdown("### 🌊 WaveTrend Oversold Scanner [LazyBear WT Cross]")
+    st.markdown(
+        "<p style='font-size:0.92rem; color:#94a3b8; margin-top:-6px;'>"
+        "Detects deeply oversold mean-reversion candidates using <b>LazyBear's WaveTrend with Crosses</b>. "
+        "Flags high-probability turning points where <b>WT1 crosses above WT2 (🟢 Green Dot)</b> in the oversold zone."
+        "</p>",
+        unsafe_allow_html=True
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 1. EDUCATIONAL GUIDE EXPANDER
+    # ─────────────────────────────────────────────────────────────────────────
+    with st.expander("📖 WaveTrend Oscillator & Trading Strategy Explained", expanded=False):
+        st.markdown("""
+### 🧠 How WaveTrend with Crosses Works
+The **WaveTrend oscillator** (popularized by LazyBear) is an institutional-grade momentum oscillator:
+- **WT1 (Green line)**: The smoothed trend oscillator based on typical price deviation ($HLC3$) from its 10-period EMA.
+- **WT2 (Red line)**: A 4-period SMA of WT1, acting as a signal trigger line.
+- **Oversold Zone (WT1 ≤ -40)**: Indicates exhaustion of intense selling pressure.
+- **Extreme Oversold (WT1 ≤ -60)**: Severe panic-selling stretch; prime rubber-band rebound territory.
+- **🟢 Buy Signal (Green Dot)**: Triggered when **WT1 crosses ABOVE WT2** from inside or near the oversold zone.
+- **📈 Bullish Divergence**: Price prints a lower low while WaveTrend prints a higher low — strong institutional accumulation sign.
+""", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 2. SCAN CONTROLS
+    # ─────────────────────────────────────────────────────────────────────────
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([2.5, 2.5, 2, 2.5])
+    with ctrl_col1:
         wt_timeframe = st.selectbox(
-            "🌊 Select WaveTrend Timeframe:",
-            options=["Daily", "15 Min", "1 Hour", "Weekly", "Monthly"],
+            "📅 Timeframe:",
+            ["Daily (Swing Trading)", "Weekly (Positional)", "Monthly (Macro)", "1 Hour (Intraday)", "15 Min (Scalp)"],
             index=0,
-            key="wt_tab_timeframe_selector_v2",
-            help="Select the WaveTrend chart interval. Changing this dynamically runs a real-time parallel scan for active stocks."
+            key="wt_tab_timeframe_selector"
         )
-    with wt_col2:
-        default_wt_thresh = -20.0 if wt_timeframe in ["Weekly", "Monthly"] else -40.0
+    with ctrl_col2:
+        wt_universe = st.selectbox(
+            "🌐 Universe:",
+            ["Top 1000 NSE Stocks", "NIFTY 500", "NIFTY 100", "NIFTY 50", "Watchlist"],
+            index=0,
+            key="wt_tab_universe_selector"
+        )
+    with ctrl_col3:
+        default_thresh = -20.0 if ("Weekly" in wt_timeframe or "Monthly" in wt_timeframe) else -40.0
         wt_oversold_threshold = st.number_input(
-            "📉 Oversold Threshold:",
-            min_value=-100.0,
+            "📉 Oversold Cutoff:",
+            min_value=-90.0,
             max_value=0.0,
-            value=default_wt_thresh,
+            value=default_thresh,
             step=5.0,
-            key=f"wt_oversold_threshold_{wt_timeframe}",
-            help="Define the WT1 value below which a stock is considered oversold. Default is -40.0."
+            key=f"wt_oversold_threshold_input_{wt_timeframe[:4]}",
+            help="Stocks with WT1 below this value are considered oversold. Default: -40 for daily, -20 for weekly."
         )
-        
-    wt_cache_key = f"{wt_timeframe}_{wt_oversold_threshold}"
-    
-    # Reactive Loader
-    if 'wt_results_by_tf' not in st.session_state:
-        st.session_state.wt_results_by_tf = {}
-        
-    run_wt_btn = st.button("🌊 Run Advanced WaveTrend Scan", key="run_wt_scan_btn", width="stretch")
-    
+    with ctrl_col4:
+        st.write("")
+        st.write("")
+        run_wt_btn = st.button("🌊 Run WaveTrend Scan", type="primary", use_container_width=True, key="run_wt_scan_btn")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 3. SCAN EXECUTION
+    # ─────────────────────────────────────────────────────────────────────────
     if run_wt_btn:
-        # Universe is hardcoded to Top 1000 NSE stocks
-        universe_key = "TOP 1000"
-        from data_fetcher import get_top1000_nse_symbols
-        raw_symbols = get_top1000_nse_symbols()
-            
-        symbols_to_scan = [str(s).strip().upper().replace('.NS', '') for s in raw_symbols if str(s).strip()]
-            
-        with st.spinner(f"Running Advanced WaveTrend {wt_timeframe} scan (Threshold: {wt_oversold_threshold}) on {len(symbols_to_scan)} stocks..."):
-            from scanner import scan_wt_cross
+        with st.spinner(f"Running WaveTrend scan on {wt_universe} ({wt_timeframe}, WT1 ≤ {wt_oversold_threshold})..."):
+            from data_fetcher import get_top1000_nse_symbols, get_index_stocks
             from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
-            
-            # Map timeframes
-            interval_map = {"Daily": "1d", "15 Min": "15m", "1 Hour": "60m", "Weekly": "1wk", "Monthly": "1mo"}
-            period_map = {"Daily": "300d", "15 Min": "60d", "1 Hour": "730d", "Weekly": "5y", "Monthly": "10y"}
-            
-            interval = interval_map[wt_timeframe]
-            period = period_map[wt_timeframe]
-            
-            wt_tf_results = []
-            
-            if wt_timeframe in ["Daily", "Weekly", "Monthly"]:
-                bulk_cached = bulk_get_cached_ohlcv(symbols_to_scan, "1d")
-                for sym, ticker_df in bulk_cached.items():
-                    if ticker_df is None or len(ticker_df) < 40:
-                        continue
-                    try:
-                        eval_df = ticker_df
-                        if wt_timeframe == "Weekly":
-                            eval_df = resample_ohlcv(ticker_df, '1W-MON')
-                        elif wt_timeframe == "Monthly":
-                            eval_df = resample_ohlcv(ticker_df, '1ME')
-                            
-                        if eval_df is None or len(eval_df) < 40:
-                            continue
-                            
-                        wt_res = scan_wt_cross(sym, eval_df, wt_oversold_threshold=wt_oversold_threshold)
-                        if wt_res is not None:
-                            wt_res['timeframe'] = wt_timeframe
-                            wt_res['is_oversold'] = wt_res['wt_value'] <= wt_oversold_threshold
-                            wt_tf_results.append(wt_res)
-                    except Exception:
-                        pass
+            import yfinance as yf
+
+            if "Top 1000" in wt_universe:
+                raw_syms = get_top1000_nse_symbols()
+            elif "NIFTY 500" in wt_universe:
+                raw_syms = get_index_stocks("NIFTY 500")
+            elif "NIFTY 100" in wt_universe:
+                raw_syms = get_index_stocks("NIFTY 100")
+            elif "NIFTY 50" in wt_universe:
+                raw_syms = get_index_stocks("NIFTY 50")
             else:
-                chunk_size = 50
-                sym_chunks = [symbols_to_scan[i:i + chunk_size] for i in range(0, len(symbols_to_scan), chunk_size)]
-                for chunk in sym_chunks:
+                raw_syms = get_index_stocks("WATCHLIST")
+
+            clean_syms = [s.strip().upper().replace('.NS', '') for s in raw_syms if str(s).strip()]
+
+            progress_bar = st.progress(0.0)
+            status_box = st.empty()
+            results = []
+
+            # Determine execution strategy
+            if "Daily" in wt_timeframe:
+                status_box.text("Loading daily data from Master Cache...")
+                bulk_data = bulk_get_cached_ohlcv(clean_syms, "1d")
+                total = len(clean_syms)
+                for idx, sym in enumerate(clean_syms):
+                    df = bulk_data.get(sym)
+                    if df is not None and len(df) >= 40:
+                        res = scan_wt_cross(sym, df, wt_oversold_threshold=float(wt_oversold_threshold))
+                        if res:
+                            res['timeframe'] = "Daily"
+                            results.append(res)
+                    if idx % 50 == 0 or idx == total - 1:
+                        progress_bar.progress((idx + 1) / max(total, 1))
+
+                # Save daily results to database
+                today_str = get_market_date()
+                st.session_state.wt_results = results
+                try:
+                    database.save_wt_cross_only(today_str, results)
+                except Exception:
+                    pass
+
+            elif "Weekly" in wt_timeframe or "Monthly" in wt_timeframe:
+                status_box.text(f"Resampling master cache data to {wt_timeframe}...")
+                bulk_data = bulk_get_cached_ohlcv(clean_syms, "1d")
+                freq = '1W-MON' if "Weekly" in wt_timeframe else '1ME'
+                min_b = 25 if "Weekly" in wt_timeframe else 15
+                total = len(clean_syms)
+                for idx, sym in enumerate(clean_syms):
+                    df = bulk_data.get(sym)
+                    if df is not None and len(df) >= 50:
+                        try:
+                            eval_df = resample_ohlcv(df, freq)
+                            if eval_df is not None and len(eval_df) >= min_b:
+                                res = scan_wt_cross(sym, eval_df, wt_oversold_threshold=float(wt_oversold_threshold), min_bars=min_b)
+                                if res:
+                                    res['timeframe'] = "Weekly" if "Weekly" in wt_timeframe else "Monthly"
+                                    results.append(res)
+                        except Exception:
+                            pass
+                    if idx % 50 == 0 or idx == total - 1:
+                        progress_bar.progress((idx + 1) / max(total, 1))
+
+            else:
+                # Intraday (1 Hour or 15 Min)
+                interval = "60m" if "1 Hour" in wt_timeframe else "15m"
+                period = "60d" if "1 Hour" in wt_timeframe else "30d"
+                chunk_size = 40
+                chunks = [clean_syms[i:i + chunk_size] for i in range(0, len(clean_syms), chunk_size)]
+                for c_idx, chunk in enumerate(chunks):
+                    status_box.text(f"Fetching intraday data batch {c_idx+1}/{len(chunks)} ({len(chunk)} stocks)...")
                     chunk_ns = [f"{s}.NS" for s in chunk]
                     try:
-                        df_bulk = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, threads=False, timeout=15)
+                        data = yf.download(tickers=chunk_ns, period=period, interval=interval, progress=False, timeout=18)
                         for sym in chunk:
                             sym_ns = f"{sym}.NS"
                             try:
-                                if isinstance(df_bulk.columns, pd.MultiIndex):
-                                    all_tickers_wt = df_bulk.columns.get_level_values(1).unique().tolist()
-                                    matched_wt = next((t for t in all_tickers_wt if t.upper() == sym_ns.upper()), None)
-                                    if matched_wt is None:
+                                if isinstance(data.columns, pd.MultiIndex):
+                                    all_t = data.columns.get_level_values(1).unique().tolist()
+                                    matched = next((t for t in all_t if t.upper() == sym_ns.upper()), None)
+                                    if not matched:
                                         continue
-                                    ticker_df = df_bulk.xs(matched_wt, axis=1, level=1).copy()
+                                    s_df = data.xs(matched, axis=1, level=1).dropna(subset=['Close']).copy()
                                 else:
-                                    ticker_df = df_bulk.copy() if len(chunk_ns) == 1 else None
-                                    if ticker_df is None:
-                                        continue
-
-                                required_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
-                                if all(col in ticker_df.columns for col in required_cols):
-                                    ticker_df = ticker_df[required_cols].dropna(subset=['Close'])
-                                    if len(ticker_df) >= 40:
-                                        wt_res = scan_wt_cross(sym, ticker_df, wt_oversold_threshold=wt_oversold_threshold)
-                                        if wt_res is not None:
-                                            wt_res['timeframe'] = wt_timeframe
-                                            wt_res['is_oversold'] = wt_res['wt_value'] <= wt_oversold_threshold
-                                            wt_tf_results.append(wt_res)
+                                    s_df = data.dropna(subset=['Close']).copy() if len(chunk) == 1 else None
+                                if s_df is not None and len(s_df) >= 30:
+                                    res = scan_wt_cross(sym, s_df, wt_oversold_threshold=float(wt_oversold_threshold), min_bars=25)
+                                    if res:
+                                        res['timeframe'] = wt_timeframe
+                                        results.append(res)
                             except Exception:
                                 pass
                     except Exception:
                         pass
-            
-            st.session_state.wt_results_by_tf[wt_cache_key] = wt_tf_results
-            if wt_timeframe == "Daily":
-                st.session_state.wt_results = wt_tf_results
-                today_str = get_market_date()
-                database.save_wt_cross_only(today_str, wt_tf_results)
-            st.toast(f"🌊 WaveTrend {wt_timeframe} scan complete! Found {len(wt_tf_results)} setups.", icon="✅")
-            
-    # Pick up background scan results or cached daily results
-    cached_daily = st.session_state.get('wt_results') or (st.session_state.get("ALL_TAB_SCAN_STATUS", {}).get("wt_results"))
-    if not cached_daily:
+                    progress_bar.progress((c_idx + 1) / len(chunks))
+
+            tf_key = f"{wt_timeframe[:4]}_{wt_oversold_threshold}"
+            if 'wt_results_by_tf' not in st.session_state:
+                st.session_state.wt_results_by_tf = {}
+            st.session_state.wt_results_by_tf[tf_key] = results
+
+            status_box.text(f"✅ Scan Complete! Found {len(results)} oversold stocks (WT1 ≤ {wt_oversold_threshold}).")
+            st.rerun()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 4. DATA HYDRATION
+    # ─────────────────────────────────────────────────────────────────────────
+    if 'wt_results' not in st.session_state:
+        st.session_state.wt_results = None
+    if 'wt_results_by_tf' not in st.session_state:
+        st.session_state.wt_results_by_tf = {}
+
+    # Check background scan status
+    bg_status = st.session_state.get('ALL_TAB_SCAN_STATUS', {})
+    if not st.session_state.wt_results and bg_status.get("wt_results"):
+        st.session_state.wt_results = bg_status["wt_results"]
+
+    # Auto-load from database cache for Daily
+    if not st.session_state.wt_results:
         try:
-            d = database.get_all_latest_scan_dates().get("scanned_wt_cross") or database.get_best_scan_date()
-            if d:
-                cached_daily = database.get_cached_wt_cross(d)
-                if cached_daily:
-                    st.session_state.wt_results = cached_daily
-                    st.session_state.wt_results_by_tf["Daily_-40.0"] = cached_daily
-                    st.session_state.wt_results_by_tf["Daily"] = cached_daily
+            latest_dates = database.get_all_latest_scan_dates()
+            wt_date = latest_dates.get('scanned_wt_cross') or database.get_best_scan_date()
+            if wt_date:
+                cached = database.get_cached_wt_cross(wt_date)
+                if cached:
+                    st.session_state.wt_results = cached
         except Exception:
             pass
 
-    if not st.session_state.wt_results_by_tf.get(wt_cache_key):
-        if wt_timeframe == "Daily" and cached_daily:
-            matching = [r for r in cached_daily if r.get('wt_value', 0) <= wt_oversold_threshold]
-            if matching:
-                st.session_state.wt_results_by_tf[wt_cache_key] = matching
+    # Active dataset
+    tf_key = f"{wt_timeframe[:4]}_{wt_oversold_threshold}"
+    active_data = None
+    if tf_key in st.session_state.wt_results_by_tf:
+        active_data = st.session_state.wt_results_by_tf[tf_key]
+    elif "Daily" in wt_timeframe and st.session_state.wt_results:
+        # Dynamically filter daily results by current threshold
+        active_data = [r for r in st.session_state.wt_results if float(r.get('wt_value', 0)) <= float(wt_oversold_threshold)]
 
-    wt_data = st.session_state.wt_results_by_tf.get(wt_cache_key, None)
-    
-    st.markdown(f"### 🌊 WaveTrend Oversold Buy Signals ({wt_timeframe} Timeframe)")
-    st.markdown(f"<p style='font-size:0.9rem; color:#94a3b8;'>Scan for stocks in the WaveTrend oversold zone (WT1 below {wt_oversold_threshold}) using LazyBear's WaveTrend with Crosses indicator. <span style=\"color:#ffa000; font-weight:600;\">Filters: Price ≥ ₹100 | Market Cap ≥ ₹2000 Cr</span>. Stocks showing a <b style=\"color:#00e676;\">green dot 🟢 buy signal</b> (WT1 crossing above WT2) in oversold territory are prime mean-reversion candidates.</p>", unsafe_allow_html=True)
-    st.markdown("---")
-    
-    # 1. Premium Metrics Row
-    wt_m1, wt_m2, wt_m3, wt_m4 = st.columns(4)
-    
-    if wt_data:
-        wt_total = len(wt_data)
-        wt_buy_signals = [r for r in wt_data if r.get('buy_signal', False)]
-        wt_buy_count = len(wt_buy_signals)
-        wt_deepest = min(r['wt_value'] for r in wt_data)
-        wt_avg = sum(r['wt_value'] for r in wt_data) / wt_total
-    else:
-        wt_total = 0
-        wt_buy_count = 0
-        wt_deepest = 0.0
-        wt_avg = 0.0
-    
-    wt_m1.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Oversold Stocks (WT1 < {wt_oversold_threshold})</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{wt_total}</h3></div>', unsafe_allow_html=True)
-    wt_m2.markdown(f'<div class="glass-card metric-glow-green"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">🟢 Buy Signals (Green Dot)</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#00e676;">{wt_buy_count}</h3></div>', unsafe_allow_html=True)
-    wt_m3.markdown(f'<div class="glass-card metric-glow-amber"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Deepest WT1 Value</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#ffa000;">{wt_deepest:.1f}</h3></div>', unsafe_allow_html=True)
-    wt_m4.markdown(f'<div class="glass-card metric-glow-blue"><p style="font-size:0.85rem; color:#94a3b8; margin:0;">Avg WT1 Value</p><h3 style="font-size:1.8rem; margin:5px 0 0 0; color:#29b6f6;">{wt_avg:.1f}</h3></div>', unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Filter toggle
-    wt_filter_col1, wt_filter_col2, wt_filter_col3 = st.columns(3)
-    wt_show_buy_only = wt_filter_col1.checkbox(
-        "🟢 Show Buy Signals Only (Green Dot)",
-        value=False,
-        help="Show only stocks where WT1 has crossed above WT2 in the oversold zone (bullish crossover buy signal)"
-    )
-    wt_above_20sma = wt_filter_col2.checkbox(
-        "📈 Above 20 SMA Only",
-        value=False,
-        help="Show only stocks currently trading above their 20 SMA trend filter"
-    )
-    wt_above_50sma = wt_filter_col3.checkbox(
-        "🛡️ Above 50 SMA Only",
-        value=False,
-        help="Show only stocks currently trading above their 50 SMA trend filter"
-    )
-    wt_above_200sma = wt_filter_col3.checkbox(
-        "🛡️ Above 200 DMA Only",
-        value=False,
-        help="Show only stocks currently trading above their 200 SMA long-term trend filter"
-    )
-    
-    # Background scan progress indicator
-    if wt_data is None and st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
-        _bg_scanner = st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"]
-        _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
-        _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
-        st.markdown(f"""
-        <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
-            <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
-                <span style="display:inline-block; animation: spin 2s linear infinite;">🔄</span> Background All-Tab Scan Active...
-            </h4>
-            <p style="font-size:0.9rem; color:#94a3b8; margin:0 0 15px 0;">All scanners are running automatically in the background. WaveTrend results will appear here when ready!</p>
-            <div style="font-size:0.85rem; color:#e2e8f0; font-weight:600; margin-bottom:8px;">Current: <span style="color:#00e5ff;">{_bg_status}</span></div>
-        </div>
-        <style>@keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}</style>
-        """, unsafe_allow_html=True)
-        st.progress(_bg_progress)
-        if st.button("🔄 Refresh Scanner Status", key="refresh_bg_wt_status_btn"):
-            st.rerun()
-
-    # 2. Main Scan Table
-    if wt_data is None:
-        st.info("💡 Run the scanner from the sidebar to identify WaveTrend oversold buy signals.")
-    elif len(wt_data) == 0:
-        st.info(f"ℹ️ No stocks found in the WaveTrend oversold zone (WT1 < {wt_oversold_threshold}) on {wt_timeframe} timeframe today.")
-    else:
-        # Apply filters
-        display_wt = list(wt_data)
-        if wt_show_buy_only:
-            display_wt = [r for r in display_wt if r.get('buy_signal', False)]
-        if wt_above_20sma:
-            display_wt = [r for r in display_wt if r.get('above_20sma', False)]
-        if wt_above_50sma:
-            display_wt = [r for r in display_wt if r.get('above_50sma', False)]
-        if wt_above_200sma:
-            display_wt = [r for r in display_wt if r.get('above_200sma', False)]
-        
-        # Sort by WT value ascending (deepest oversold first)
-        sorted_wt = sorted(display_wt, key=lambda x: x['wt_value'])
-        
-        if len(sorted_wt) == 0:
-            st.info("ℹ️ No stocks match the active filters found today. Try unchecking some filters above to see more oversold stocks.")
+    if active_data is None:
+        if bg_status.get("is_running", False):
+            st.info("🔄 Background all-tab scan is running. WaveTrend results will appear here once ready.")
         else:
-            # Download WaveTrend results
-            export_wt = []
-            for r in sorted_wt:
-                export_wt.append({
-                    "Symbol": r['symbol'],
-                "Sector": get_stock_sector(r['symbol']),
-                                        "CMP (₹)": r['cmp'],
-                    "Day Change %": r['day_change_pct'],
-                    "WT1": r['wt_value'],
-                    "WT2": r['wt2_value'],
-                    "WT Diff (WT1-WT2)": r.get('wt_diff', r['wt_value'] - r['wt2_value']),
-                    "Buy Signal": r.get('buy_signal', False),
-                    "Above 20 SMA": r.get('above_20sma', False),
-                    "Above 50 SMA": r.get('above_50sma', False),
-                   "Above 200 SMA": r.get('above_200sma', False),
-                    "Volume": int(r.get('volume', 0)),
-                    "Buy Range (₹)": r.get('buy_price', r.get('cmp', 0)),
-                    "Stop Loss (₹)": r.get('exit_price', 0),
-                    "Target (₹)": r.get('target_price', 0),
-                    "Confidence": r.get('confidence', ''),
-                    "Recommendation": extract_clean_recommendation(r.get('recommendation', ''))
-                })
-            export_wt_df = pd.DataFrame(export_wt)
-            csv_wt_data = export_wt_df.to_csv(index=False).encode('utf-8-sig')
-            
-            st.download_button(
-                label="📥 Download WaveTrend Results (CSV)",
-                data=csv_wt_data,
-                file_name=f"wavetrend_signals_{wt_timeframe}_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                key="wt_download_csv_btn"
-            )
-            
-            st.markdown("---")
-            # Render the unified Trade Execution Matrix
-            st.markdown(f"### 🌊 Active Oversold Trade Execution Sheet ({wt_timeframe})")
-            render_unified_strategy_table(sorted_wt, "wavetrend", "wt_tab")
-    
-    # WaveTrend indicator explanation
+            st.info("💡 No WaveTrend data loaded yet. Click **'🌊 Run WaveTrend Scan'** above to run the scan.")
+        return
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 5. KPI METRICS
+    # ─────────────────────────────────────────────────────────────────────────
+    total_count = len(active_data)
+    buy_count = sum(1 for r in active_data if r.get('buy_signal', False))
+    div_count = sum(1 for r in active_data if r.get('bullish_divergence', False))
+    above_200_count = sum(1 for r in active_data if r.get('above_200sma', False))
+    deepest_val = round(min((float(r.get('wt_value', 0)) for r in active_data), default=0.0), 1)
+    avg_val = round(sum(float(r.get('wt_value', 0)) for r in active_data) / max(total_count, 1), 1)
+
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #38bdf8;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">Oversold Stocks</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#38bdf8;">{total_count}</h3><span style="font-size:0.68rem; color:#64748b;">WT1 ≤ {wt_oversold_threshold}</span></div>', unsafe_allow_html=True)
+    k2.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #00e676;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">🟢 Buy Signals</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#00e676;">{buy_count}</h3><span style="font-size:0.68rem; color:#64748b;">Green Dot Cross</span></div>', unsafe_allow_html=True)
+    k3.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #fbbf24;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">📈 Bullish Div</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#fbbf24;">{div_count}</h3><span style="font-size:0.68rem; color:#64748b;">Divergence</span></div>', unsafe_allow_html=True)
+    k4.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #10b981;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">🛡️ Above 200 SMA</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#10b981;">{above_200_count}</h3><span style="font-size:0.68rem; color:#64748b;">Uptrend Bounce</span></div>', unsafe_allow_html=True)
+    k5.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #ef4444;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">Deepest WT1</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#ef4444;">{deepest_val}</h3><span style="font-size:0.68rem; color:#64748b;">Most Oversold</span></div>', unsafe_allow_html=True)
+    k6.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #38bdf8;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">Avg WT1</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#38bdf8;">{avg_val}</h3><span style="font-size:0.68rem; color:#64748b;">Average Score</span></div>', unsafe_allow_html=True)
+
     st.markdown("<br>", unsafe_allow_html=True)
-    with st.expander("📖 How WaveTrend Indicator Works"):
-        st.markdown("""
-        **WaveTrend with Crosses (LazyBear)**
-        
-        This indicator is a momentum oscillator that identifies overbought/oversold conditions:
-        
-        - **WT1 (Green Line):** The smoothed trend oscillator calculated from typical price deviations
-        - **WT2 (Red Line):** A 4-period SMA of WT1, used as a signal line
-        - **Buy Signal (Green Dot 🟢):** Occurs when WT1 crosses ABOVE WT2 in the oversold zone (below -40)
-        - **Oversold Zone:** WT1 values below -40 indicate the stock is in deep oversold territory
-        - **Extreme Oversold:** WT1 values below -60 suggest extreme selling pressure
-        
-        **Strategy:** Look for stocks with WT1 below -40 showing a green dot buy signal (WT1 crossing above WT2). 
-        These are high-probability mean-reversion setups where selling pressure is exhausting and a bounce is likely.
-        
-        **Parameters Used:** Channel Length = 10, Average Length = 21
-        """, unsafe_allow_html=False)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 6. FILTERING & SORTING CONTROLS
+    # ─────────────────────────────────────────────────────────────────────────
+    f1, f2, f3 = st.columns([3, 2, 3])
+    with f1:
+        signal_filter = st.selectbox(
+            "Filter Setups:",
+            [
+                f"All Oversold ({total_count})",
+                f"🟢 Buy Signals Only ({buy_count})",
+                f"📈 Bullish Divergence Only ({div_count})",
+                f"🛡️ Above 200 DMA Only ({above_200_count})",
+                "📈 Above 20 SMA Only",
+                "🛡️ Above 50 SMA Only"
+            ],
+            key="wt_signal_filter_sel"
+        )
+    with f2:
+        sort_by = st.selectbox(
+            "Sort By:",
+            ["WT1 ↑ (Deepest Oversold)", "WT Diff ↑ (Strongest Cross)", "Day Change % ↓", "CMP ↑"],
+            key="wt_sort_by_sel"
+        )
+    with f3:
+        search_sym = st.text_input("🔍 Search Symbol:", "", placeholder="e.g. RELIANCE, INFY...", key="wt_sym_search").strip().upper()
+
+    # Apply filters
+    filtered = []
+    for r in active_data:
+        if "Buy Signals" in signal_filter and not r.get('buy_signal', False):
+            continue
+        if "Divergence" in signal_filter and not r.get('bullish_divergence', False):
+            continue
+        if "Above 200 DMA" in signal_filter and not r.get('above_200sma', False):
+            continue
+        if "Above 20 SMA" in signal_filter and not r.get('above_20sma', False):
+            continue
+        if "Above 50 SMA" in signal_filter and not r.get('above_50sma', False):
+            continue
+        if search_sym and search_sym not in str(r.get('symbol', '')).upper():
+            continue
+        filtered.append(r)
+
+    # Sort
+    if sort_by == "WT1 ↑ (Deepest Oversold)":
+        filtered.sort(key=lambda x: float(x.get('wt_value', 0.0)))
+    elif sort_by == "WT Diff ↑ (Strongest Cross)":
+        filtered.sort(key=lambda x: float(x.get('wt_diff', 0.0)), reverse=True)
+    elif sort_by == "Day Change % ↓":
+        filtered.sort(key=lambda x: float(x.get('day_change_pct', 0.0)), reverse=True)
+    elif sort_by == "CMP ↑":
+        filtered.sort(key=lambda x: float(x.get('cmp', 0.0)))
+
+    st.markdown(f"<p style='color:#94a3b8; font-size:0.85rem;'>Showing <b>{len(filtered)}</b> matching stocks</p>", unsafe_allow_html=True)
+
+    if not filtered:
+        st.info("No stocks match the selected filter criteria.")
+        return
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 7. RESULTS TABLE
+    # ─────────────────────────────────────────────────────────────────────────
+    df_disp = pd.DataFrame(filtered)
+    df_disp['tv_url'] = df_disp['symbol'].apply(lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{str(s).replace('.NS', '')}")
+    df_disp['signal_badge'] = df_disp['buy_signal'].apply(
+        lambda b: "🟢 BUY SIGNAL" if b else "⚪ Oversold"
+    )
+    df_disp['div_badge'] = df_disp['bullish_divergence'].apply(
+        lambda d: "📈 Bullish Div" if d else "—"
+    )
+    df_disp['trend_context'] = df_disp.apply(
+        lambda r: "🛡️ Above 200 DMA" if r.get('above_200sma')
+        else ("📈 Above 50 SMA" if r.get('above_50sma')
+              else ("Above 20 SMA" if r.get('above_20sma') else "Below 20/50/200")),
+        axis=1
+    )
+
+    for col in ['buy_price', 'exit_price', 'target_price', 'volume']:
+        if col not in df_disp.columns:
+            df_disp[col] = 0.0
+
+    st.dataframe(
+        df_disp[[
+            'tv_url', 'company_name', 'cmp', 'day_change_pct', 'wt_value', 'wt2_value', 'wt_diff',
+            'signal_badge', 'div_badge', 'trend_context', 'buy_price', 'exit_price', 'target_price', 'confidence'
+        ]],
+        use_container_width=True,
+        column_config={
+            "tv_url": st.column_config.LinkColumn(
+                "Stock (TradingView)",
+                display_text=r"https://in\.tradingview\.com/chart/\?symbol=NSE:(.*)",
+                width="medium"
+            ),
+            "company_name": st.column_config.TextColumn("Company", width="medium"),
+            "cmp": st.column_config.NumberColumn("CMP", format="₹ %.2f", width="small"),
+            "day_change_pct": st.column_config.NumberColumn("Chg %", format="%.2f %%", width="small"),
+            "wt_value": st.column_config.NumberColumn("WT1", format="%.1f", help="Fast WaveTrend line (Green)", width="small"),
+            "wt2_value": st.column_config.NumberColumn("WT2", format="%.1f", help="Signal line 4-SMA (Red)", width="small"),
+            "wt_diff": st.column_config.NumberColumn("Diff (WT1-WT2)", format="%+.1f", width="small"),
+            "signal_badge": st.column_config.TextColumn("Signal", width="small"),
+            "div_badge": st.column_config.TextColumn("Divergence", width="small"),
+            "trend_context": st.column_config.TextColumn("Trend Status", width="small"),
+            "buy_price": st.column_config.NumberColumn("Buy Trigger", format="₹ %.2f", width="small"),
+            "exit_price": st.column_config.NumberColumn("Stop Loss", format="₹ %.2f", width="small"),
+            "target_price": st.column_config.NumberColumn("Target (2R)", format="₹ %.2f", width="small"),
+            "confidence": st.column_config.TextColumn("Confidence", width="small")
+        },
+        hide_index=True,
+        height=min(450, 45 + len(filtered) * 38)
+    )
+
+    # CSV Download Button
+    csv_bytes = df_disp.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        "📥 Download WaveTrend Results (CSV)",
+        data=csv_bytes,
+        file_name=f"wavetrend_{wt_timeframe[:4]}_{datetime.now(IST_TIMEZONE).strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        key="wt_csv_download_btn"
+    )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 8. INTERACTIVE WAVETREND CHART INSPECTOR
+    # ─────────────────────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("#### 🔍 Interactive WaveTrend Chart Inspector")
+    st.markdown(
+        "<p style='color:#94a3b8; font-size:0.85rem; margin-top:-4px;'>"
+        "Select any stock from the table to visualize its candlesticks, 20/50/200 SMAs, and WaveTrend oscillator sub-plot."
+        "</p>",
+        unsafe_allow_html=True
+    )
+
+    stock_options = [r['symbol'] for r in filtered]
+    sel_chart_col1, _ = st.columns([2, 5])
+    with sel_chart_col1:
+        sel_symbol = st.selectbox("Select Stock to Inspect:", stock_options, key="wt_chart_sym_sel")
+
+    stock_row = next((r for r in filtered if r['symbol'] == sel_symbol), None)
+    if stock_row:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("CMP", f"₹{stock_row['cmp']:,.2f}", f"{stock_row['day_change_pct']:+.2f}%")
+        c2.metric("WaveTrend (WT1)", f"{stock_row['wt_value']:.1f}", f"WT2: {stock_row['wt2_value']:.1f}")
+        c3.metric("Cross Status", "🟢 BUY SIGNAL" if stock_row['buy_signal'] else "Oversold", f"Diff: {stock_row['wt_diff']:+.1f}")
+        c4.metric("Risk / Reward", f"SL: ₹{stock_row.get('exit_price', 0):,.2f}", f"Target: ₹{stock_row.get('target_price', 0):,.2f}")
+
+        import yfinance as yf
+        try:
+            sym_ns = sel_symbol if sel_symbol.endswith('.NS') else f"{sel_symbol}.NS"
+            interval = "1d" if "Daily" in wt_timeframe else ("1wk" if "Weekly" in wt_timeframe else "1d")
+            hist_df = yf.download(sym_ns, period="8mo", interval=interval, progress=False, timeout=12)
+            if not hist_df.empty:
+                render_wavetrend_chart(sel_symbol, hist_df, float(wt_oversold_threshold))
+            else:
+                st.warning("Could not download recent candle data for chart.")
+        except Exception as _ce:
+            st.warning(f"Error fetching chart: {_ce}")
