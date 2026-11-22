@@ -327,6 +327,20 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
         st.info("💡 No HH/HL scan data loaded yet. Click **'🔍 Run HH/HL Scan'** above or run the scanner from the sidebar.")
         return
 
+    # ── Baseline quality filter applied to ALL cached data ─────────────────────
+    # Ensures KPI counts reflect quality-gated universe even when loading old DB rows.
+    # Mirrors scanner Gate 1 (CMP > 50 SMA), Gate 2 (ADX ≥ 20), Gate 3 (weekly OR ADX ≥ 25), Gate 4 (score ≥ 40)
+    active_data = [
+        r for r in active_data
+        if r.get('trend_score', 0) >= 40
+        and r.get('adx', 0) >= 20
+        and float(r.get('cmp', 0)) >= float(r.get('sma50', 0)) * 0.995  # small tolerance for rounding
+        and (r.get('weekly_confirmed', False) or r.get('adx', 0) >= 25)
+    ]
+    if not active_data:
+        st.info("💡 No high-quality HH/HL setups found in cached data. Run a fresh scan to get updated results.")
+        return
+
     # ─────────────────────────────────────────────────────────────────────────
     # 4. KPI SUMMARY METRIC CARDS
     # ─────────────────────────────────────────────────────────────────────────
@@ -338,7 +352,7 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     avg_score = round(sum(r.get('trend_score', 0) for r in active_data) / max(total_count, 1), 1)
 
     k1, k2, k3, k4, k5, k6 = st.columns(6)
-    k1.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #38bdf8;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">Total Uptrend</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#38bdf8;">{total_count}</h3><span style="font-size:0.68rem; color:#64748b;">Active HH/HL</span></div>', unsafe_allow_html=True)
+    k1.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #38bdf8;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">Total Uptrend</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#38bdf8;">{total_count}</h3><span style="font-size:0.68rem; color:#64748b;">Quality HH/HL</span></div>', unsafe_allow_html=True)
     k2.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #f43f5e;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">🔥 HH Breakout</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#f43f5e;">{breakout_count}</h3><span style="font-size:0.68rem; color:#64748b;">At/Above Peak</span></div>', unsafe_allow_html=True)
     k3.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #38bdf8;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">⚡ Near Peak</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#38bdf8;">{consolidating_count}</h3><span style="font-size:0.68rem; color:#64748b;">Within 2% High</span></div>', unsafe_allow_html=True)
     k4.markdown(f'<div class="glass-card" style="padding:10px 12px; border-left:3px solid #10b981;"><p style="font-size:0.75rem; color:#94a3b8; margin:0;">🛡️ HL Pullback</p><h3 style="font-size:1.4rem; margin:2px 0 0 0; color:#10b981;">{pullback_count}</h3><span style="font-size:0.68rem; color:#64748b;">Dip Buy Setup</span></div>', unsafe_allow_html=True)

@@ -3218,6 +3218,11 @@ def scan_hh_hl_uptrend(symbol: str, df: pd.DataFrame, window: int = 5) -> dict |
 
         score = min(score, 100)
 
+        # ── QUALITY GATE 4: Minimum trend score (drop structurally weak setups) ──
+        # Even if ADX and weekly pass, a score < 40 means too many factors are weak.
+        if score < 40:
+            return None
+
         # Serialize recent pivots for interactive chart
         sh_json = json.dumps([{'price': round(x['price'], 2), 'date': x['date'], 'bars_ago': x['bars_ago']} for x in swing_highs[-4:]])
         sl_json = json.dumps([{'price': round(x['price'], 2), 'date': x['date'], 'bars_ago': x['bars_ago']} for x in swing_lows[-4:]])
