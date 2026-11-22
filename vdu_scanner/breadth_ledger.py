@@ -131,10 +131,20 @@ def get_leading_clusters() -> list[dict]:
         h3 = c.get("h3", 0)
         h6 = c.get("h6", 0)
         names = c.get("names", [])
-        all_leaders = [item[0] for item in c.get("all", []) if isinstance(item, (list, tuple)) and item]
+        
+        # In all, items are [ticker, high_flag]. Only items with high_flag > 0 made fresh highs!
+        active_from_all = [
+            item[0] for item in c.get("all", [])
+            if isinstance(item, (list, tuple)) and len(item) > 1 and item[1] > 0
+        ]
 
-        # Combine top names
-        combined_names = names if names else all_leaders[:8]
+        # Combine: keep distinct list preserving order (explicit names first, then active_from_all)
+        combined_set = set(names)
+        combined_names = list(names)
+        for s in active_from_all:
+            if s not in combined_set:
+                combined_names.append(s)
+                combined_set.add(s)
 
         results.append({
             "industry": industry,
@@ -146,9 +156,115 @@ def get_leading_clusters() -> list[dict]:
             "leading_stocks": combined_names,
         })
 
-    # Sort descending by score
+    # Sort descending by score, then 1M highs
     results.sort(key=lambda x: (x["score"], x["highs_1m"]), reverse=True)
     return results
+
+
+def track_cluster_changes() -> dict:
+    """
+    Compares the current breadth clusters with the previous recorded snapshot in DB.
+    Returns:
+      - 'added': list of {'symbol': s, 'industry': ind, 'cluster_rank': rank} (newly entered fresh highs)
+      - 'removed': list of {'symbol': s, 'industry': ind} (dropped from fresh highs)
+      - 'net_change': len(added) - len(removed)
+      - 'has_comparison': bool
+      - 'prev_date': str
+      - 'curr_date': str
+      - 'new_symbols_set': set of symbols added (for fast lookup in UI)
+      - 'total_leaders': int
+    """
+    try:
+        import database
+        data = fetch_breadth_data()
+        as_of = data.get("asOf", "")
+        # Derive date string YYYY-MM-DD
+        curr_date = as_of[:10] if as_of and len(as_of) >= 10 else time.strftime("%Y-%m-%d")
+
+        clusters = get_leading_clusters()
+        # Build map: symbol -> dict of details
+        curr_leaders: dict[str, dict] = {}
+        for rank, c in enumerate(clusters, 1):
+            for s in c.get("leading_stocks", []):
+                sym = str(s).strip().upper().replace(".NS", "")
+                if sym and sym not in curr_leaders:
+                    curr_leaders[sym] = {
+                        "industry": c["industry"],
+                        "cluster_rank": rank,
+                        "highs_1m": c["highs_1m"],
+                        "highs_3m": c["highs_3m"],
+                    }
+
+        # Check existing snapshots before saving to identify previous snapshot
+        recent_snapshots = database.get_latest_breadth_clusters(limit=5)
+        prev_snapshot = None
+        for snap in recent_snapshots:
+            if snap.get("scan_date") != curr_date:
+                prev_snapshot = snap
+                break
+
+        # Persist today's snapshot
+        database.save_breadth_clusters(curr_date, as_of, clusters, curr_leaders)
+
+        if prev_snapshot and prev_snapshot.get("all_leaders"):
+            prev_leaders = prev_snapshot["all_leaders"]
+            prev_date = prev_snapshot.get("scan_date", "")
+
+            curr_syms = set(curr_leaders.keys())
+            prev_syms = set(prev_leaders.keys())
+
+            added_syms = sorted(curr_syms - prev_syms)
+            removed_syms = sorted(prev_syms - curr_syms)
+
+            added = [
+                {
+                    "symbol": s,
+                    "industry": curr_leaders[s]["industry"],
+                    "cluster_rank": curr_leaders[s]["cluster_rank"],
+                }
+                for s in added_syms
+            ]
+            removed = [
+                {
+                    "symbol": s,
+                    "industry": prev_leaders[s].get("industry", "Unknown") if isinstance(prev_leaders[s], dict) else str(prev_leaders[s]),
+                }
+                for s in removed_syms
+            ]
+
+            return {
+                "added": added,
+                "removed": removed,
+                "net_change": len(added) - len(removed),
+                "has_comparison": True,
+                "prev_date": prev_date,
+                "curr_date": curr_date,
+                "new_symbols_set": set(added_syms),
+                "total_leaders": len(curr_leaders),
+            }
+        else:
+            return {
+                "added": [],
+                "removed": [],
+                "net_change": 0,
+                "has_comparison": False,
+                "prev_date": None,
+                "curr_date": curr_date,
+                "new_symbols_set": set(),
+                "total_leaders": len(curr_leaders),
+            }
+    except Exception as e:
+        print(f"Error in track_cluster_changes: {e}")
+        return {
+            "added": [],
+            "removed": [],
+            "net_change": 0,
+            "has_comparison": False,
+            "prev_date": None,
+            "curr_date": "",
+            "new_symbols_set": set(),
+            "total_leaders": 0,
+        }
 
 
 def get_cluster_stocks_map() -> dict[str, str]:

@@ -1,7 +1,13 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
-from breadth_ledger import fetch_breadth_data, get_market_breadth_summary, get_leading_clusters, get_breadth_stock_picks
+from breadth_ledger import (
+    fetch_breadth_data,
+    get_market_breadth_summary,
+    get_leading_clusters,
+    get_breadth_stock_picks,
+    track_cluster_changes,
+)
 
 
 def render():
@@ -89,7 +95,129 @@ def render():
 
     st.markdown("---")
 
-    # 3. Where Fresh Highs Cluster (Leading Industry Groups)
+    # 3. Fresh Highs Churn Tracker (Added / Deleted Stocks Tracking)
+    churn = track_cluster_changes()
+    new_symbols_set = churn.get("new_symbols_set", set())
+    added_list = churn.get("added", [])
+    removed_list = churn.get("removed", [])
+    has_comp = churn.get("has_comparison", False)
+    net_chg = churn.get("net_change", 0)
+    prev_d = churn.get("prev_date", "")
+    curr_d = churn.get("curr_date", "")
+    tot_leaders = churn.get("total_leaders", len(clusters))
+
+    st.markdown("### 🔄 Sector & Fresh Highs Churn Tracker")
+    st.markdown(
+        "<p style='font-size:0.85rem; color:#94a3b8; margin-top:-6px;'>"
+        "Tracks stocks <b>newly entering</b> or <b>dropping out of</b> the institutional Fresh Highs clusters between consecutive market sessions. "
+        "A cluster expanding with new leaders signals high-conviction institutional accumulation."
+        "</p>",
+        unsafe_allow_html=True
+    )
+
+    ch_c1, ch_c2, ch_c3, ch_c4 = st.columns(4)
+    net_badge_color = "#00e676" if net_chg > 0 else ("#ef4444" if net_chg < 0 else "#38bdf8")
+    net_sign = "+" if net_chg > 0 else ""
+    net_desc = "Expanding Breadth" if net_chg > 0 else ("Narrowing Breadth" if net_chg < 0 else "Neutral")
+
+    ch_c1.markdown(
+        f'<div style="background:rgba(0,230,118,0.06); border:1px solid rgba(0,230,118,0.25); border-radius:8px; padding:10px 14px;">'
+        f'<span style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase;">🆕 Newly Added to Highs</span>'
+        f'<h3 style="margin:2px 0 0 0; font-size:1.4rem; color:#00e676;">+{len(added_list)}</h3>'
+        f'<span style="font-size:0.72rem; color:#6ee7b7;">Fresh Momentum Leaders</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    ch_c2.markdown(
+        f'<div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.25); border-radius:8px; padding:10px 14px;">'
+        f'<span style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase;">🔻 Dropped from Highs</span>'
+        f'<h3 style="margin:2px 0 0 0; font-size:1.4rem; color:#ef4444;">-{len(removed_list)}</h3>'
+        f'<span style="font-size:0.72rem; color:#fca5a5;">Lost Highs Status</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    ch_c3.markdown(
+        f'<div style="background:rgba(56,189,248,0.06); border:1px solid {net_badge_color}; border-radius:8px; padding:10px 14px;">'
+        f'<span style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase;">📊 Net Churn Velocity</span>'
+        f'<h3 style="margin:2px 0 0 0; font-size:1.4rem; color:{net_badge_color};">{net_sign}{net_chg}</h3>'
+        f'<span style="font-size:0.72rem; color:#94a3b8;">{net_desc}</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    ch_c4.markdown(
+        f'<div style="background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px 14px;">'
+        f'<span style="font-size:0.75rem; color:#94a3b8; text-transform:uppercase;">🎯 Total Active Highs</span>'
+        f'<h3 style="margin:2px 0 0 0; font-size:1.4rem; color:#38bdf8;">{tot_leaders}</h3>'
+        f'<span style="font-size:0.72rem; color:#94a3b8;">Across {len(clusters)} Groups</span>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+    if has_comp:
+        st.markdown(
+            f"<div style='margin-top:10px; font-size:0.78rem; color:#64748b;'>"
+            f"Comparing session <b>{curr_d}</b> vs prior session <b>{prev_d}</b>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+        col_add, col_rem = st.columns(2)
+        with col_add:
+            if added_list:
+                added_pills = []
+                for item in added_list:
+                    s = item["symbol"]
+                    ind = item.get("industry", "")
+                    added_pills.append(
+                        f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{s}" target="_blank" rel="noopener noreferrer" '
+                        f'style="display:inline-block; margin:2px 3px; padding:3px 8px; background:rgba(0,230,118,0.12); '
+                        f'color:#00e676; border:1px solid rgba(0,230,118,0.4); border-radius:4px; font-weight:700; '
+                        f'font-size:0.78rem; text-decoration:none;" title="Added in {ind}">'
+                        f'+ {s} <span style="font-weight:normal;font-size:0.68rem;color:#86efac;">({ind})</span> ↗</a>'
+                    )
+                st.markdown(
+                    f"<div style='background:rgba(0,230,118,0.03); border:1px solid rgba(0,230,118,0.15); border-radius:6px; padding:8px 10px; margin-top:6px;'>"
+                    f"<span style='font-size:0.8rem; font-weight:700; color:#00e676;'>🟢 Newly Added Stocks ({len(added_list)}):</span><br>"
+                    f"<div style='margin-top:4px;'>{' '.join(added_pills)}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.info("No newly added stocks compared to the previous session.")
+
+        with col_rem:
+            if removed_list:
+                rem_pills = []
+                for item in removed_list:
+                    s = item["symbol"]
+                    ind = item.get("industry", "")
+                    rem_pills.append(
+                        f'<span style="display:inline-block; margin:2px 3px; padding:3px 8px; background:rgba(239,68,68,0.08); '
+                        f'color:#f87171; border:1px solid rgba(239,68,68,0.3); border-radius:4px; font-weight:600; '
+                        f'font-size:0.78rem;" title="Dropped from {ind}">'
+                        f'- {s} <span style="font-weight:normal;font-size:0.68rem;color:#fca5a5;">({ind})</span></span>'
+                    )
+                st.markdown(
+                    f"<div style='background:rgba(239,68,68,0.03); border:1px solid rgba(239,68,68,0.15); border-radius:6px; padding:8px 10px; margin-top:6px;'>"
+                    f"<span style='font-size:0.8rem; font-weight:700; color:#ef4444;'>🔴 Dropped from Highs ({len(removed_list)}):</span><br>"
+                    f"<div style='margin-top:4px;'>{' '.join(rem_pills)}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.caption("No stocks dropped from the fresh highs list.")
+    else:
+        st.markdown(
+            f"<div style='margin-top:8px; padding:8px 12px; background:rgba(56,189,248,0.05); border:1px solid rgba(56,189,248,0.2); border-radius:6px; font-size:0.8rem; color:#94a3b8;'>"
+            f"ℹ️ <b>Baseline Established:</b> Currently tracking <b>{tot_leaders} active fresh-high stocks</b> across <b>{len(clusters)} industry groups</b>. "
+            f"Stocks added or dropped will be tracked here each day as market breadth evolves."
+            f"</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("---")
+
+    # 4. Where Fresh Highs Cluster (Leading Industry Groups)
     st.markdown("### 🎯 Where Fresh Highs Cluster (Institutional Leading Sectors)")
     st.markdown(
         "<p style='font-size:0.85rem; color:#94a3b8; margin-top:-6px;'>"
@@ -100,23 +228,100 @@ def render():
     )
 
     if clusters:
+        # Search & Filter Row
+        cf1, cf2, cf3, cf4 = st.columns([3, 2, 2.5, 2.5])
+        with cf1:
+            search_cluster = st.text_input(
+                "🔍 Search Industry or Stock:",
+                "",
+                placeholder="e.g. Banks, DMART, Auto, Hospital...",
+                key="breadth_cluster_search"
+            ).strip().upper()
+        with cf2:
+            min_highs_filter = st.selectbox(
+                "Min Fresh Highs:",
+                ["All Groups", "≥2 Highs", "≥4 Highs", "≥6 Highs"],
+                index=0,
+                key="breadth_cluster_min_highs"
+            )
+        with cf3:
+            hide_zero_stocks = st.checkbox(
+                "Hide groups with 0 fresh highs",
+                value=False,
+                key="breadth_cluster_hide_zero",
+                help="Hide industry groups where no stock is currently making fresh highs"
+            )
+        with cf4:
+            row_limit_sel = st.selectbox(
+                "Show Groups:",
+                [f"All Groups ({len(clusters)})", "Top 20", "Top 10"],
+                index=0,
+                key="breadth_cluster_row_limit"
+            )
+
+        # Apply Filters
+        filtered_clusters = []
+        for c in clusters:
+            ind_upper = str(c["industry"]).upper()
+            stocks_upper = [str(s).upper() for s in c.get("leading_stocks", [])]
+
+            # 1. Search query
+            if search_cluster:
+                match_ind = search_cluster in ind_upper
+                match_stock = any(search_cluster in s for s in stocks_upper)
+                if not (match_ind or match_stock):
+                    continue
+
+            # 2. Min highs filter
+            h1 = c.get("highs_1m", 0)
+            if "≥2" in min_highs_filter and h1 < 2:
+                continue
+            elif "≥4" in min_highs_filter and h1 < 4:
+                continue
+            elif "≥6" in min_highs_filter and h1 < 6:
+                continue
+
+            # 3. Hide zero stocks
+            if hide_zero_stocks and (len(c.get("leading_stocks", [])) == 0 or h1 == 0):
+                continue
+
+            filtered_clusters.append(c)
+
+        # 4. Limit row count
+        if "Top 10" in row_limit_sel:
+            display_clusters = filtered_clusters[:10]
+        elif "Top 20" in row_limit_sel:
+            display_clusters = filtered_clusters[:20]
+        else:
+            display_clusters = filtered_clusters
+
+        st.caption(f"Showing **{len(display_clusters)}** of **{len(clusters)}** industry groups.")
+
         table_rows = []
-        for rank, c in enumerate(clusters[:20], 1):
+        for rank, c in enumerate(display_clusters, 1):
             stock_links = []
             for sym in c.get("leading_stocks", []):
                 clean_sym = str(sym).strip().upper().replace(".NS", "")
                 if clean_sym:
+                    # New badge if newly added
+                    is_new = clean_sym in new_symbols_set
+                    new_tag = '<span style="display:inline-block;margin-left:3px;padding:1px 4px;background:#00e676;color:#052e16;border-radius:3px;font-size:0.65rem;font-weight:800;">NEW</span>' if is_new else ''
+                    link_bg = "rgba(0,230,118,0.15)" if is_new else "rgba(56,189,248,0.12)"
+                    link_border = "rgba(0,230,118,0.4)" if is_new else "rgba(56,189,248,0.3)"
+                    link_color = "#00e676" if is_new else "#38bdf8"
+
                     link_html = (
                         '<a href="https://in.tradingview.com/chart/?symbol=NSE:' + clean_sym + '" '
                         'target="_blank" rel="noopener noreferrer" '
                         'style="display:inline-block;margin:2px 3px;padding:3px 8px;'
-                        'background:rgba(56,189,248,0.12);color:#38bdf8;'
-                        'border:1px solid rgba(56,189,248,0.3);border-radius:4px;'
+                        'background:' + link_bg + ';color:' + link_color + ';'
+                        'border:1px solid ' + link_border + ';border-radius:4px;'
                         'font-weight:600;font-size:0.78rem;text-decoration:none;" '
-                        'title="Open ' + clean_sym + ' on TradingView">' + clean_sym + ' &#8599;</a>'
+                        'title="Open ' + clean_sym + ' on TradingView">' + clean_sym + ' &#8599;' + new_tag + '</a>'
                     )
                     stock_links.append(link_html)
-            stocks_cell = " ".join(stock_links) if stock_links else '<span style="color:#64748b;">—</span>'
+
+            stocks_cell = " ".join(stock_links) if stock_links else '<span style="color:#64748b;font-style:italic;">No stocks at fresh highs</span>'
 
             table_rows.append(
                 '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'
@@ -153,7 +358,7 @@ def render():
             '<tbody>' + tbody_html + '</tbody>'
             '</table></div></div>'
         )
-        components.html(cluster_table_html, height=min(100 + len(clusters[:20]) * 55, 1200), scrolling=True)
+        components.html(cluster_table_html, height=min(120 + len(display_clusters) * 52, 2200), scrolling=True)
     else:
         st.info("No industry cluster data currently available.")
 

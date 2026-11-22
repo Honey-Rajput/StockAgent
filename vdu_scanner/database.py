@@ -622,6 +622,15 @@ def init_db() -> bool:
         );
         """,
         """
+        CREATE TABLE IF NOT EXISTS scanned_breadth_clusters (
+            scan_date VARCHAR(20) PRIMARY KEY,
+            as_of VARCHAR(50),
+            clusters_json TEXT,
+            all_leaders_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """,
+        """
         CREATE TABLE IF NOT EXISTS scanned_wt_cross (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol VARCHAR(20) NOT NULL,
@@ -4564,6 +4573,74 @@ def get_pva_dip_candidates(min_streak_days: int = 3) -> list[dict]:
         return rows
     except Exception as e:
         print(f"Error in get_pva_dip_candidates: {e}")
+        return []
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def save_breadth_clusters(scan_date: str, as_of: str, clusters: list[dict], all_leaders: dict) -> bool:
+    """Saves a daily breadth cluster snapshot (clusters and active leading stocks)."""
+    conn = None
+    try:
+        import json
+        conn = get_connection()
+        cur = conn.cursor()
+        clusters_json = json.dumps(clusters)
+        leaders_json = json.dumps(all_leaders)
+        upsert_query = """
+        INSERT INTO scanned_breadth_clusters (scan_date, as_of, clusters_json, all_leaders_json)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (scan_date) DO UPDATE SET
+            as_of = EXCLUDED.as_of,
+            clusters_json = EXCLUDED.clusters_json,
+            all_leaders_json = EXCLUDED.all_leaders_json,
+            created_at = CURRENT_TIMESTAMP;
+        """
+        cur.execute(upsert_query, (scan_date, as_of, clusters_json, leaders_json))
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        print(f"Error saving breadth clusters: {e}")
+        return False
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def get_latest_breadth_clusters(limit: int = 2) -> list[dict]:
+    """Retrieves the most recent breadth cluster snapshots ordered by scan_date desc."""
+    conn = None
+    try:
+        import json
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT scan_date, as_of, clusters_json, all_leaders_json, created_at "
+            "FROM scanned_breadth_clusters ORDER BY scan_date DESC LIMIT ?;",
+            (limit,)
+        )
+        rows = cur.fetchall()
+        cur.close()
+        results = []
+        for r in rows:
+            results.append({
+                "scan_date": str(r[0]),
+                "as_of": str(r[1]),
+                "clusters": json.loads(r[2]) if r[2] else [],
+                "all_leaders": json.loads(r[3]) if r[3] else {},
+                "created_at": str(r[4]) if r[4] else "",
+            })
+        return results
+    except Exception as e:
+        print(f"Error reading breadth clusters: {e}")
         return []
     finally:
         if conn:
