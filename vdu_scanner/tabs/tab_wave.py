@@ -35,6 +35,17 @@ def render_wavetrend_chart(symbol: str, df: pd.DataFrame, oversold_thresh: float
         st.warning("Insufficient historical data to render chart.")
         return
 
+    # Flatten MultiIndex columns if present (from yfinance multi-column downloads)
+    if isinstance(chart_df.columns, pd.MultiIndex):
+        chart_df.columns = chart_df.columns.get_level_values(0)
+
+    # Make index tz-naive for consistent comparisons
+    try:
+        if hasattr(chart_df.index, 'tz') and chart_df.index.tz is not None:
+            chart_df.index = chart_df.index.tz_localize(None)
+    except Exception:
+        pass
+
     # 1. Moving Averages
     sma20 = chart_df['Close'].rolling(20).mean()
     sma50 = chart_df['Close'].rolling(50).mean()
@@ -518,6 +529,8 @@ The **WaveTrend oscillator** (popularized by LazyBear) is an institutional-grade
             interval = "1d" if "Daily" in wt_timeframe else ("1wk" if "Weekly" in wt_timeframe else "1d")
             hist_df = yf.download(sym_ns, period="8mo", interval=interval, progress=False, timeout=12)
             if not hist_df.empty:
+                if isinstance(hist_df.columns, pd.MultiIndex):
+                    hist_df.columns = hist_df.columns.get_level_values(0)
                 render_wavetrend_chart(sel_symbol, hist_df, float(wt_oversold_threshold))
             else:
                 st.warning("Could not download recent candle data for chart.")

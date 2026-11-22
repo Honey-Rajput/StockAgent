@@ -34,6 +34,17 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
         st.warning("Insufficient historical data to render chart.")
         return
 
+    # Flatten MultiIndex columns if present (from yfinance multi-column downloads)
+    if isinstance(chart_df.columns, pd.MultiIndex):
+        chart_df.columns = chart_df.columns.get_level_values(0)
+
+    # Make index tz-naive for consistent comparisons
+    try:
+        if hasattr(chart_df.index, 'tz') and chart_df.index.tz is not None:
+            chart_df.index = chart_df.index.tz_localize(None)
+    except Exception:
+        pass
+
     # Calculate 20 & 50 SMA for visual trend
     sma20 = chart_df['Close'].rolling(20).mean()
     sma50 = chart_df['Close'].rolling(50).mean()
@@ -82,10 +93,15 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
     sh_dates = []
     sh_prices = []
     for sh in swing_highs:
-        d = pd.to_datetime(sh.get('date'))
-        if d in chart_df.index or (len(chart_df.index) > 0 and d >= chart_df.index[0]):
-            sh_dates.append(d)
-            sh_prices.append(sh.get('price'))
+        try:
+            d = pd.to_datetime(sh.get('date'))
+            if hasattr(d, 'tz') and d.tz is not None:
+                d = d.tz_localize(None)
+            if d in chart_df.index or (len(chart_df.index) > 0 and d >= chart_df.index[0]):
+                sh_dates.append(d)
+                sh_prices.append(float(sh.get('price', 0.0)))
+        except Exception:
+            pass
 
     if sh_dates:
         fig.add_trace(
@@ -105,10 +121,15 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
     sl_dates = []
     sl_prices = []
     for sl in swing_lows:
-        d = pd.to_datetime(sl.get('date'))
-        if d in chart_df.index or (len(chart_df.index) > 0 and d >= chart_df.index[0]):
-            sl_dates.append(d)
-            sl_prices.append(sl.get('price'))
+        try:
+            d = pd.to_datetime(sl.get('date'))
+            if hasattr(d, 'tz') and d.tz is not None:
+                d = d.tz_localize(None)
+            if d in chart_df.index or (len(chart_df.index) > 0 and d >= chart_df.index[0]):
+                sl_dates.append(d)
+                sl_prices.append(float(sl.get('price', 0.0)))
+        except Exception:
+            pass
 
     if sl_dates:
         fig.add_trace(
@@ -141,7 +162,7 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
         )
 
     # 7. Volume Bars
-    vol_colors = ['#00e676' if chart_df['Close'].iloc[i] >= chart_df['Open'].iloc[i] else '#ef4444' for i in range(len(chart_df))]
+    vol_colors = ['#00e676' if float(chart_df['Close'].iloc[i]) >= float(chart_df['Open'].iloc[i]) else '#ef4444' for i in range(len(chart_df))]
     fig.add_trace(
         go.Bar(
             x=chart_df.index, y=chart_df['Volume'],
@@ -598,6 +619,8 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
             interval = "1d" if "Daily" in timeframe_sel else "1wk"
             hist_df = yf.download(sym_ns, period="8mo", interval=interval, progress=False, timeout=12)
             if not hist_df.empty:
+                if isinstance(hist_df.columns, pd.MultiIndex):
+                    hist_df.columns = hist_df.columns.get_level_values(0)
                 sh_list = json.loads(stock_row.get('swing_highs_json', '[]'))
                 sl_list = json.loads(stock_row.get('swing_lows_json', '[]'))
                 render_swing_chart(
