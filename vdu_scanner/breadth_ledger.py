@@ -206,6 +206,41 @@ def track_cluster_changes() -> dict:
         # Persist today's snapshot
         database.save_breadth_clusters(curr_date, as_of, clusters, curr_leaders)
 
+        # Prepare near and rs maps for reasoning generation
+        near_map = {x[0]: x for x in data.get("near", []) if isinstance(x, list) and x}
+        rs_map = {x[0]: x[1] for x in data.get("rs", {}).get("rows", []) if isinstance(x, list) and len(x) > 1}
+
+        def generate_added_reason(sym: str, ind: str, rank: int | None = None) -> str:
+            n = near_map.get(sym)
+            rs = rs_map.get(sym)
+            parts = []
+            if n and len(n) > 2:
+                ht = n[2]
+                dist = n[1]
+                t_str = "52W High" if ht == 0 else ("1M High" if ht == 1 else ("3M High" if ht == 2 else "6M High"))
+                if isinstance(dist, (int, float)) and abs(dist) <= 1.5:
+                    parts.append(f"Fresh {t_str} Breakout ({dist:+.1f}% from peak)")
+                else:
+                    parts.append(f"New {t_str} Entry")
+            else:
+                parts.append("Fresh Cycle High Breakout")
+
+            if rank and ind:
+                parts.append(f"accumulating into #{rank} {ind} cluster")
+            elif ind:
+                parts.append(f"in {ind}")
+
+            if rs:
+                parts.append(f"RS: {rs}th percentile")
+
+            return "; ".join(parts) + "."
+
+        def generate_removed_reason(sym: str, ind: str) -> str:
+            n = near_map.get(sym)
+            if n and len(n) > 1 and isinstance(n[1], (int, float)) and n[1] < -2.0:
+                return f"Pulled back {abs(n[1]):.1f}% below cycle peak; failed to sustain fresh-high breakout pace in {ind}."
+            return f"Momentum cooled below fresh-high threshold; leadership rotated to stronger momentum peers in {ind}."
+
         if prev_snapshot and prev_snapshot.get("all_leaders"):
             prev_leaders = prev_snapshot["all_leaders"]
             prev_date = prev_snapshot.get("scan_date", "")
@@ -221,6 +256,7 @@ def track_cluster_changes() -> dict:
                     "symbol": s,
                     "industry": curr_leaders[s]["industry"],
                     "cluster_rank": curr_leaders[s]["cluster_rank"],
+                    "reason": generate_added_reason(s, curr_leaders[s]["industry"], curr_leaders[s]["cluster_rank"]),
                 }
                 for s in added_syms
             ]
@@ -228,6 +264,10 @@ def track_cluster_changes() -> dict:
                 {
                     "symbol": s,
                     "industry": prev_leaders[s].get("industry", "Unknown") if isinstance(prev_leaders[s], dict) else str(prev_leaders[s]),
+                    "reason": generate_removed_reason(
+                        s,
+                        prev_leaders[s].get("industry", "Unknown") if isinstance(prev_leaders[s], dict) else str(prev_leaders[s])
+                    ),
                 }
                 for s in removed_syms
             ]
@@ -240,6 +280,7 @@ def track_cluster_changes() -> dict:
                 "prev_date": prev_date,
                 "curr_date": curr_date,
                 "new_symbols_set": set(added_syms),
+                "new_reasons_map": {x["symbol"]: x["reason"] for x in added},
                 "total_leaders": len(curr_leaders),
             }
         else:
@@ -251,6 +292,7 @@ def track_cluster_changes() -> dict:
                 "prev_date": None,
                 "curr_date": curr_date,
                 "new_symbols_set": set(),
+                "new_reasons_map": {},
                 "total_leaders": len(curr_leaders),
             }
     except Exception as e:

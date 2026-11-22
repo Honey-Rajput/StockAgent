@@ -98,6 +98,7 @@ def render():
     # 3. Fresh Highs Churn Tracker (Added / Deleted Stocks Tracking)
     churn = track_cluster_changes()
     new_symbols_set = churn.get("new_symbols_set", set())
+    new_reasons_map = churn.get("new_reasons_map", {})
     added_list = churn.get("added", [])
     removed_list = churn.get("removed", [])
     has_comp = churn.get("has_comparison", False)
@@ -164,21 +165,27 @@ def render():
         col_add, col_rem = st.columns(2)
         with col_add:
             if added_list:
-                added_pills = []
+                added_cards = []
                 for item in added_list:
                     s = item["symbol"]
                     ind = item.get("industry", "")
-                    added_pills.append(
+                    reason = item.get("reason", "Fresh cycle high breakout.")
+                    added_cards.append(
+                        f'<div style="background:rgba(0,230,118,0.05); border:1px solid rgba(0,230,118,0.25); border-radius:6px; padding:8px 12px; margin-bottom:8px;">'
+                        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
                         f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{s}" target="_blank" rel="noopener noreferrer" '
-                        f'style="display:inline-block; margin:2px 3px; padding:3px 8px; background:rgba(0,230,118,0.12); '
-                        f'color:#00e676; border:1px solid rgba(0,230,118,0.4); border-radius:4px; font-weight:700; '
-                        f'font-size:0.78rem; text-decoration:none;" title="Added in {ind}">'
-                        f'+ {s} <span style="font-weight:normal;font-size:0.68rem;color:#86efac;">({ind})</span> ↗</a>'
+                        f'style="font-weight:700; font-size:0.88rem; color:#00e676; text-decoration:none;" title="Open {s} on TradingView">+ {s} ↗</a>'
+                        f'<span style="font-size:0.72rem; color:#86efac; background:rgba(0,230,118,0.12); padding:2px 8px; border-radius:4px; font-weight:600;">{ind}</span>'
+                        f'</div>'
+                        f'<div style="font-size:0.78rem; color:#cbd5e1; line-height:1.35;">'
+                        f'💡 <b style="color:#6ee7b7;">Why Added:</b> {reason}'
+                        f'</div>'
+                        f'</div>'
                     )
                 st.markdown(
-                    f"<div style='background:rgba(0,230,118,0.03); border:1px solid rgba(0,230,118,0.15); border-radius:6px; padding:8px 10px; margin-top:6px;'>"
-                    f"<span style='font-size:0.8rem; font-weight:700; color:#00e676;'>🟢 Newly Added Stocks ({len(added_list)}):</span><br>"
-                    f"<div style='margin-top:4px;'>{' '.join(added_pills)}</div>"
+                    f"<div style='margin-top:6px;'>"
+                    f"<span style='font-size:0.82rem; font-weight:700; color:#00e676;'>🟢 Newly Added Stocks ({len(added_list)}):</span>"
+                    f"<div style='margin-top:6px;'>{''.join(added_cards)}</div>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -187,20 +194,26 @@ def render():
 
         with col_rem:
             if removed_list:
-                rem_pills = []
+                removed_cards = []
                 for item in removed_list:
                     s = item["symbol"]
                     ind = item.get("industry", "")
-                    rem_pills.append(
-                        f'<span style="display:inline-block; margin:2px 3px; padding:3px 8px; background:rgba(239,68,68,0.08); '
-                        f'color:#f87171; border:1px solid rgba(239,68,68,0.3); border-radius:4px; font-weight:600; '
-                        f'font-size:0.78rem;" title="Dropped from {ind}">'
-                        f'- {s} <span style="font-weight:normal;font-size:0.68rem;color:#fca5a5;">({ind})</span></span>'
+                    reason = item.get("reason", "Momentum cooled below fresh-high threshold.")
+                    removed_cards.append(
+                        f'<div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.25); border-radius:6px; padding:8px 12px; margin-bottom:8px;">'
+                        f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
+                        f'<span style="font-weight:700; font-size:0.88rem; color:#f87171;">- {s}</span>'
+                        f'<span style="font-size:0.72rem; color:#fca5a5; background:rgba(239,68,68,0.12); padding:2px 8px; border-radius:4px; font-weight:600;">{ind}</span>'
+                        f'</div>'
+                        f'<div style="font-size:0.78rem; color:#cbd5e1; line-height:1.35;">'
+                        f'⚠️ <b style="color:#fca5a5;">Why Dropped:</b> {reason}'
+                        f'</div>'
+                        f'</div>'
                     )
                 st.markdown(
-                    f"<div style='background:rgba(239,68,68,0.03); border:1px solid rgba(239,68,68,0.15); border-radius:6px; padding:8px 10px; margin-top:6px;'>"
-                    f"<span style='font-size:0.8rem; font-weight:700; color:#ef4444;'>🔴 Dropped from Highs ({len(removed_list)}):</span><br>"
-                    f"<div style='margin-top:4px;'>{' '.join(rem_pills)}</div>"
+                    f"<div style='margin-top:6px;'>"
+                    f"<span style='font-size:0.82rem; font-weight:700; color:#ef4444;'>🔴 Dropped from Highs ({len(removed_list)}):</span>"
+                    f"<div style='margin-top:6px;'>{''.join(removed_cards)}</div>"
                     f"</div>",
                     unsafe_allow_html=True
                 )
@@ -305,7 +318,8 @@ def render():
                 if clean_sym:
                     # New badge if newly added
                     is_new = clean_sym in new_symbols_set
-                    new_tag = '<span style="display:inline-block;margin-left:3px;padding:1px 4px;background:#00e676;color:#052e16;border-radius:3px;font-size:0.65rem;font-weight:800;">NEW</span>' if is_new else ''
+                    reason_tip = f"Why Added: {new_reasons_map.get(clean_sym, 'Fresh High breakout')}" if is_new else f"Open {clean_sym} on TradingView"
+                    new_tag = f'<span style="display:inline-block;margin-left:3px;padding:1px 4px;background:#00e676;color:#052e16;border-radius:3px;font-size:0.65rem;font-weight:800;" title="{reason_tip}">NEW</span>' if is_new else ''
                     link_bg = "rgba(0,230,118,0.15)" if is_new else "rgba(56,189,248,0.12)"
                     link_border = "rgba(0,230,118,0.4)" if is_new else "rgba(56,189,248,0.3)"
                     link_color = "#00e676" if is_new else "#38bdf8"
@@ -317,7 +331,7 @@ def render():
                         'background:' + link_bg + ';color:' + link_color + ';'
                         'border:1px solid ' + link_border + ';border-radius:4px;'
                         'font-weight:600;font-size:0.78rem;text-decoration:none;" '
-                        'title="Open ' + clean_sym + ' on TradingView">' + clean_sym + ' &#8599;' + new_tag + '</a>'
+                        'title="' + reason_tip + '">' + clean_sym + ' &#8599;' + new_tag + '</a>'
                     )
                     stock_links.append(link_html)
 
