@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from config import IST_TIMEZONE
 import database
 from scanner import scan_hh_hl_uptrend
+from trading_rules import render_10_rules_execution_card
 
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
@@ -628,6 +629,8 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
                     stock_row.get('last_swing_high', 0.0),
                     stock_row.get('last_swing_low', 0.0)
                 )
+                # Render 10 Rules & Strategy A Execution Blueprint
+                render_10_rules_execution_card(stock_row, df=hist_df)
             else:
                 st.warning("Could not download recent candle data for chart.")
         except Exception as _ce:

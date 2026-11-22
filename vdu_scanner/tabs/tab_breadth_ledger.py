@@ -720,13 +720,13 @@ def render():
 
     regime_m50 = summary["stocks_above_50dma"]
     if regime_m50 >= 60.0:
-        regime_note = "🟢 <b>AGGRESSIVE:</b> Broad market supports full-sized positions. All picks below are actionable."
+        regime_note = "🟢 <b>AGGRESSIVE (Rule #4 - Follow The Trend):</b> Broad market supports full-sized positions. All picks below are actionable."
         regime_note_color = "#00e676"
     elif regime_m50 >= 40.0:
-        regime_note = "🟡 <b>SELECTIVE:</b> Trade only <b>Top Leading Cluster</b> stocks (shown with cluster badge). Keep positions smaller."
+        regime_note = "🟡 <b>SELECTIVE (Rule #1 - Start Small):</b> Trade only <b>Top Leading Cluster</b> stocks. Begin with pilot positions (33-50%) and pyramid on confirmation."
         regime_note_color = "#fbbf24"
     else:
-        regime_note = "🔴 <b>DEFENSIVE:</b> Avoid new longs. The picks below are watchlist candidates only — wait for breadth improvement."
+        regime_note = "🔴 <b>DEFENSIVE (Rule #9 - Don't Force Trades):</b> Avoid new longs. Missing an opportunity is better than taking a poor trade. Picks below are watchlist candidates only."
         regime_note_color = "#ef4444"
 
     st.markdown(

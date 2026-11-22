@@ -1,25 +1,17 @@
-import threading
-import concurrent.futures
-import re
-import json
-import time
-
+from datetime import datetime, timedelta
 import streamlit as st
 import pandas as pd
-
-from datetime import datetime, timedelta
-import os
-import yfinance as yf
-import requests as _requests_session_lib
-_YF_SESSION = _requests_session_lib.Session()
-_YF_SESSION.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 
-from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
-from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector, get_market_condition, fetch_nifty50_returns, calculate_rs_rating
-from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
-from indicators import precompute_indicators
+from config import IST_TIMEZONE, get_company_name
+from data_fetcher import fetch_ohlcv
+from utils import get_day_change_badge_html
+from ui_components import render_trading_setup_card
+from scanner import compute_rich_analysis
+import database
+from trading_rules import render_10_rules_execution_card
+
 
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
@@ -31,7 +23,6 @@ def get_market_date(for_display=False):
         target_date = today.strftime('%Y-%m-%d')
         
     if for_display:
-        import database
         if not database.has_scanned_today(target_date):
             avail = database.get_available_scan_dates()
             if avail:
@@ -40,24 +31,8 @@ def get_market_date(for_display=False):
     return target_date
 
 
-import watchlist
-import tabs.tab_watchlist
-from utils import inject_premium_css, get_signal_badge_html, get_day_change_badge_html
-
-from ui_components import (
-    extract_clean_recommendation,
-    matches_sma_timeframe_filter,
-    render_quick_trade_board,
-    render_trading_setup_card,
-    render_unified_strategy_table,
-)
-import database
-import ai_detector
-
-
 def render():
     scan_data = st.session_state.get('scan_results', [])
-    is_admin = st.session_state.get('is_admin', False)
     # Mode selector for analysis target
     search_mode = st.radio(
         "Choose Analysis Target Mode:",
@@ -387,5 +362,8 @@ def render():
                     # Render the gorgeous Technical Indicators dashboard and checklists!
                     st.markdown("<br>", unsafe_allow_html=True)
                     render_trading_setup_card(detail_data, "detail_tab_setup", 0)
+
+                    # Render 10 Rules & Strategy A Execution Blueprint
+                    render_10_rules_execution_card(detail_data, df=df)
             except Exception as chart_err:
                 st.error(f"❌ Error rendering charts for {selected_sym}: {chart_err}")

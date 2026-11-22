@@ -9,6 +9,7 @@ import streamlit as st
 import watchlist
 from data_fetcher import get_stock_sector
 from utils import get_day_change_badge_html, get_signal_badge_html
+from trading_rules import evaluate_entry_rules
 
 
 def matches_sma_timeframe_filter(record: dict, timeframe: str) -> bool:
@@ -351,7 +352,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         "Actionable Guidance & Reasoning": lambda x: (extract_clean_recommendation(x.get('recommendation') or "")).upper(),
         "Run Up 200 SMA": lambda x: float(x.get('run_up_200') or 0.0),
         "Run Up 52w Low": lambda x: float(x.get('run_up_52w') or 0.0),
-        "Remaining Target %": lambda x: float((((x.get('target_price') or 0.0) - (x.get('cmp') or 1.0)) / (x.get('cmp') or 1.0) * 100) if (x.get('cmp') or 0.0) > 0 else 0.0)
+        "Remaining Target %": lambda x: float((((x.get('target_price') or 0.0) - (x.get('cmp') or 1.0)) / (x.get('cmp') or 1.0) * 100) if (x.get('cmp') or 0.0) > 0 else 0.0),
+        "Entry Timing": lambda x: (evaluate_entry_rules(x).get('status_label') or "").upper(),
     }
     
     # 2. Determine active sort column and direction from session state
@@ -380,10 +382,38 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
     if active_col not in sort_mapper:
         active_col = default_col
         active_dir = "desc" if active_col != "Symbol" else "asc"
-        
+
+    # Optional Quick Filter for Entry Timing / 10 Rules
+    f_col1, f_col2 = st.columns([3, 7])
+    with f_col1:
+        entry_filter_val = st.selectbox(
+            "🎯 Filter by Entry Timing (10 Rules):",
+            [
+                f"All Setups ({len(results_list)})",
+                "🟢 2–3 Candle Pause (Prime Entry)",
+                "✅ Actionable / Low-Risk Buy",
+                "🚫 Exclude Extended (>6% Chasing)",
+            ],
+            index=0,
+            key=f"{key_prefix}_rule_filter_sel",
+        )
+
+    if "2–3 Candle Pause" in entry_filter_val:
+        display_results = [r for r in results_list if evaluate_entry_rules(r).get("status_code") == "2_3_pause"]
+    elif "Actionable" in entry_filter_val:
+        display_results = [r for r in results_list if evaluate_entry_rules(r).get("status_code") in ("2_3_pause", "actionable", "day1_breakout")]
+    elif "Exclude Extended" in entry_filter_val:
+        display_results = [r for r in results_list if not evaluate_entry_rules(r).get("is_extended")]
+    else:
+        display_results = results_list
+
+    if not display_results:
+        st.info(f"ℹ️ No stocks currently match the filter: {entry_filter_val}")
+        return
+
     # 3. Sort the list
     reverse_sort = (active_dir == "desc")
-    sorted_list = sorted(results_list, key=sort_mapper[active_col], reverse=reverse_sort)
+    sorted_list = sorted(display_results, key=sort_mapper[active_col], reverse=reverse_sort)
     
     rows_html = []
     for idx, r in enumerate(sorted_list):
@@ -597,6 +627,26 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             cells.append(f'<td style="padding: 10px 12px;">{get_signal_badge_html(r.get("score", 0.0))}</td>')
             
         # Common Execution Columns
+        # Entry Timing & 10 Rules
+        rule_eval = evaluate_entry_rules(r)
+        entry_badge = rule_eval.get("badge_html", "")
+        pilot_text = rule_eval.get("pilot_size_pct", "33-50%")
+        pyr_trig = rule_eval.get("pyramid_trigger", 0.0)
+        trail_sl = rule_eval.get("trailing_sl", 0.0)
+
+        entry_tooltip = (
+            f"Rule #1: Pilot {pilot_text} | "
+            f"Rule #7 (Pyramid): Add at ₹{pyr_trig:,.2f} | "
+            f"Rule #5 (Trail SL): ₹{trail_sl:,.2f} | "
+            f"{rule_eval.get('status_desc', '')}"
+        )
+        cells.append(
+            f'<td style="padding: 10px 12px;" title="{entry_tooltip}">'
+            f'{entry_badge}'
+            f'<div style="font-size:0.7rem; color:#94a3b8; margin-top:2px;">Pilot: {pilot_text}</div>'
+            f'</td>'
+        )
+
         cells.append(f'<td style="padding: 10px 12px; color: #cbd5e1; font-weight: 600;">₹{buy:,.2f}</td>')
         cells.append(f'<td style="padding: 10px 12px; color: #ef4444; font-weight: 600;">₹{sl:,.2f}</td>')
         cells.append(f'<td style="padding: 10px 12px; color: #00e676; font-weight: 600;">₹{target:,.2f}</td>')
@@ -632,7 +682,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         headers.extend(["Base Bottom", "Historical High", "Extension %", "7M SMA", "RSI", "CCI", "Score"])
         
     # Append common execution columns
-    headers.extend(["Buy Range", "Stop Loss", "Swing Target", "Confidence", "Actionable Guidance & Reasoning"])
+    headers.extend(["Entry Timing", "Buy Range", "Stop Loss", "Swing Target", "Confidence", "Actionable Guidance & Reasoning"])
     
     # Render table headers dynamically with active direction arrow indicators
     header_cols = []
@@ -671,6 +721,9 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         f'</div>',
         unsafe_allow_html=True
     )
+
+
+
 
 
 def ensure_minervini_fields(m_list):
@@ -786,49 +839,5 @@ def render_quick_trade_board(results_list: list, key_prefix: str):
     )
 
 
-def ensure_minervini_fields(m_list):
-    """Normalize and guarantee Minervini Stage-2 fields exist on each record."""
-    if not m_list:
-        return m_list
-    for r in m_list:
-        if r.get('run_up_200') is not None:
-            try:
-                r['run_up_200'] = float(r['run_up_200'])
-            except (ValueError, TypeError):
-                r['run_up_200'] = 10.0
-        else:
-            rec = r.get('recommendation', '')
-            plain_text = rec
-            if isinstance(rec, str) and rec.strip().startswith("{") and rec.strip().endswith("}"):
-                try:
-                    plain_text = json.loads(rec).get("text", rec)
-                except Exception:
-                    pass
-            m = re.search(r'holding\s+(\d+\.?\d*)%\s+above\s+its\s+200\s+SMA', str(plain_text), re.IGNORECASE)
-            r['run_up_200'] = float(m.group(1)) if m else 10.0
 
-        if r.get('run_up_52w') is not None:
-            try:
-                r['run_up_52w'] = float(r['run_up_52w'])
-            except (ValueError, TypeError):
-                r['run_up_52w'] = 30.0
-        else:
-            rec = r.get('recommendation', '')
-            plain_text = rec
-            if isinstance(rec, str) and rec.strip().startswith("{") and rec.strip().endswith("}"):
-                try:
-                    plain_text = json.loads(rec).get("text", rec)
-                except Exception:
-                    pass
-            m = re.search(r'run\s+up\s+(\d+\.?\d*)%\s+from\s+its\s+52w', str(plain_text), re.IGNORECASE)
-            r['run_up_52w'] = float(m.group(1)) if m else 30.0
-
-        if r.get('is_early') is not None:
-            r['is_early'] = bool(r['is_early'])
-        else:
-            conf = str(r.get('confidence', ''))
-            rec = str(r.get('recommendation', ''))
-            r['is_early'] = 'early' in conf.lower() or 'early' in rec.lower()
-
-    return m_list
 
