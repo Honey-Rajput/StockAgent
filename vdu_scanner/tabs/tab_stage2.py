@@ -1,25 +1,16 @@
-import threading
-import concurrent.futures
-import re
-import json
-import time
-
 import streamlit as st
 import pandas as pd
+import yfinance as yf
 
 from datetime import datetime, timedelta
-import os
-import yfinance as yf
-import requests as _requests_session_lib
-_YF_SESSION = _requests_session_lib.Session()
-_YF_SESSION.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 
-from config import IST_TIMEZONE, get_company_name, DRY_ZONE_MIN_DAYS, DRY_ZONE_MAX_DAYS, MIN_VOLUME_RATIO, MIN_PRICE_CHANGE
-from data_fetcher import fetch_ohlcv, get_index_stocks, fetch_ohlcv_timeframe, get_stock_sector, get_market_condition, fetch_nifty50_returns, calculate_rs_rating
-from scanner import scan_stock, scan_wt_cross, compute_rich_analysis, scan_monthly_momentum, scan_weekly_momentum, scan_vcs, scan_monthly_early_stage2, scan_vpa_trend, scan_structural_vcp
-from indicators import precompute_indicators
+from config import IST_TIMEZONE
+from data_fetcher import get_index_stocks
+from scanner import scan_monthly_early_stage2
+
+from ui_components import extract_clean_recommendation, render_unified_strategy_table
+import database
+
 
 def get_market_date(for_display=False):
     today = datetime.now(IST_TIMEZONE)
@@ -29,35 +20,17 @@ def get_market_date(for_display=False):
         target_date = (today - timedelta(days=1)).strftime('%Y-%m-%d')
     else:
         target_date = today.strftime('%Y-%m-%d')
-        
+
     if for_display:
-        import database
         if not database.has_scanned_today(target_date):
             avail = database.get_available_scan_dates()
             if avail:
                 return avail[0]
-                
+
     return target_date
 
 
-import watchlist
-import tabs.tab_watchlist
-from utils import inject_premium_css, get_signal_badge_html, get_day_change_badge_html
-
-from ui_components import (
-    extract_clean_recommendation,
-    matches_sma_timeframe_filter,
-    render_quick_trade_board,
-    render_trading_setup_card,
-    render_unified_strategy_table,
-)
-import database
-import ai_detector
-
-
 def render():
-    scan_data = st.session_state.get('scan_results', [])
-    is_admin = st.session_state.get('is_admin', False)
     st.markdown("### 🚀 Early Stage 2 Base Breakout Scanner")
     st.markdown("Identifies stocks moving out of a long-term Stage 1 base on the monthly timeframe.")
     
@@ -137,7 +110,7 @@ def render():
                                     res = scan_monthly_early_stage2(sym, t_df, max_run_up_pct=s2_max_runup)
                                     if res:
                                         chunk_res.append(res)
-                            except Exception as parse_ex:
+                            except Exception:
                                 pass
                 except Exception as down_ex:
                     print(f"Failed to download chunk {c_idx + 1}: {down_ex}")
@@ -171,10 +144,9 @@ def render():
     
     if st.session_state.stage2_results is None:
         # Background scan progress indicator
-        if st.session_state.ALL_TAB_SCAN_STATUS["is_running"]:
-            _bg_scanner = st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"]
-            _bg_status = st.session_state.ALL_TAB_SCAN_STATUS["status_text"]
-            _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS["progress"]
+        if st.session_state.ALL_TAB_SCAN_STATUS.get("is_running", False):
+            _bg_status = st.session_state.ALL_TAB_SCAN_STATUS.get("status_text", "")
+            _bg_progress = st.session_state.ALL_TAB_SCAN_STATUS.get("progress", 0.0)
             st.markdown(f"""
             <div class="glass-card" style="padding:22px; border:1px solid rgba(0,229,255,0.25); background:rgba(9,13,22,0.6); border-radius:12px; margin-bottom:20px; box-shadow:0 8px 32px 0 rgba(0,0,0,0.37);">
                 <h4 style="color:#00e5ff; margin:0 0 10px 0; display:flex; align-items:center; gap:8px;">
