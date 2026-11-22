@@ -312,67 +312,396 @@ def render():
 
         table_rows = []
         for rank, c in enumerate(display_clusters, 1):
-            stock_links = []
-            for sym in c.get("leading_stocks", []):
-                clean_sym = str(sym).strip().upper().replace(".NS", "")
-                if clean_sym:
-                    # New badge if newly added
-                    is_new = clean_sym in new_symbols_set
-                    reason_tip = f"Why Added: {new_reasons_map.get(clean_sym, 'Fresh High breakout')}" if is_new else f"Open {clean_sym} on TradingView"
-                    new_tag = f'<span style="display:inline-block;margin-left:3px;padding:1px 4px;background:#00e676;color:#052e16;border-radius:3px;font-size:0.65rem;font-weight:800;" title="{reason_tip}">NEW</span>' if is_new else ''
-                    link_bg = "rgba(0,230,118,0.15)" if is_new else "rgba(56,189,248,0.12)"
-                    link_border = "rgba(0,230,118,0.4)" if is_new else "rgba(56,189,248,0.3)"
-                    link_color = "#00e676" if is_new else "#38bdf8"
+            row_id = f"row-{rank}"
+            drawer_id = f"drawer-row-{rank}"
+            chevron_id = f"chevron-row-{rank}"
+            industry = str(c.get("industry", "Unknown"))
+            tot = c.get("total_stocks", 0)
+            h1 = c.get("highs_1m", 0)
+            h3 = c.get("highs_3m", 0)
+            h6 = c.get("highs_6m", 0)
+            score = c.get("score", 0)
 
-                    link_html = (
-                        '<a href="https://in.tradingview.com/chart/?symbol=NSE:' + clean_sym + '" '
-                        'target="_blank" rel="noopener noreferrer" '
-                        'style="display:inline-block;margin:2px 3px;padding:3px 8px;'
-                        'background:' + link_bg + ';color:' + link_color + ';'
-                        'border:1px solid ' + link_border + ';border-radius:4px;'
-                        'font-weight:600;font-size:0.78rem;text-decoration:none;" '
-                        'title="' + reason_tip + '">' + clean_sym + ' &#8599;' + new_tag + '</a>'
-                    )
-                    stock_links.append(link_html)
+            pct_1m = round((h1 / tot * 100), 1) if tot > 0 else 0
+            pct_3m = round((h3 / tot * 100), 1) if tot > 0 else 0
+            pct_6m = round((h6 / tot * 100), 1) if tot > 0 else 0
 
-            stocks_cell = " ".join(stock_links) if stock_links else '<span style="color:#64748b;font-style:italic;">No stocks at fresh highs</span>'
+            cluster_stocks = c.get("cluster_stocks", [])
+            stocks_no_high = c.get("stocks_no_high", [])
+            leading_stocks = c.get("leading_stocks", [])
 
+            # Fallback if cluster_stocks empty
+            if not cluster_stocks:
+                cluster_stocks = [
+                    {
+                        "symbol": str(s).strip().upper().replace(".NS", ""),
+                        "flag": 1,
+                        "tier_code": "1m",
+                        "tier_name": "1M High",
+                        "in_1m": True,
+                        "in_3m": False,
+                        "in_6m": False,
+                    }
+                    for s in leading_stocks
+                ]
+
+            # Build stock chips for the main cell
+            stock_chips = []
+            for item in cluster_stocks:
+                sym = item["symbol"]
+                flag = item["flag"]
+                is_no_high = flag == 0
+                is_new = sym in new_symbols_set
+                reason_tip = f"Why Added: {new_reasons_map.get(sym, 'Fresh High breakout')}" if is_new else f"{sym} ({item['tier_name']}) - Click to open chart"
+
+                new_tag = f'<span style="display:inline-block;margin-left:3px;padding:1px 3px;background:#00e676;color:#052e16;border-radius:2px;font-size:0.62rem;font-weight:800;" title="{reason_tip}">NEW</span>' if is_new else ''
+
+                tier_badge = ""
+                if flag >= 3:
+                    tier_badge = '<span style="font-size:0.62rem;background:#00e676;color:#042f2e;padding:0 3px;border-radius:2px;margin-left:3px;font-weight:800;">6M</span>'
+                elif flag == 2:
+                    tier_badge = '<span style="font-size:0.62rem;background:#22d3ee;color:#083344;padding:0 3px;border-radius:2px;margin-left:3px;font-weight:800;">3M</span>'
+                elif flag == 1:
+                    tier_badge = '<span style="font-size:0.62rem;background:#38bdf8;color:#082f49;padding:0 3px;border-radius:2px;margin-left:3px;font-weight:800;">1M</span>'
+
+                display_style = "display:none;" if is_no_high else "display:inline-block;"
+                tier_class = f"tier-{item['tier_code']}"
+
+                chip_html = (
+                    f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" rel="noopener noreferrer" '
+                    f'class="stock-chip {tier_class}" '
+                    f'data-symbol="{sym}" '
+                    f'data-tier="{item["tier_code"]}" '
+                    f'data-in1m="{str(item["in_1m"]).lower()}" '
+                    f'data-in3m="{str(item["in_3m"]).lower()}" '
+                    f'data-in6m="{str(item["in_6m"]).lower()}" '
+                    f'data-no-high="{str(is_no_high).lower()}" '
+                    f'style="{display_style}" '
+                    f'title="{reason_tip}">{sym} &#8599;{tier_badge}{new_tag}</a>'
+                )
+                stock_chips.append(chip_html)
+
+            # Build drawer chips matching Image 1
+            drawer_chips = []
+            for item in cluster_stocks:
+                sym = item["symbol"]
+                flag = item["flag"]
+                is_no_high = flag == 0
+
+                if flag >= 3:
+                    d_bg = "#00e676"
+                    d_color = "#042f2e"
+                    d_border = "#00e676"
+                elif flag == 2:
+                    d_bg = "#22d3ee"
+                    d_color = "#083344"
+                    d_border = "#22d3ee"
+                elif flag == 1:
+                    d_bg = "rgba(56,189,248,0.2)"
+                    d_color = "#38bdf8"
+                    d_border = "#38bdf8"
+                else:
+                    d_bg = "#1e293b"
+                    d_color = "#64748b"
+                    d_border = "#334155"
+
+                d_chip = (
+                    f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" rel="noopener noreferrer" '
+                    f'class="drawer-stock-chip" '
+                    f'data-in1m="{str(item["in_1m"]).lower()}" '
+                    f'data-in3m="{str(item["in_3m"]).lower()}" '
+                    f'data-in6m="{str(item["in_6m"]).lower()}" '
+                    f'data-no-high="{str(is_no_high).lower()}" '
+                    f'style="display:inline-block; margin:2px 3px; padding:3px 9px; background:{d_bg}; color:{d_color}; '
+                    f'border:1px solid {d_border}; border-radius:4px; font-weight:700; font-size:0.78rem; text-decoration:none;" '
+                    f'title="{sym} ({item["tier_name"]}) - Open Chart">{sym}</a>'
+                )
+                drawer_chips.append(d_chip)
+
+            # Main Row HTML
             table_rows.append(
-                '<tr style="border-bottom:1px solid rgba(255,255,255,0.05);">'
-                '<td style="padding:10px 12px;text-align:center;color:#64748b;font-weight:600;">' + str(rank) + '</td>'
-                '<td style="padding:10px 12px;font-weight:600;color:#f1f5f9;">' + str(c["industry"]) + '</td>'
-                '<td style="padding:10px 12px;text-align:center;color:#94a3b8;">' + str(c["total_stocks"]) + '</td>'
-                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#38bdf8;">' + str(c["highs_1m"]) + '</td>'
-                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#22d3ee;">' + str(c["highs_3m"]) + '</td>'
-                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#00e676;">' + str(c["highs_6m"]) + '</td>'
-                '<td style="padding:10px 12px;text-align:center;font-weight:bold;color:#ffa000;">' + str(c["score"]) + '</td>'
-                '<td style="padding:10px 12px;">' + stocks_cell + '</td>'
-                '</tr>'
+                f'<tr id="{row_id}" class="cluster-row">'
+                f'<td style="text-align:center;color:#64748b;font-weight:600;">{rank}</td>'
+                f'<td>'
+                f'<div style="cursor:pointer; display:flex; align-items:center; gap:6px;" onclick="toggleDrawer(\'{drawer_id}\', \'{chevron_id}\')" title="Click to expand {industry} details">'
+                f'<span id="{chevron_id}" style="display:inline-block; font-size:0.75rem; color:#38bdf8; transition:transform 0.2s ease;">▶</span>'
+                f'<span style="font-weight:700; color:#f1f5f9; font-size:0.86rem;">{industry}</span>'
+                f'</div>'
+                f'</td>'
+                f'<td style="text-align:center;">'
+                f'<span class="tier-num-pill pill-tot" onclick="toggleRowTierNumber(this, \'{row_id}\', \'all\')" title="Click to view all {tot} stocks in {industry}">{tot}</span>'
+                f'</td>'
+                f'<td style="text-align:center;">'
+                f'<span class="tier-num-pill pill-1m" onclick="toggleRowTierNumber(this, \'{row_id}\', \'1m\')" title="Click to filter {h1} stocks at 1M Highs in {industry}">{h1}</span>'
+                f'</td>'
+                f'<td style="text-align:center;">'
+                f'<span class="tier-num-pill pill-3m" onclick="toggleRowTierNumber(this, \'{row_id}\', \'3m\')" title="Click to filter {h3} stocks at 3M Highs in {industry}">{h3}</span>'
+                f'</td>'
+                f'<td style="text-align:center;">'
+                f'<span class="tier-num-pill pill-6m" onclick="toggleRowTierNumber(this, \'{row_id}\', \'6m\')" title="Click to filter {h6} stocks at 6M Highs in {industry}">{h6}</span>'
+                f'</td>'
+                f'<td style="text-align:center;font-weight:bold;color:#ffa000;">{score}</td>'
+                f'<td>'
+                f'<div style="display:flex; align-items:center; gap:4px; margin-bottom:5px; flex-wrap:wrap;">'
+                f'<button class="row-filter-btn active-row-btn" onclick="filterRow(\'{row_id}\', \'active\', this)">All Highs ({len(leading_stocks)})</button>'
+                f'<button class="row-filter-btn btn-6m" onclick="filterRow(\'{row_id}\', \'6m\', this)">6M ({h6})</button>'
+                f'<button class="row-filter-btn btn-3m" onclick="filterRow(\'{row_id}\', \'3m\', this)">3M ({h3})</button>'
+                f'<button class="row-filter-btn btn-1m" onclick="filterRow(\'{row_id}\', \'1m\', this)">1M ({h1})</button>'
+                f'{"<button class=\'row-filter-btn btn-none\' onclick=\"filterRow(\'" + row_id + "\', \'none\', this)\">No High (" + str(len(stocks_no_high)) + ")</button>" if stocks_no_high else ""}'
+                f'<span id="status-{row_id}" style="font-size:0.7rem; color:#94a3b8; margin-left:auto;"></span>'
+                f'</div>'
+                f'<div id="chips-{row_id}" class="stocks-chips-wrap">{" ".join(stock_chips)}</div>'
+                f'</td>'
+                f'</tr>'
+            )
+
+            # Drawer Row HTML matching Image 1
+            drawer_text_list = " · ".join(leading_stocks[:10]) + (" ..." if len(leading_stocks) > 10 else "")
+            table_rows.append(
+                f'<tr id="{drawer_id}" class="cluster-drawer" style="display:none; background:rgba(15,23,42,0.95); border-bottom:1px solid rgba(56,189,248,0.25);">'
+                f'<td colspan="8" style="padding:14px 18px;">'
+                f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:10px;">'
+                f'<div style="font-size:0.92rem; font-weight:700; color:#f8fafc;">'
+                f'▾ {industry} <span style="color:#64748b; font-weight:normal; font-size:0.8rem;">· {tot} stocks</span>'
+                f'</div>'
+                f'<div style="display:flex; align-items:center; gap:10px;">'
+                f'<div style="width:200px; height:8px; background:#1e293b; border-radius:4px; overflow:hidden; display:flex;">'
+                f'<div style="width:{pct_6m}%; height:100%; background:#00e676;" title="{h6} at 6M High"></div>'
+                f'<div style="width:{max(0, pct_3m - pct_6m)}%; height:100%; background:#22d3ee;" title="{h3} at 3M High"></div>'
+                f'<div style="width:{max(0, pct_1m - pct_3m)}%; height:100%; background:#38bdf8;" title="{h1} at 1M High"></div>'
+                f'</div>'
+                f'<span style="font-size:0.8rem; font-weight:600; color:#22d3ee;">{h3} of {tot} at 3M highs ({pct_3m}%)</span>'
+                f'</div>'
+                f'</div>'
+                f'<div style="font-size:0.78rem; color:#94a3b8; margin-bottom:10px; letter-spacing:0.3px;">{drawer_text_list}</div>'
+                f'<div id="drawer-chips-{row_id}" style="display:flex; flex-wrap:wrap; gap:4px; margin-bottom:10px;">{" ".join(drawer_chips)}</div>'
+                f'<div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">'
+                f'<span style="font-size:0.72rem; color:#64748b; text-transform:uppercase;">Filter:</span>'
+                f'<button class="drawer-btn" onclick="filterDrawerChips(\'drawer-chips-{row_id}\', \'6m\', this)">6M high</button>'
+                f'<button class="drawer-btn active-drawer-btn" onclick="filterDrawerChips(\'drawer-chips-{row_id}\', \'3m\', this)">3M high</button>'
+                f'<button class="drawer-btn" onclick="filterDrawerChips(\'drawer-chips-{row_id}\', \'1m\', this)">1M high</button>'
+                f'<button class="drawer-btn" onclick="filterDrawerChips(\'drawer-chips-{row_id}\', \'none\', this)">no fresh high</button>'
+                f'<button class="drawer-btn" onclick="filterDrawerChips(\'drawer-chips-{row_id}\', \'all\', this)">all stocks</button>'
+                f'</div>'
+                f'</td>'
+                f'</tr>'
             )
 
         tbody_html = "".join(table_rows)
-        cluster_table_html = (
-            '<div style="font-family:\'Segoe UI\',system-ui,sans-serif;color:#cbd5e1;">'
-            '<div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.08);border-radius:10px;'
-            'background:rgba(9,13,22,0.9);box-shadow:0 4px 20px rgba(0,0,0,0.25);">'
-            '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">'
-            '<thead><tr style="background:rgba(255,255,255,0.03);border-bottom:1px solid rgba(255,255,255,0.1);'
-            'color:#94a3b8;text-transform:uppercase;font-size:0.74rem;letter-spacing:0.5px;">'
-            '<th style="padding:10px 12px;text-align:center;width:45px;">#</th>'
-            '<th style="padding:10px 12px;text-align:left;width:220px;">Industry Group</th>'
-            '<th style="padding:10px 12px;text-align:center;width:65px;">Total</th>'
-            '<th style="padding:10px 12px;text-align:center;width:80px;color:#38bdf8;">1M Highs</th>'
-            '<th style="padding:10px 12px;text-align:center;width:80px;color:#22d3ee;">3M Highs</th>'
-            '<th style="padding:10px 12px;text-align:center;width:80px;color:#00e676;">6M Highs</th>'
-            '<th style="padding:10px 12px;text-align:center;width:70px;color:#ffa000;">Score</th>'
-            '<th style="padding:10px 12px;text-align:left;">Leading Institutional Stocks '
-            '<span style="color:#38bdf8;font-weight:normal;font-size:0.7rem;">'
-            '(Click ticker to open TradingView chart)</span></th>'
-            '</tr></thead>'
-            '<tbody>' + tbody_html + '</tbody>'
-            '</table></div></div>'
-        )
-        components.html(cluster_table_html, height=min(120 + len(display_clusters) * 52, 2200), scrolling=True)
+
+        cluster_table_html = f"""
+        <style>
+        .cluster-wrap {{ font-family:'Segoe UI',system-ui,sans-serif; color:#cbd5e1; }}
+        .cluster-table {{ width:100%; border-collapse:collapse; font-size:0.85rem; }}
+        .cluster-table th {{ padding:10px 12px; font-size:0.74rem; letter-spacing:0.5px; text-transform:uppercase; border-bottom:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.02); }}
+        .cluster-table td {{ padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.05); vertical-align:middle; }}
+
+        .tier-num-pill {{
+            display:inline-block; min-width:32px; padding:3px 8px; border-radius:6px; font-weight:700;
+            text-align:center; cursor:pointer; user-select:none; transition:all 0.15s ease-in-out;
+        }}
+        .tier-num-pill:hover {{ transform:scale(1.15); filter:brightness(1.3); }}
+
+        .pill-1m {{ color:#38bdf8; background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.3); }}
+        .pill-3m {{ color:#22d3ee; background:rgba(34,211,238,0.1); border:1px solid rgba(34,211,238,0.3); }}
+        .pill-6m {{ color:#00e676; background:rgba(0,230,118,0.1); border:1px solid rgba(0,230,118,0.3); }}
+        .pill-tot {{ color:#cbd5e1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); }}
+
+        .pill-1m.active-pill {{ background:#38bdf8; color:#04233a; font-weight:800; border-color:#38bdf8; box-shadow:0 0 12px rgba(56,189,248,0.7); }}
+        .pill-3m.active-pill {{ background:#22d3ee; color:#042f2e; font-weight:800; border-color:#22d3ee; box-shadow:0 0 12px rgba(34,211,238,0.7); }}
+        .pill-6m.active-pill {{ background:#00e676; color:#052e16; font-weight:800; border-color:#00e676; box-shadow:0 0 12px rgba(0,230,118,0.7); }}
+        .pill-tot.active-pill {{ background:#a855f7; color:#ffffff; font-weight:800; border-color:#a855f7; box-shadow:0 0 12px rgba(168,85,247,0.7); }}
+
+        .row-filter-btn {{
+            background:rgba(255,255,255,0.04); color:#94a3b8; border:1px solid rgba(255,255,255,0.1);
+            border-radius:4px; font-size:0.68rem; padding:2px 7px; cursor:pointer; transition:all 0.15s;
+        }}
+        .row-filter-btn:hover {{ background:rgba(255,255,255,0.1); color:#f1f5f9; }}
+        .row-filter-btn.active-row-btn {{ background:rgba(56,189,248,0.2); color:#38bdf8; border-color:rgba(56,189,248,0.5); font-weight:700; }}
+        .row-filter-btn.btn-6m.active-row-btn {{ background:rgba(0,230,118,0.2); color:#00e676; border-color:rgba(0,230,118,0.5); font-weight:700; }}
+        .row-filter-btn.btn-3m.active-row-btn {{ background:rgba(34,211,238,0.2); color:#22d3ee; border-color:rgba(34,211,238,0.5); font-weight:700; }}
+        .row-filter-btn.btn-1m.active-row-btn {{ background:rgba(56,189,248,0.2); color:#38bdf8; border-color:rgba(56,189,248,0.5); font-weight:700; }}
+
+        .global-filter-btn {{
+            background:rgba(255,255,255,0.05); color:#cbd5e1; border:1px solid rgba(255,255,255,0.12);
+            border-radius:6px; font-size:0.75rem; padding:4px 10px; cursor:pointer; transition:all 0.15s; font-weight:600;
+        }}
+        .global-filter-btn:hover {{ background:rgba(255,255,255,0.12); color:#ffffff; }}
+        .global-filter-btn.active-global-btn {{ background:#38bdf8; color:#04233a; border-color:#38bdf8; font-weight:800; box-shadow:0 0 10px rgba(56,189,248,0.4); }}
+
+        .drawer-btn {{
+            background:rgba(255,255,255,0.05); color:#94a3b8; border:1px solid rgba(255,255,255,0.15);
+            border-radius:4px; font-size:0.72rem; padding:3px 8px; cursor:pointer; transition:all 0.15s; font-weight:600;
+        }}
+        .drawer-btn:hover {{ background:rgba(255,255,255,0.12); color:#f8fafc; }}
+        .drawer-btn.active-drawer-btn {{ background:#22d3ee; color:#042f2e; border-color:#22d3ee; font-weight:800; }}
+
+        .stock-chip {{
+            display:inline-block; margin:2px 3px; padding:3px 7px; border-radius:4px;
+            font-size:0.77rem; font-weight:600; text-decoration:none; transition:all 0.15s;
+        }}
+        .stock-chip:hover {{ transform:scale(1.05); filter:brightness(1.15); }}
+        .stock-chip.tier-6m {{ background:rgba(0,230,118,0.15); color:#00e676; border:1px solid rgba(0,230,118,0.4); }}
+        .stock-chip.tier-3m {{ background:rgba(34,211,238,0.13); color:#22d3ee; border:1px solid rgba(34,211,238,0.35); }}
+        .stock-chip.tier-1m {{ background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); }}
+        .stock-chip.tier-none {{ background:rgba(30,41,59,0.5); color:#94a3b8; border:1px solid rgba(71,85,105,0.4); }}
+        </style>
+
+        <div class="cluster-wrap">
+          <!-- Global Filter Bar -->
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; background:rgba(15,23,42,0.8); padding:10px 16px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:0.75rem; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:0.5px;">Global Timeframe Filter:</span>
+              <button class="global-filter-btn active-global-btn" onclick="filterAllRows('active', this)">🌟 All Active Highs</button>
+              <button class="global-filter-btn" onclick="filterAllRows('6m', this)">🟢 6M Highs Only</button>
+              <button class="global-filter-btn" onclick="filterAllRows('3m', this)">🔷 3M Highs Only</button>
+              <button class="global-filter-btn" onclick="filterAllRows('1m', this)">⚡ 1M Highs Only</button>
+              <button class="global-filter-btn" onclick="filterAllRows('all', this)">👥 All Universe Stocks</button>
+            </div>
+            <div style="font-size:0.74rem; color:#64748b;">
+              💡 <i>Tip: Click any number in <b>1M HIGHS</b>, <b>3M HIGHS</b>, or <b>6M HIGHS</b> columns to filter that group instantly.</i>
+            </div>
+          </div>
+
+          <div style="overflow-x:auto; border:1px solid rgba(255,255,255,0.08); border-radius:10px; background:rgba(9,13,22,0.9); box-shadow:0 4px 20px rgba(0,0,0,0.25);">
+            <table class="cluster-table">
+              <thead>
+                <tr>
+                  <th style="text-align:center;width:45px;">#</th>
+                  <th style="text-align:left;width:220px;">Industry Group</th>
+                  <th style="text-align:center;width:65px;cursor:pointer;" onclick="filterAllRows('all')" title="Click to view all stocks across all groups">Total ⇲</th>
+                  <th style="text-align:center;width:80px;color:#38bdf8;cursor:pointer;" onclick="filterAllRows('1m')" title="Click to filter all rows to 1M Highs">1M Highs ⇲</th>
+                  <th style="text-align:center;width:80px;color:#22d3ee;cursor:pointer;" onclick="filterAllRows('3m')" title="Click to filter all rows to 3M Highs">3M Highs ⇲</th>
+                  <th style="text-align:center;width:80px;color:#00e676;cursor:pointer;" onclick="filterAllRows('6m')" title="Click to filter all rows to 6M Highs">6M Highs ⇲</th>
+                  <th style="text-align:center;width:70px;color:#ffa000;">Score</th>
+                  <th style="text-align:left;">Leading Institutional Stocks <span style="color:#38bdf8;font-weight:normal;font-size:0.7rem;">(Click ticker to open TradingView chart)</span></th>
+                </tr>
+              </thead>
+              <tbody>{tbody_html}</tbody>
+            </table>
+          </div>
+        </div>
+
+        <script>
+        function filterRow(rowId, tier, btnElement) {{
+          const container = document.getElementById('chips-' + rowId);
+          const statusEl = document.getElementById('status-' + rowId);
+          if (!container) return;
+
+          const rowTr = document.getElementById(rowId);
+          if (rowTr) {{
+            rowTr.querySelectorAll('.row-filter-btn').forEach(b => b.classList.remove('active-row-btn'));
+            rowTr.querySelectorAll('.tier-num-pill').forEach(b => b.classList.remove('active-pill'));
+          }}
+          if (btnElement) {{
+            if (btnElement.classList.contains('tier-num-pill')) {{
+              btnElement.classList.add('active-pill');
+            }} else {{
+              btnElement.classList.add('active-row-btn');
+            }}
+          }}
+
+          const chips = container.querySelectorAll('.stock-chip');
+          let count = 0;
+          chips.forEach(chip => {{
+            let show = false;
+            if (tier === 'all') {{
+              show = true;
+            }} else if (tier === 'active') {{
+              show = chip.getAttribute('data-no-high') !== 'true';
+            }} else if (tier === '6m') {{
+              show = chip.getAttribute('data-in6m') === 'true';
+            }} else if (tier === '3m') {{
+              show = chip.getAttribute('data-in3m') === 'true';
+            }} else if (tier === '1m') {{
+              show = chip.getAttribute('data-in1m') === 'true';
+            }} else if (tier === 'none') {{
+              show = chip.getAttribute('data-no-high') === 'true';
+            }}
+
+            if (show) {{
+              chip.style.display = 'inline-block';
+              count++;
+            }} else {{
+              chip.style.display = 'none';
+            }}
+          }});
+
+          if (statusEl) {{
+            const labels = {{
+              '6m': '6M Highs',
+              '3m': '3M Highs',
+              '1m': '1M Highs',
+              'active': 'All Fresh Highs',
+              'all': 'All Universe',
+              'none': 'No Fresh Highs'
+            }};
+            statusEl.innerHTML = `<span style="color:#38bdf8;font-weight:bold;">${{count}}</span> ${{labels[tier] || tier}}`;
+          }}
+        }}
+
+        function toggleRowTierNumber(el, rowId, tier) {{
+          if (el.classList.contains('active-pill')) {{
+            filterRow(rowId, 'active', null);
+            el.classList.remove('active-pill');
+          }} else {{
+            filterRow(rowId, tier, el);
+          }}
+        }}
+
+        function filterAllRows(tier, headerBtn) {{
+          document.querySelectorAll('.global-filter-btn').forEach(b => b.classList.remove('active-global-btn'));
+          if (headerBtn) headerBtn.classList.add('active-global-btn');
+
+          document.querySelectorAll('.cluster-row').forEach(row => {{
+            const rowId = row.id;
+            filterRow(rowId, tier, null);
+          }});
+        }}
+
+        function toggleDrawer(drawerId, chevronId) {{
+          const d = document.getElementById(drawerId);
+          const ch = document.getElementById(chevronId);
+          if (!d) return;
+          if (d.style.display === 'none' || d.style.display === '') {{
+            d.style.display = 'table-row';
+            if (ch) ch.style.transform = 'rotate(90deg)';
+          }} else {{
+            d.style.display = 'none';
+            if (ch) ch.style.transform = 'rotate(0deg)';
+          }}
+        }}
+
+        function filterDrawerChips(containerId, tier, btn) {{
+          const container = document.getElementById(containerId);
+          if (!container) return;
+          const parent = btn.parentElement;
+          if (parent) {{
+            parent.querySelectorAll('.drawer-btn').forEach(b => b.classList.remove('active-drawer-btn'));
+            btn.classList.add('active-drawer-btn');
+          }}
+          const chips = container.querySelectorAll('.drawer-stock-chip');
+          chips.forEach(chip => {{
+            let match = false;
+            if (tier === 'all') match = true;
+            else if (tier === '6m') match = chip.getAttribute('data-in6m') === 'true';
+            else if (tier === '3m') match = chip.getAttribute('data-in3m') === 'true';
+            else if (tier === '1m') match = chip.getAttribute('data-in1m') === 'true';
+            else if (tier === 'none') match = chip.getAttribute('data-no-high') === 'true';
+
+            if (match) {{
+              chip.style.opacity = '1';
+              chip.style.filter = 'none';
+              chip.style.borderColor = (tier === '6m' ? '#00e676' : (tier === '3m' ? '#22d3ee' : '#38bdf8'));
+            }} else {{
+              chip.style.opacity = '0.35';
+              chip.style.filter = 'grayscale(70%)';
+            }}
+          }});
+        }}
+        </script>
+        """
+        components.html(cluster_table_html, height=min(180 + len(display_clusters) * 90, 3600), scrolling=True)
     else:
         st.info("No industry cluster data currently available.")
 

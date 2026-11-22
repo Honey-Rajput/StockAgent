@@ -130,18 +130,54 @@ def get_leading_clusters() -> list[dict]:
         h1 = c.get("h1", 0)
         h3 = c.get("h3", 0)
         h6 = c.get("h6", 0)
-        names = c.get("names", [])
-        
-        # In all, items are [ticker, high_flag]. Only items with high_flag > 0 made fresh highs!
-        active_from_all = [
-            item[0] for item in c.get("all", [])
-            if isinstance(item, (list, tuple)) and len(item) > 1 and item[1] > 0
-        ]
+        names = [str(x).strip().upper().replace(".NS", "") for x in c.get("names", []) if x]
 
-        # Combine: keep distinct list preserving order (explicit names first, then active_from_all)
+        # In all, items are [ticker, high_flag].
+        # flag: 3 = 6M high, 2 = 3M high, 1 = 1M high, 0 = no fresh high
+        cluster_stocks = []
+        stocks_6m = []
+        stocks_3m = []
+        stocks_1m = []
+        stocks_no_high = []
+
+        all_items = c.get("all", [])
+        for item in all_items:
+            if isinstance(item, (list, tuple)) and len(item) > 1:
+                sym = str(item[0]).strip().upper().replace(".NS", "")
+                try:
+                    flag = int(item[1])
+                except (ValueError, TypeError):
+                    flag = 0
+
+                tier_code = "6m" if flag >= 3 else ("3m" if flag == 2 else ("1m" if flag == 1 else "none"))
+                tier_name = "6M High" if flag >= 3 else ("3M High" if flag == 2 else ("1M High" if flag == 1 else "No Fresh High"))
+
+                cluster_stocks.append({
+                    "symbol": sym,
+                    "flag": flag,
+                    "tier_code": tier_code,
+                    "tier_name": tier_name,
+                    "in_1m": flag >= 1,
+                    "in_3m": flag >= 2,
+                    "in_6m": flag >= 3,
+                })
+
+                if flag >= 3:
+                    stocks_6m.append(sym)
+                if flag >= 2:
+                    stocks_3m.append(sym)
+                if flag >= 1:
+                    stocks_1m.append(sym)
+                if flag == 0:
+                    stocks_no_high.append(sym)
+
+        # Sort cluster_stocks by flag descending (3, then 2, then 1, then 0), then symbol
+        cluster_stocks.sort(key=lambda x: (-x["flag"], x["symbol"]))
+
+        # Combine: keep distinct list preserving order (explicit names first, then remaining 1M+ active stocks)
         combined_set = set(names)
         combined_names = list(names)
-        for s in active_from_all:
+        for s in stocks_1m:
             if s not in combined_set:
                 combined_names.append(s)
                 combined_set.add(s)
@@ -154,6 +190,11 @@ def get_leading_clusters() -> list[dict]:
             "highs_6m": h6,
             "score": (h1 * 2) + (h3 * 3) + (h6 * 4),
             "leading_stocks": combined_names,
+            "cluster_stocks": cluster_stocks,
+            "stocks_6m": stocks_6m,
+            "stocks_3m": stocks_3m,
+            "stocks_1m": stocks_1m,
+            "stocks_no_high": stocks_no_high,
         })
 
     # Sort descending by score, then 1M highs
