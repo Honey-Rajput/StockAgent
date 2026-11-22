@@ -23,26 +23,40 @@ def detect_2_3_candle_pause(df: pd.DataFrame | None, pivot_price: float | None =
         }
 
     try:
-        # Standardize columns
-        cols = {c.lower(): c for c in df.columns}
+        # Standardize and deduplicate columns
+        if isinstance(df.columns, pd.MultiIndex):
+            if 'Close' in df.columns.get_level_values(0):
+                df.columns = df.columns.get_level_values(0)
+            elif 'Close' in df.columns.get_level_values(1):
+                df.columns = df.columns.get_level_values(1)
+            else:
+                df.columns = df.columns.get_level_values(-1)
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        cols = {str(c).lower(): c for c in df.columns}
         c_high = cols.get("high", "High")
         c_low = cols.get("low", "Low")
         c_close = cols.get("close", "Close")
         c_vol = cols.get("volume", "Volume")
 
-        tail_3 = df.iloc[-3:]
-        closes = tail_3[c_close].values
-        highs = tail_3[c_high].values
-        lows = tail_3[c_low].values
-        vols = tail_3[c_vol].values
+        s_close = pd.Series(df[c_close].squeeze(), dtype=float)
+        s_high = pd.Series(df[c_high].squeeze(), dtype=float)
+        s_low = pd.Series(df[c_low].squeeze(), dtype=float)
+        s_vol = pd.Series(df[c_vol].squeeze(), dtype=float)
+
+        tail_3_close = s_close.iloc[-3:].values
+        tail_3_high = s_high.iloc[-3:].values
+        tail_3_low = s_low.iloc[-3:].values
+        tail_3_vol = s_vol.iloc[-3:].values
 
         # Daily ranges as % of close
-        ranges = [(h - l) / c for h, l, c in zip(highs, lows, closes) if c > 0]
+        ranges = [(h - l) / c for h, l, c in zip(tail_3_high, tail_3_low, tail_3_close) if c > 0]
         avg_range_pct = (sum(ranges) / len(ranges)) * 100 if ranges else 0.0
 
         # Volume comparison vs 20-period baseline
-        vol_20 = df[c_vol].rolling(20).mean().iloc[-1] if len(df) >= 20 else df[c_vol].mean()
-        avg_vol_3d = sum(vols) / len(vols) if len(vols) > 0 else 0
+        vol_20_series = s_vol.rolling(20).mean().dropna()
+        vol_20 = float(vol_20_series.iloc[-1]) if len(vol_20_series) > 0 else float(s_vol.mean())
+        avg_vol_3d = float(sum(tail_3_vol) / len(tail_3_vol)) if len(tail_3_vol) > 0 else 0.0
         vol_ratio_3d = (avg_vol_3d / vol_20) if vol_20 > 0 else 1.0
 
         # Tightness check: average daily range <= 3.2%
@@ -52,10 +66,11 @@ def detect_2_3_candle_pause(df: pd.DataFrame | None, pivot_price: float | None =
         is_vol_dry = vol_ratio_3d <= 1.15
 
         # Price holding check: last close >= support/pivot if provided
-        cmp = float(closes[-1])
+        cmp = float(tail_3_close[-1]) if len(tail_3_close) > 0 else 0.0
         holds_pivot = True
-        if pivot_price and pivot_price > 0:
-            holds_pivot = cmp >= (pivot_price * 0.985)  # within 1.5% or above pivot
+        pivot_val = float(pivot_price) if (pivot_price is not None and not pd.isna(pivot_price)) else 0.0
+        if pivot_val > 0:
+            holds_pivot = cmp >= (pivot_val * 0.985)  # within 1.5% or above pivot
 
         is_pause = bool(is_tight and is_vol_dry and holds_pivot)
 

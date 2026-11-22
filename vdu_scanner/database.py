@@ -3052,7 +3052,10 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
         source_queries = [
             ("scanned_breakouts",       "symbol", "scan_date", "'VDU Breakout'",      "signal_strength"),
             ("scanned_trend_setups",    "symbol", "scan_date", "'Minervini Stage-2'", "0",              "setup_type = 'minervini'"),
-            ("scanned_vcs",             "symbol", "scan_date", "'VCS'",               "vcs_score"),
+            ("scanned_trend_setups",    "symbol", "scan_date", "'20&50 SMA'",         "0",              "setup_type = 'above_ma'"),
+            ("scanned_trend_setups",    "symbol", "scan_date", "'65 SMA Support'",    "0",              "setup_type = 'support_ma'"),
+            ("scanned_trend_setups",    "symbol", "scan_date", "'50/200 MA Cross'",   "0",              "setup_type = 'crossover_ma'"),
+            ("scanned_vcs",             "symbol", "scan_date", "'Dan Zanger VCS'",    "vcs_score"),
             ("scanned_monthly_momentum","symbol", "scan_date", "'Monthly Momentum'",  "momentum_score"),
             ("scanned_stage2",          "symbol", "scan_date", "'Stage-2 Breakout'",  "score"),
             ("scanned_wt_cross",        "symbol", "scan_date", "'WaveTrend Cross'",   "0"),
@@ -3061,6 +3064,13 @@ def get_frequent_stocks(days_lookback: int = 15) -> list[dict]:
             ("scanned_support_rsi",     "symbol", "scan_date", "'Support RSI'",       "rsi"),
             ("scanned_weekly_momentum", "symbol", "scan_date", "'Weekly Momentum'",   "weekly_score"),
             ("scanned_gapups",          "symbol", "scan_date", "'Gap-Up'",            "0"),
+            ("scanned_ema_support",     "symbol", "scan_date", "'9/21 EMA Support'",  "score"),
+            ("scanned_vcp_minervini",   "symbol", "scan_date", "'VCP Minervini'",     "score"),
+            ("scanned_hh_hl",           "symbol", "scan_date", "'HH/HL Uptrend'",     "trend_score"),
+            ("scanned_near_30sma",      "symbol", "scan_date", "'Near 30 SMA'",        "0"),
+            ("scanned_flat_base",       "symbol", "scan_date", "'Flat Base'",          "0"),
+            ("scanned_vpa_squeeze",     "symbol", "scan_date", "'VPA Squeeze'",        "0"),
+            ("scanned_stage_analysis",  "symbol", "scan_date", "'Stage Analysis'",     "0"),
         ]
 
         for entry in source_queries:

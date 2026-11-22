@@ -37,7 +37,13 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
 
     # Flatten MultiIndex columns if present (from yfinance multi-column downloads)
     if isinstance(chart_df.columns, pd.MultiIndex):
-        chart_df.columns = chart_df.columns.get_level_values(0)
+        if 'Close' in chart_df.columns.get_level_values(0):
+            chart_df.columns = chart_df.columns.get_level_values(0)
+        elif 'Close' in chart_df.columns.get_level_values(1):
+            chart_df.columns = chart_df.columns.get_level_values(1)
+        else:
+            chart_df.columns = chart_df.columns.get_level_values(-1)
+    chart_df = chart_df.loc[:, ~chart_df.columns.duplicated()]
 
     # Make index tz-naive for consistent comparisons
     try:
@@ -46,9 +52,15 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
     except Exception:
         pass
 
+    close_s = pd.Series(chart_df['Close'].squeeze(), dtype=float)
+    open_s = pd.Series(chart_df['Open'].squeeze(), dtype=float)
+    high_s = pd.Series(chart_df['High'].squeeze(), dtype=float)
+    low_s = pd.Series(chart_df['Low'].squeeze(), dtype=float)
+    vol_s = pd.Series(chart_df['Volume'].squeeze(), dtype=float)
+
     # Calculate 20 & 50 SMA for visual trend
-    sma20 = chart_df['Close'].rolling(20).mean()
-    sma50 = chart_df['Close'].rolling(50).mean()
+    sma20 = close_s.rolling(20).mean()
+    sma50 = close_s.rolling(50).mean()
 
     fig = make_subplots(
         rows=2, cols=1,
@@ -61,10 +73,10 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
     fig.add_trace(
         go.Candlestick(
             x=chart_df.index,
-            open=chart_df['Open'],
-            high=chart_df['High'],
-            low=chart_df['Low'],
-            close=chart_df['Close'],
+            open=open_s,
+            high=high_s,
+            low=low_s,
+            close=close_s,
             name=f"{symbol} Price",
             increasing_line_color='#00e676',
             decreasing_line_color='#ef4444'
@@ -163,10 +175,10 @@ def render_swing_chart(symbol: str, df: pd.DataFrame, swing_highs: list, swing_l
         )
 
     # 7. Volume Bars
-    vol_colors = ['#00e676' if float(chart_df['Close'].iloc[i]) >= float(chart_df['Open'].iloc[i]) else '#ef4444' for i in range(len(chart_df))]
+    vol_colors = ['#00e676' if float(c) >= float(o) else '#ef4444' for c, o in zip(close_s.values, open_s.values)]
     fig.add_trace(
         go.Bar(
-            x=chart_df.index, y=chart_df['Volume'],
+            x=chart_df.index, y=vol_s,
             marker_color=vol_colors, name="Volume", opacity=0.6
         ),
         row=2, col=1
@@ -619,15 +631,23 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
             sym_ns = sel_symbol if sel_symbol.endswith('.NS') else f"{sel_symbol}.NS"
             interval = "1d" if "Daily" in timeframe_sel else "1wk"
             hist_df = yf.download(sym_ns, period="8mo", interval=interval, progress=False, timeout=12)
-            if not hist_df.empty:
+            if hist_df is not None and not hist_df.empty:
                 if isinstance(hist_df.columns, pd.MultiIndex):
-                    hist_df.columns = hist_df.columns.get_level_values(0)
+                    if 'Close' in hist_df.columns.get_level_values(0):
+                        hist_df.columns = hist_df.columns.get_level_values(0)
+                    elif 'Close' in hist_df.columns.get_level_values(1):
+                        hist_df.columns = hist_df.columns.get_level_values(1)
+                    else:
+                        hist_df.columns = hist_df.columns.get_level_values(-1)
+                hist_df = hist_df.loc[:, ~hist_df.columns.duplicated()]
+
+                # Volume bar coloring in render_swing_chart
                 sh_list = json.loads(stock_row.get('swing_highs_json', '[]'))
                 sl_list = json.loads(stock_row.get('swing_lows_json', '[]'))
                 render_swing_chart(
                     sel_symbol, hist_df, sh_list, sl_list,
-                    stock_row.get('last_swing_high', 0.0),
-                    stock_row.get('last_swing_low', 0.0)
+                    float(stock_row.get('last_swing_high') or 0.0),
+                    float(stock_row.get('last_swing_low') or 0.0)
                 )
                 # Render 10 Rules & Strategy A Execution Blueprint
                 render_10_rules_execution_card(stock_row, df=hist_df)
