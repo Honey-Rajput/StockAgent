@@ -1,7 +1,4 @@
-import os
-import time
 import pandas as pd
-from datetime import datetime, timedelta
 import database
 
 # We no longer use local filesystem cache
@@ -73,7 +70,7 @@ def get_cached_ohlcv(symbol: str, timeframe: str = "1d", ignore_ttl: bool = Fals
         if conn:
             conn.close()
 
-def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
+def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d", min_latest_date: str = None) -> dict:
     """Returns a dictionary of DataFrames for multiple symbols in a single query."""
     if not symbols:
         return {}
@@ -82,6 +79,7 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
     clean_syms = [s.strip().upper().replace(".NS", "") for s in symbols]
     result_dict = {}
     conn = None
+    min_date_val = pd.to_datetime(min_latest_date).date() if min_latest_date else None
     
     try:
         conn = database.get_connection()
@@ -107,6 +105,10 @@ def bulk_get_cached_ohlcv(symbols: list, timeframe: str = "1d") -> dict:
                     df_sym = group.drop(columns=['Symbol']).reset_index(drop=True)
                     # Filter out truncated caches with fewer than 30 bars
                     if len(df_sym) >= 30:
+                        if min_date_val:
+                            last_d = df_sym['Date'].iloc[-1].date()
+                            if last_d < min_date_val:
+                                continue
                         result_dict[sym] = df_sym
                     
         cur.close()

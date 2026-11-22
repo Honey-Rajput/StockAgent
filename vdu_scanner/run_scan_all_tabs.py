@@ -1,6 +1,5 @@
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
 import joblib
 import warnings
 
@@ -9,26 +8,34 @@ warnings.filterwarnings('ignore')
 from data_fetcher import get_index_stocks
 from scan_orchestrator import process_single_symbol
 import database
-from local_cache_manager import bulk_get_cached_ohlcv
+from local_cache_manager import bulk_get_cached_ohlcv, save_to_cache
 
 def run_all_tabs_scan():
     print("Starting full scan of NIFTY 500 for all tabs...")
     symbols = get_index_stocks("NIFTY 500")
-    symbols_ns = [f"{s.strip().upper()}.NS" for s in symbols]
     
     print("Downloading benchmark...")
     nifty_benchmark_df = yf.download("^NSEI", period="1y", interval="1d", progress=False)
     
     print("Fetching local cache for stocks...")
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
-    
+
+    benchmark_latest_date = None
+    if nifty_benchmark_df is not None and not nifty_benchmark_df.empty:
+        benchmark_latest_date = pd.to_datetime(nifty_benchmark_df.index[-1]).date()
+
     missing = []
     for sym in symbols:
-        if sym not in bulk_data or bulk_data[sym].empty:
+        df_cached = bulk_data.get(sym)
+        if df_cached is None or df_cached.empty or len(df_cached) < 30:
             missing.append(sym)
-            
+        elif benchmark_latest_date:
+            last_cached_date = pd.to_datetime(df_cached['Date'].iloc[-1]).date()
+            if last_cached_date < benchmark_latest_date:
+                missing.append(sym)
+
     if missing:
-        print(f"Downloading {len(missing)} missing symbols...")
+        print(f"Downloading {len(missing)} missing/stale symbols...")
         df_bulk = yf.download([f"{s}.NS" for s in missing], period="1y", interval="1d", progress=False)
         for sym in missing:
             sym_ns = f"{sym}.NS"
@@ -41,7 +48,8 @@ def run_all_tabs_scan():
                 t_df.rename(columns={t_df.columns[0]: "Date"}, inplace=True)
                 t_df["Date"] = pd.to_datetime(t_df["Date"], utc=True).dt.tz_localize(None)
                 bulk_data[sym] = t_df
-            except Exception as e:
+                save_to_cache(sym, t_df, "1d")
+            except Exception:
                 pass
 
     print("Analyzing stocks...")

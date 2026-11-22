@@ -244,11 +244,18 @@ def run_headless_scan():
     
     bulk_cached = bulk_get_cached_ohlcv(scan_symbols, _tf_db_key)
     missing_symbols = []
-    
+
+    today_dt = datetime.now(IST_TIMEZONE).date()
+    min_trade_date = today_dt - timedelta(days=4 if today_dt.weekday() in (0, 6) else 2)
+
     for sym in scan_symbols:
         clean_sym = sym.strip().upper().replace(".NS", "")
         if clean_sym in bulk_cached and not bulk_cached[clean_sym].empty:
-            bulk_data[sym.strip().upper()] = bulk_cached[clean_sym]
+            last_cached_dt = pd.to_datetime(bulk_cached[clean_sym]['Date'].iloc[-1]).date()
+            if last_cached_dt >= min_trade_date:
+                bulk_data[sym.strip().upper()] = bulk_cached[clean_sym]
+            else:
+                missing_symbols.append(sym)
         else:
             missing_symbols.append(sym)
             
