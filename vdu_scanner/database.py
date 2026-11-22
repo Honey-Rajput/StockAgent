@@ -1141,6 +1141,7 @@ def init_db() -> bool:
         add_col("scanned_wt_cross", "above_50sma", "BOOLEAN DEFAULT FALSE")
         add_col("scanned_wt_cross", "above_200sma", "BOOLEAN DEFAULT FALSE")
         add_col("scanned_wt_cross", "volume", "BIGINT")
+        add_col("scanned_wt_cross", "bullish_divergence", "BOOLEAN DEFAULT FALSE")
 
         add_col("scanned_monthly_momentum", "buy_price", "DOUBLE PRECISION")
         add_col("scanned_monthly_momentum", "exit_price", "DOUBLE PRECISION")
@@ -2320,14 +2321,16 @@ def save_wt_cross_only(date_str: str, wt_results: list[dict]) -> bool:
         insert_query = """
         INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
                                      buy_price, exit_price, target_price, confidence, recommendation,
-                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume,
+                                     bullish_divergence)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             cmp=EXCLUDED.cmp, day_change_pct=EXCLUDED.day_change_pct, wt_value=EXCLUDED.wt_value,
             buy_price=EXCLUDED.buy_price, exit_price=EXCLUDED.exit_price, target_price=EXCLUDED.target_price,
             confidence=EXCLUDED.confidence, recommendation=EXCLUDED.recommendation,
             wt2_value=EXCLUDED.wt2_value, buy_signal=EXCLUDED.buy_signal, wt_diff=EXCLUDED.wt_diff,
-            above_20sma=EXCLUDED.above_20sma, above_50sma=EXCLUDED.above_50sma, above_200sma=EXCLUDED.above_200sma, volume=EXCLUDED.volume;
+            above_20sma=EXCLUDED.above_20sma, above_50sma=EXCLUDED.above_50sma, above_200sma=EXCLUDED.above_200sma,
+            volume=EXCLUDED.volume, bullish_divergence=EXCLUDED.bullish_divergence;
         """
         for r in wt_results:
             cur.execute(insert_query, (
@@ -2348,7 +2351,8 @@ def save_wt_cross_only(date_str: str, wt_results: list[dict]) -> bool:
                 bool(r.get('above_20sma', False)),
                 bool(r.get('above_50sma', False)),
                 bool(r.get('above_200sma', False)),
-                int(r.get('volume', 0))
+                int(r.get('volume', 0)),
+                bool(r.get('bullish_divergence', False)),
             ))
         conn.commit()
         cur.close()
@@ -2613,11 +2617,13 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
         insert_wt_query = """
         INSERT INTO scanned_wt_cross (symbol, company_name, cmp, day_change_pct, wt_value, scan_date,
                                      buy_price, exit_price, target_price, confidence, recommendation,
-                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     wt2_value, buy_signal, wt_diff, above_20sma, above_50sma, above_200sma, volume,
+                                     bullish_divergence)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (symbol, scan_date) DO UPDATE SET
             above_20sma = excluded.above_20sma,
-            above_50sma = excluded.above_50sma;
+            above_50sma = excluded.above_50sma,
+            bullish_divergence = excluded.bullish_divergence;
         """
         for r in wt_cross:
             try:
@@ -2639,7 +2645,8 @@ def save_scan_results(date_str: str, breakouts: list[dict], squeezes: list[dict]
                     bool(r.get('above_20sma', False)),
                     bool(r.get('above_50sma', False)),
                     bool(r.get('above_200sma', False)),
-                    int(r.get('volume', 0))
+                    int(r.get('volume', 0)),
+                    bool(r.get('bullish_divergence', False)),
                 ))
             except Exception as _wte:
                 print(f"Warning: failed to insert wt_cross {r.get('symbol','?')}: {_wte}")

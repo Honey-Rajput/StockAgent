@@ -415,6 +415,25 @@ The **WaveTrend oscillator** (popularized by LazyBear) is an institutional-grade
     # ─────────────────────────────────────────────────────────────────────────
     df_disp = pd.DataFrame(filtered)
     df_disp['tv_url'] = df_disp['symbol'].apply(lambda s: f"https://in.tradingview.com/chart/?symbol=NSE:{str(s).replace('.NS', '')}")
+
+    # Guard against missing columns from old cached DB rows
+    for _col, _default in [
+        ('bullish_divergence', False),
+        ('buy_signal', False),
+        ('above_200sma', False),
+        ('above_50sma', False),
+        ('above_20sma', False),
+        ('company_name', ''),
+        ('wt2_value', 0.0),
+        ('wt_diff', 0.0),
+        ('buy_price', 0.0),
+        ('exit_price', 0.0),
+        ('target_price', 0.0),
+        ('confidence', 'N/A'),
+    ]:
+        if _col not in df_disp.columns:
+            df_disp[_col] = _default
+
     df_disp['signal_badge'] = df_disp['buy_signal'].apply(
         lambda b: "🟢 BUY SIGNAL" if b else "⚪ Oversold"
     )
@@ -427,10 +446,6 @@ The **WaveTrend oscillator** (popularized by LazyBear) is an institutional-grade
               else ("Above 20 SMA" if r.get('above_20sma') else "Below 20/50/200")),
         axis=1
     )
-
-    for col in ['buy_price', 'exit_price', 'target_price', 'volume']:
-        if col not in df_disp.columns:
-            df_disp[col] = 0.0
 
     st.dataframe(
         df_disp[[
