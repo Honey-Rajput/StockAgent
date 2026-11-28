@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from config import get_company_name
-from data_fetcher import get_top1000_nse_symbols, get_stock_sector
+from data_fetcher import get_top1500_nse_symbols, get_stock_sector
 from local_cache_manager import bulk_get_cached_ohlcv
 from breadth_ledger import get_stock_cluster_tag
 from trading_rules import evaluate_manas_trend_rules
@@ -168,7 +168,7 @@ def scan_multibagger_bases(
     max_results: int = 30,
 ) -> list[dict]:
     """Scan NSE Top-1000 from local 1d cache for 2x Launchpad & High-Tight-Flag bases."""
-    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
+    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1500_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
 
     hits = []

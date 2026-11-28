@@ -253,6 +253,52 @@ def get_top1000_nse_symbols() -> list[str]:
     return combined[:1000]
 
 
+@st.cache_data(ttl=3600)
+def get_top1500_nse_symbols() -> list[str]:
+    """
+    Returns up to 1500 active NSE symbols: starts with the curated Top 1000
+    and expands using active symbols in local historical_ohlcv (or NSE mainboard list).
+    """
+    base = get_top1000_nse_symbols()
+    seen = {s.strip().upper().replace(".NS", "") for s in base if s.strip()}
+    combined = list(seen)
+
+    try:
+        import database
+        conn = database.get_connection()
+        if conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT DISTINCT symbol FROM historical_ohlcv "
+                "WHERE timeframe = '1d' AND date >= '2026-11-15' ORDER BY symbol"
+            )
+            for row in cur.fetchall():
+                sym = (row[0] if isinstance(row, (tuple, list)) else row["symbol"]).strip().upper().replace(".NS", "")
+                if sym and sym not in seen:
+                    seen.add(sym)
+                    combined.append(sym)
+                    if len(combined) >= 1500:
+                        break
+            cur.close()
+            conn.close()
+    except Exception:
+        pass
+
+    if len(combined) < 1500:
+        try:
+            for s in get_all_nse_symbols():
+                sym = s.strip().upper().replace(".NS", "")
+                if sym and sym not in seen:
+                    seen.add(sym)
+                    combined.append(sym)
+                    if len(combined) >= 1500:
+                        break
+        except Exception:
+            pass
+
+    return combined[:1500]
+
+
 MAX_NSE_SYMBOLS = 2500  # Allows full universe of active NSE stocks
 
 def get_all_nse_symbols() -> list[str]:

@@ -6,7 +6,7 @@ Dedicated Chartink-Atlas-style 1M % & 3M % Momentum Leaderboard across NSE Top-1
 import pandas as pd
 import streamlit as st
 
-from data_fetcher import get_top1000_nse_symbols, get_stock_sector
+from data_fetcher import get_top1500_nse_symbols, get_stock_sector
 from local_cache_manager import bulk_get_cached_ohlcv
 from breadth_ledger import get_stock_cluster_tag
 from trading_rules import evaluate_manas_trend_rules
@@ -28,7 +28,7 @@ def _get_nifty_3m_return() -> float:
 
 def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> list[dict]:
     """Compute 1M%, 3M%, 6M%, 1M high drawdown, RS vs NIFTY, and day change % for NSE Top-1000."""
-    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
+    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1500_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
     bench_3m = _get_nifty_3m_return()
 
