@@ -383,8 +383,8 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         active_col = default_col
         active_dir = "desc" if active_col != "Symbol" else "asc"
 
-    # Optional Quick Filter for Entry Timing / 10 Rules
-    f_col1, f_col2 = st.columns([3, 7])
+    # Optional Quick Filter for Entry Timing / 10 Rules + Max Price
+    f_col1, f_col2, _ = st.columns([3, 2, 5])
     with f_col1:
         entry_filter_val = st.selectbox(
             "🎯 Filter by Entry Timing (10 Rules):",
@@ -397,6 +397,14 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
             index=0,
             key=f"{key_prefix}_rule_filter_sel",
         )
+    with f_col2:
+        max_cmp_val = st.number_input(
+            "💰 Max Price (₹, 0=All):",
+            min_value=0,
+            value=1000,
+            step=100,
+            key=f"{key_prefix}_max_cmp_filter",
+        )
 
     if "2–3 Candle Pause" in entry_filter_val:
         display_results = [r for r in results_list if evaluate_entry_rules(r).get("status_code") == "2_3_pause"]
@@ -407,8 +415,11 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
     else:
         display_results = results_list
 
+    if max_cmp_val > 0:
+        display_results = [r for r in display_results if float(r.get("cmp") or 0.0) <= float(max_cmp_val)]
+
     if not display_results:
-        st.info(f"ℹ️ No stocks currently match the filter: {entry_filter_val}")
+        st.info(f"ℹ️ No stocks currently match the filters (Entry: {entry_filter_val}, Max Price: ₹{max_cmp_val}).")
         return
 
     # 3. Sort the list

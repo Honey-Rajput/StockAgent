@@ -247,7 +247,7 @@ def render():
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 2, 1.5])
+    c1, c2, c3, c4, c5, c6 = st.columns([1.8, 1.3, 1.3, 1.2, 1.8, 1.3])
     with c1:
         max_range = st.slider("Max Base Box Range (%)", min_value=10.0, max_value=30.0, value=20.0, step=2.0, key="mb_max_range")
     with c2:
@@ -255,16 +255,18 @@ def render():
     with c3:
         max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=1000, step=100, key="mb_max_price")
     with c4:
-        style_filter = st.selectbox("Setup Filter:", ["All Setups", "Breakouts Only", "High-Tight Flags (2nd Leg)"], key="mb_style_filter")
+        max_res = st.selectbox("Show Top:", [20, 30, 50, 100], index=1, key="mb_max_res")
     with c5:
+        style_filter = st.selectbox("Setup Filter:", ["All Setups", "Breakouts Only", "High-Tight Flags (2nd Leg)"], key="mb_style_filter")
+    with c6:
         st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
         refresh_btn = st.button("🔄 Scan Bases", key="mb_refresh_btn", use_container_width=True)
 
-    cache_key = f"mb_cache_{max_range}_{min_days}_{max_price}"
+    cache_key = f"mb_cache_{max_range}_{min_days}_{max_price}_{max_res}"
     if refresh_btn or cache_key not in st.session_state:
         with st.spinner("Scanning NSE Top-1000 for tight multibagger bases & dry-volume shelves..."):
             st.session_state[cache_key] = scan_multibagger_bases(
-                max_box_range_pct=max_range, min_box_days=min_days, max_price=float(max_price), max_results=30
+                max_box_range_pct=max_range, min_box_days=min_days, max_price=float(max_price), max_results=int(max_res)
             )
 
     results = st.session_state.get(cache_key, [])
