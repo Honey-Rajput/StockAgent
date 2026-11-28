@@ -161,7 +161,12 @@ def detect_multibagger_base(
     }
 
 
-def scan_multibagger_bases(max_box_range_pct: float = 22.0, min_box_days: int = 15, max_results: int = 30) -> list[dict]:
+def scan_multibagger_bases(
+    max_box_range_pct: float = 22.0,
+    min_box_days: int = 15,
+    max_price: float = 1000.0,
+    max_results: int = 30,
+) -> list[dict]:
     """Scan NSE Top-1000 from local 1d cache for 2x Launchpad & High-Tight-Flag bases."""
     symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
@@ -172,7 +177,7 @@ def scan_multibagger_bases(max_box_range_pct: float = 22.0, min_box_days: int = 
         if df is None or df.empty:
             continue
         res = detect_multibagger_base(sym, df, max_box_range_pct=max_box_range_pct, min_box_days=min_box_days)
-        if res:
+        if res and (max_price <= 0 or res["cmp"] <= max_price):
             hits.append(res)
 
     hits.sort(key=lambda x: x["score"], reverse=True)
@@ -242,21 +247,25 @@ def render():
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
+    c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 2, 1.5])
     with c1:
         max_range = st.slider("Max Base Box Range (%)", min_value=10.0, max_value=30.0, value=20.0, step=2.0, key="mb_max_range")
     with c2:
         min_days = st.selectbox("Min Base Duration:", [15, 20, 25, 30], index=0, key="mb_min_days")
     with c3:
-        style_filter = st.selectbox("Setup Filter:", ["All Setups", "Breakouts Only", "High-Tight Flags (2nd Leg)"], key="mb_style_filter")
+        max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=1000, step=100, key="mb_max_price")
     with c4:
+        style_filter = st.selectbox("Setup Filter:", ["All Setups", "Breakouts Only", "High-Tight Flags (2nd Leg)"], key="mb_style_filter")
+    with c5:
         st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
         refresh_btn = st.button("🔄 Scan Bases", key="mb_refresh_btn", use_container_width=True)
 
-    cache_key = f"mb_cache_{max_range}_{min_days}"
+    cache_key = f"mb_cache_{max_range}_{min_days}_{max_price}"
     if refresh_btn or cache_key not in st.session_state:
         with st.spinner("Scanning NSE Top-1000 for tight multibagger bases & dry-volume shelves..."):
-            st.session_state[cache_key] = scan_multibagger_bases(max_box_range_pct=max_range, min_box_days=min_days, max_results=30)
+            st.session_state[cache_key] = scan_multibagger_bases(
+                max_box_range_pct=max_range, min_box_days=min_days, max_price=float(max_price), max_results=30
+            )
 
     results = st.session_state.get(cache_key, [])
     if style_filter == "Breakouts Only":

@@ -203,6 +203,7 @@ def find_top10_swing_finalists(
     min_run_pct: float = 35.0,
     max_dd_1m_pct: float = 25.0,
     require_gap_up: bool = True,
+    max_price: float = 1000.0,
     max_results: int = 10,
 ) -> list[dict]:
     """Scan Top 1000 NSE stocks from local 1d OHLCV cache and return top N Manas Arora VCP finalists."""
@@ -223,7 +224,7 @@ def find_top10_swing_finalists(
             require_gap_up=require_gap_up,
             benchmark_3m_ret=bench_3m,
         )
-        if scored:
+        if scored and (max_price <= 0 or scored["cmp"] <= max_price):
             candidates.append(scored)
 
     candidates.sort(key=lambda x: x["swing_score"], reverse=True)
@@ -286,21 +287,23 @@ def render():
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
+    c1, c2, c3, c4, c5 = st.columns([2, 2, 1.5, 2, 1.5])
     with c1:
         min_run = st.slider("Min Prior Run-Up (%)", min_value=20.0, max_value=80.0, value=35.0, step=5.0, key="ma_min_run")
     with c2:
         max_dd = st.slider("Max Drop from 1M High (%)", min_value=5.0, max_value=35.0, value=25.0, step=1.0, key="ma_max_dd")
     with c3:
-        req_gap = st.checkbox("Require Gap-Up Break Off Recent Low", value=True, key="ma_req_gap")
+        max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=1000, step=100, key="ma_max_price")
     with c4:
+        req_gap = st.checkbox("Require Gap-Up Break Off Recent Low", value=True, key="ma_req_gap")
+    with c5:
         refresh_clicked = st.button("🔄 Refresh Top 10", key="sf_refresh_btn", use_container_width=True)
 
-    cache_key = f"ma_vcp_{min_run}_{max_dd}_{req_gap}"
+    cache_key = f"ma_vcp_{min_run}_{max_dd}_{req_gap}_{max_price}"
     if refresh_clicked or cache_key not in st.session_state:
         with st.spinner("Scanning for ≥35% runners forming VCP + Gap-Up reversal..."):
             st.session_state[cache_key] = find_top10_swing_finalists(
-                min_run_pct=min_run, max_dd_1m_pct=max_dd, require_gap_up=req_gap, max_results=10
+                min_run_pct=min_run, max_dd_1m_pct=max_dd, require_gap_up=req_gap, max_price=float(max_price), max_results=10
             )
 
     finalists = st.session_state.get(cache_key, [])

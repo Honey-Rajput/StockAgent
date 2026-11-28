@@ -102,7 +102,7 @@ def render():
         unsafe_allow_html=True,
     )
 
-    f1, f2, f3, f4, f5 = st.columns([2, 1.5, 1.5, 1.5, 1.5])
+    f1, f2, f3, f4, f5, f6 = st.columns([2, 1.3, 1.3, 1.3, 1.5, 1.3])
     with f1:
         search_q = st.text_input("🔍 Search Stock / Sector:", "", placeholder="e.g. PHARMA, SAILIFE...", key="atlas_search").strip().upper()
     with f2:
@@ -110,8 +110,10 @@ def render():
     with f3:
         min_3m = st.number_input("Min 3M %:", value=15.0, step=5.0, key="atlas_min_3m")
     with f4:
-        sort_by = st.selectbox("Sort By:", ["3M % ↓", "1M % ↓", "6M % ↓", "Day Chg % ↓", "Nearest 1M High"], key="atlas_sort")
+        max_price = st.number_input("Max Price (₹):", min_value=0, value=1000, step=100, key="atlas_max_price")
     with f5:
+        sort_by = st.selectbox("Sort By:", ["3M % ↓", "1M % ↓", "6M % ↓", "Day Chg % ↓", "Nearest 1M High"], key="atlas_sort")
+    with f6:
         top_n = st.selectbox("Show Rows:", [50, 100, 250, 500], index=0, key="atlas_topn")
 
     only_est_trend = st.checkbox(
@@ -128,6 +130,7 @@ def render():
     filtered = [
         r for r in all_rows
         if r["ret_1m"] >= min_1m and r["ret_3m"] >= min_3m
+        and (max_price <= 0 or r["cmp"] <= max_price)
         and (not only_est_trend or r.get("closes_below_50ma", 50) <= 2)
         and (not search_q or search_q in r["symbol"] or search_q in r["sector"].upper())
     ]
