@@ -279,7 +279,7 @@ def get_today_quotes(symbols: list, date_str: str) -> dict:
             placeholders = ",".join(["?" for _ in chunk])
             cur.execute(
                 f"SELECT symbol, open, high, low, close, volume FROM historical_ohlcv "
-                f"WHERE timeframe='Daily (1d)' AND date=? AND symbol IN ({placeholders})",
+                f"WHERE timeframe='1d' AND date=? AND symbol IN ({placeholders})",
                 [date_str] + chunk
             )
             for row in cur.fetchall():
@@ -320,7 +320,7 @@ def save_today_quotes(date_str: str, close_map: dict, open_map: dict,
         
         upsert_query = """
             INSERT INTO historical_ohlcv (symbol, timeframe, date, open, high, low, close, volume)
-            VALUES (?, 'Daily (1d)', ?, ?, ?, ?, ?, ?)
+            VALUES (?, '1d', ?, ?, ?, ?, ?, ?)
             ON CONFLICT (symbol, timeframe, date) 
             DO UPDATE SET 
                 open = EXCLUDED.open,
