@@ -195,12 +195,12 @@ The **WaveTrend oscillator** (popularized by LazyBear) is an institutional-grade
     # ─────────────────────────────────────────────────────────────────────────
     if run_wt_btn:
         with st.spinner(f"Running WaveTrend scan on {wt_universe} ({wt_timeframe}, WT1 ≤ {wt_oversold_threshold})..."):
-            from data_fetcher import get_top1000_nse_symbols, get_index_stocks
+            from data_fetcher import get_top1500_nse_symbols, get_index_stocks
             from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
             import yfinance as yf
 
-            if "Top 1000" in wt_universe:
-                raw_syms = get_top1000_nse_symbols()
+            if "Top 1000" in wt_universe or "Top 1500" in wt_universe:
+                raw_syms = get_top1500_nse_symbols()
             elif "NIFTY 500" in wt_universe:
                 raw_syms = get_index_stocks("NIFTY 500")
             elif "NIFTY 100" in wt_universe:

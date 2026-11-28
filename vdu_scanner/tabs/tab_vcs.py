@@ -113,8 +113,8 @@ def render():
             from zanger_scanner import ZangerConfig, scan_zanger, get_latest_signal, rank_signals
             
             # Universe is hardcoded to Top 1000 NSE stocks
-            from data_fetcher import get_top1000_nse_symbols
-            zanger_candidates = get_top1000_nse_symbols()
+            from data_fetcher import get_top1500_nse_symbols
+            zanger_candidates = get_top1500_nse_symbols()
             
             zanger_results = []
             chunk_size = 50

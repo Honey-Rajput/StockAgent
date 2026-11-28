@@ -212,11 +212,9 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
 @st.cache_data(ttl=3600)
 def get_index_stocks(index_name: str) -> list[str]:
     """
-    Always returns the Top 1000 NSE equity symbols by market cap.
-    The index_name parameter is kept for compatibility but ignored — 
-    scanner is hardcoded to Top 1000 only.
+    Always returns the Top 1500 NSE equity symbols by liquidity/market cap.
     """
-    return get_top1000_nse_symbols()
+    return get_top1500_nse_symbols()
 
 
 def get_top1000_nse_symbols() -> list[str]:
@@ -269,8 +267,10 @@ def get_top1500_nse_symbols() -> list[str]:
         if conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT DISTINCT symbol FROM historical_ohlcv "
-                "WHERE timeframe = '1d' AND date >= '2026-11-15' ORDER BY symbol"
+                "SELECT symbol FROM historical_ohlcv "
+                "WHERE timeframe = '1d' AND date >= '2026-11-15' "
+                "GROUP BY symbol "
+                "ORDER BY AVG(COALESCE(close, 0) * COALESCE(volume, 0)) DESC"
             )
             for row in cur.fetchall():
                 sym = (row[0] if isinstance(row, (tuple, list)) else row["symbol"]).strip().upper().replace(".NS", "")

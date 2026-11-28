@@ -839,8 +839,8 @@ def run_background_all_tab_scans():
                 print("[BG All-Tab] All background tab scans already cached. Skipping.")
                 return
 
-            from data_fetcher import get_top1000_nse_symbols
-            raw_symbols = get_top1000_nse_symbols()
+            from data_fetcher import get_top1500_nse_symbols
+            raw_symbols = get_top1500_nse_symbols()
             all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if s.strip()]
             
             # Phase 2: Shared Daily Download (1y or 2y)
@@ -1032,8 +1032,8 @@ def run_background_all_tab_scans():
                 st.session_state.ALL_TAB_SCAN_STATUS["current_scanner"] = "Stage-2"
                 st.session_state.ALL_TAB_SCAN_STATUS["status_text"] = "Running Stage-2 monthly scan..."
                 st.session_state.ALL_TAB_SCAN_STATUS["progress"] = 0.75
-                from data_fetcher import get_top1000_nse_symbols
-                s2_cands = get_top1000_nse_symbols()
+                from data_fetcher import get_top1500_nse_symbols
+                s2_cands = get_top1500_nse_symbols()
                 s2_res = []
                 
                 from local_cache_manager import bulk_get_cached_ohlcv, resample_ohlcv
@@ -1607,8 +1607,8 @@ if run_full or run_sma:
 
     # Universe is hardcoded to Top 1000 NSE stocks as per user preference
     universe_key = "TOP 1000"
-    from data_fetcher import get_top1000_nse_symbols
-    raw_symbols = get_top1000_nse_symbols()
+    from data_fetcher import get_top1500_nse_symbols
+    raw_symbols = get_top1500_nse_symbols()
         
     if not raw_symbols:
         st.sidebar.error("❌ No symbols found to scan.")
@@ -2696,8 +2696,8 @@ with tab_monthly:
             import time as _time
 
             # Resolve universe
-            from data_fetcher import get_top1000_nse_symbols
-            mm_universe = get_top1000_nse_symbols()
+            from data_fetcher import get_top1500_nse_symbols
+            mm_universe = get_top1500_nse_symbols()
 
             mm_results = []
             mm_prog = st.progress(0)
@@ -3018,8 +3018,8 @@ with tab_weekly:
             import time as _time_wm
 
             # Resolve universe
-            from data_fetcher import get_top1000_nse_symbols
-            wm_universe = get_top1000_nse_symbols()
+            from data_fetcher import get_top1500_nse_symbols
+            wm_universe = get_top1500_nse_symbols()
 
             wm_results = []
             wm_prog    = st.progress(0)

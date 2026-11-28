@@ -285,10 +285,10 @@ In classical **Dow Theory** and modern **Price Action / Smart Money Concepts (SM
     if run_scan_btn:
         with st.spinner(f"Running HH/HL Uptrend Scan on {universe_sel} ({timeframe_sel})..."):
             import yfinance as yf
-            from data_fetcher import get_index_stocks, get_top1000_nse_symbols
+            from data_fetcher import get_index_stocks, get_top1500_nse_symbols
 
-            if "Top 1000" in universe_sel:
-                raw_symbols = get_top1000_nse_symbols()
+            if "Top 1000" in universe_sel or "Top 1500" in universe_sel:
+                raw_symbols = get_top1500_nse_symbols()
             elif "NIFTY 500" in universe_sel:
                 raw_symbols = get_index_stocks("NIFTY 500")
             elif "NIFTY 100" in universe_sel:
