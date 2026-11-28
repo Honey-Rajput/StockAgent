@@ -76,7 +76,8 @@ class PostgresCursorWrapper:
 
     def executemany(self, query, params_list):
         pg_query = query.replace('?', '%s')
-        return self._cur.executemany(pg_query, params_list)
+        import psycopg2.extras
+        return psycopg2.extras.execute_batch(self._cur, pg_query, params_list, page_size=500)
 
     def executescript(self, script):
         return self._cur.execute(script)

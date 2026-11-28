@@ -1682,6 +1682,7 @@ if run_full or run_sma:
                 def _download_quote_chunk(idx_chunk_pair):
                     idx, chunk = idx_chunk_pair
                     _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
+                    _quote_date = today_date_str
                     retries = 0
                     max_retries = 5
                     backoff = 3.0
@@ -1690,6 +1691,10 @@ if run_full or run_sma:
                             # yfinance 1.x: auto_adjust=True by default, threads param removed
                             quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=15)
                             if not quotes_df.empty:
+                                try:
+                                    _quote_date = pd.to_datetime(quotes_df.index[-1]).strftime('%Y-%m-%d')
+                                except Exception:
+                                    _quote_date = today_date_str
                                 # yfinance 1.x multi-ticker: MultiIndex (price_type, ticker)
                                 if isinstance(quotes_df.columns, pd.MultiIndex):
                                     # Level 0 = price type (Close/Open/etc), Level 1 = ticker symbol
@@ -1728,8 +1733,8 @@ if run_full or run_sma:
                                         if k in low_series.index and not pd.isna(low_series[k]):
                                             _low[clean_k] = float(low_series[k])
                                 # Successfully loaded chunk, add a tiny delay to respect rate limits
-                                time.sleep(1.5)
-                                return (_open, _close, _vol, _high, _low)
+                                time.sleep(0.5)
+                                return (_open, _close, _vol, _high, _low, _quote_date)
                             else:
                                 raise ValueError("Empty DataFrame returned")
                         except Exception as chunk_ex:
@@ -1740,14 +1745,14 @@ if run_full or run_sma:
                             print(f"Rate limited or quote download failed for chunk {idx+1}/{len(ticker_chunks)}. Retrying in {backoff}s... (Error: {chunk_ex})")
                             time.sleep(backoff)
                             backoff *= 2.0
-                    return ({}, {}, {}, {}, {})
+                    return ({}, {}, {}, {}, {}, today_date_str)
 
                 # Use a single worker to prevent aggressive yfinance rate-limiting
                 p1_workers = 1 if len(ticker_chunks) > 10 else min(3, len(ticker_chunks))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=p1_workers) as p1_executor:
                     chunk_pairs = list(enumerate(ticker_chunks))
                     for i, result in enumerate(p1_executor.map(_download_quote_chunk, chunk_pairs)):
-                        _o, _c, _v, _h, _l = result
+                        _o, _c, _v, _h, _l, _qdate = result
                         open_price_map.update(_o)
                         close_price_map.update(_c)
                         volume_map.update(_v)
@@ -1756,11 +1761,11 @@ if run_full or run_sma:
                         prog_bar.progress((i + 1) / len(ticker_chunks))
                         status_box.text(f"Phase 1/3: Downloading real-time quotes (Chunk {i+1}/{len(ticker_chunks)})...")
 
-                        # ✅ Save this chunk to DB immediately (per-chunk progressive save)
+                        # ✅ Save this chunk to DB immediately using actual candle date (never stamp yesterday's bar as today)
                         if _c:
                             _chunk_c = dict(_c); _chunk_o = dict(_o)
                             _chunk_h = dict(_h); _chunk_l = dict(_l); _chunk_v = dict(_v)
-                            _d_str = today_date_str
+                            _d_str = _qdate
                             def _save_chunk_now(cc, co, ch, cl, cv, ds):
                                 try:
                                     database.save_today_quotes(ds, cc, co, ch, cl, cv)
@@ -1857,19 +1862,25 @@ if run_full or run_sma:
                     _tf_db_key = yf_interval  # '1d', '1wk', or '1mo' — set above from scan_timeframe
     
                     bulk_cached = bulk_get_cached_ohlcv(scan_symbols, _tf_db_key)
-                    
+                    today_dt_p2 = datetime.now(IST_TIMEZONE).date()
+                    min_trade_date_p2 = today_dt_p2 - timedelta(days=4 if today_dt_p2.weekday() in (0, 6) else 2)
+
                     for sym in scan_symbols:
                         clean_sym = sym.strip().upper().replace(".NS", "")
                         cached_entry = bulk_cached.get(clean_sym)
-                        # Require at least 50 historical bars to be considered valid cached data for technical indicators
+                        # Require at least 50 historical bars AND fresh latest candle
                         if cached_entry is not None and len(cached_entry) >= 50:
-                            bulk_data[sym.strip().upper()] = cached_entry
+                            last_cached_dt_p2 = pd.to_datetime(cached_entry['Date'].iloc[-1]).date()
+                            if last_cached_dt_p2 >= min_trade_date_p2:
+                                bulk_data[sym.strip().upper()] = cached_entry
+                            else:
+                                missing_symbols.append(sym)
                         else:
                             missing_symbols.append(sym)
                     
                     if len(missing_symbols) > 0:
                         status_box.text(f"Phase 2/3: Downloading {len(missing_symbols)} missing symbols...")
-                        chunk_size = 20
+                        chunk_size = 60
                         sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
                         
                         def download_chunk(chunk_idx, chunk):
@@ -1987,9 +1998,9 @@ if run_full or run_sma:
                             prog_bar.progress((chunk_idx + 1) / len(sym_chunks))
                             status_box.text(f"Phase 2/3: Downloading historical data (Chunk {chunk_idx+1}/{len(sym_chunks)})...")
                             
-                            # Add a proactive sleep between chunks to avoid Yahoo rate limits
+                            # Add a short sleep between chunks to avoid Yahoo rate limits
                             if chunk_idx < len(sym_chunks) - 1:
-                                time.sleep(1.5)
+                                time.sleep(0.5)
     
                     if len(bulk_data) > 0:
                         st.session_state[cache_key_p2] = bulk_data

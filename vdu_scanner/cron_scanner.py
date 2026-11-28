@@ -162,6 +162,7 @@ def run_headless_scan():
         def _download_quote_chunk(idx_chunk_pair):
             idx, chunk = idx_chunk_pair
             _open = {}; _close = {}; _vol = {}; _high = {}; _low = {}
+            _quote_date = today_date_str
             retries = 0
             max_retries = 2
             backoff = 2.0
@@ -169,6 +170,10 @@ def run_headless_scan():
                 try:
                     quotes_df = yf.download(tickers=chunk, period="1d", progress=False, threads=False, timeout=20)
                     if not quotes_df.empty:
+                        try:
+                            _quote_date = pd.to_datetime(quotes_df.index[-1]).strftime('%Y-%m-%d')
+                        except Exception:
+                            _quote_date = today_date_str
                         if isinstance(quotes_df.columns, pd.MultiIndex):
                             price_types = quotes_df.columns.get_level_values(0).unique().tolist()
                             def _get_field_series(field):
@@ -196,8 +201,8 @@ def run_headless_scan():
                                 if k in volume_series.index and not pd.isna(volume_series[k]): _vol[clean_k] = int(volume_series[k])
                                 if k in high_series.index and not pd.isna(high_series[k]): _high[clean_k] = float(high_series[k])
                                 if k in low_series.index and not pd.isna(low_series[k]): _low[clean_k] = float(low_series[k])
-                        time.sleep(1.5)
-                        return (_open, _close, _vol, _high, _low)
+                        time.sleep(0.5)
+                        return (_open, _close, _vol, _high, _low, _quote_date)
                     else:
                         raise ValueError("Empty DataFrame returned")
                 except Exception as chunk_ex:
@@ -206,12 +211,12 @@ def run_headless_scan():
                         break
                     time.sleep(backoff)
                     backoff *= 2.0
-            return ({}, {}, {}, {}, {})
+            return ({}, {}, {}, {}, {}, today_date_str)
 
         p1_workers = 1 if len(ticker_chunks) > 10 else min(3, len(ticker_chunks))
         with concurrent.futures.ThreadPoolExecutor(max_workers=p1_workers) as p1_executor:
             for i, result in enumerate(p1_executor.map(_download_quote_chunk, list(enumerate(ticker_chunks)))):
-                _o, _c, _v, _h, _l = result
+                _o, _c, _v, _h, _l, _qdate = result
                 open_price_map.update(_o)
                 close_price_map.update(_c)
                 volume_map.update(_v)
@@ -226,7 +231,7 @@ def run_headless_scan():
                             database.save_today_quotes(ds, cc, co, ch, cl, cv)
                         except Exception as e:
                             print(f"Chunk save error: {e}")
-                    threading.Thread(target=_save_chunk_now, args=(dict(_c), dict(_o), dict(_h), dict(_l), dict(_v), today_date_str), daemon=True).start()
+                    threading.Thread(target=_save_chunk_now, args=(dict(_c), dict(_o), dict(_h), dict(_l), dict(_v), _qdate), daemon=True).start()
 
     scan_symbols = [s for s in raw_symbols if close_price_map.get(s.strip().upper(), 0.0) > 0.0]
     print(f"Phase 1 complete. Found {len(scan_symbols)} active symbols to scan.")
@@ -261,7 +266,7 @@ def run_headless_scan():
             
     if missing_symbols:
         print(f"Downloading historical data for {len(missing_symbols)} missing symbols...")
-        chunk_size = 30
+        chunk_size = 60
         sym_chunks = [missing_symbols[i:i + chunk_size] for i in range(0, len(missing_symbols), chunk_size)]
         
         def download_chunk(chunk_idx, chunk):
@@ -298,7 +303,7 @@ def run_headless_scan():
                                     t_df["Date"] = pd.to_datetime(t_df["Date"]).dt.tz_localize(None)
                                     chunk_data[sym.strip().upper()] = t_df
                                     valid_data[sym.strip().upper()] = t_df
-                        time.sleep(1.5)
+                        time.sleep(0.5)
                         if valid_data:
                             import threading
                             def _upload_chunk(data_dict, tf):
@@ -317,7 +322,7 @@ def run_headless_scan():
                     backoff *= 2.0
             return chunk_data
 
-        p2_workers = 1 if len(sym_chunks) > 10 else min(3, len(sym_chunks))
+        p2_workers = 2 if len(sym_chunks) > 5 else min(3, len(sym_chunks))
         with concurrent.futures.ThreadPoolExecutor(max_workers=p2_workers) as executor:
             chunk_args = [(i, chunk) for i, chunk in enumerate(sym_chunks)]
             for i, res_chunk in enumerate(executor.map(lambda args: download_chunk(*args), chunk_args)):
