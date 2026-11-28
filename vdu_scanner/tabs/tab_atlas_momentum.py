@@ -13,10 +13,24 @@ from trading_rules import evaluate_manas_trend_rules
 from utils import get_day_change_badge_html
 
 
+def _get_nifty_3m_return() -> float:
+    try:
+        import yfinance as yf
+        nsei = yf.download("^NSEI", period="6mo", interval="1d", progress=False, timeout=10)
+        if nsei is not None and len(nsei) >= 64:
+            c = nsei["Close"].squeeze().dropna()
+            if len(c) >= 64 and float(c.iloc[-64]) > 0:
+                return ((float(c.iloc[-1]) - float(c.iloc[-64])) / float(c.iloc[-64])) * 100.0
+    except Exception:
+        pass
+    return 0.0
+
+
 def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> list[dict]:
-    """Compute 1M%, 3M%, 6M%, 1M high drawdown, and day change % for NSE Top-1000 from local 1d cache."""
+    """Compute 1M%, 3M%, 6M%, 1M high drawdown, RS vs NIFTY, and day change % for NSE Top-1000."""
     symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
+    bench_3m = _get_nifty_3m_return()
 
     rows = []
     for sym in symbols:
@@ -54,7 +68,7 @@ def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> lis
         high_1m = float(high.iloc[-21:].max())
         off_1m_high = round(((cmp_val - high_1m) / high_1m) * 100.0, 2) if high_1m > 0 else 0.0
         vol_ratio = round(float(vol.iloc[-1]) / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0
-        m_rules = evaluate_manas_trend_rules(df)
+        m_rules = evaluate_manas_trend_rules(df, benchmark_3m_ret=bench_3m)
 
         rows.append({
             "symbol": sym,
@@ -69,6 +83,8 @@ def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> lis
             "vol_ratio": vol_ratio,
             "days_above_50ma": m_rules["days_above_50ma"],
             "closes_below_50ma": m_rules["closes_below_50ma"],
+            "rs_vs_nifty": m_rules["rs_vs_nifty"],
+            "extension_label": m_rules["extension_label"],
             "trail_ma_label": m_rules["trail_ma_label"],
         })
 
@@ -176,7 +192,9 @@ def render():
             f'<td style="padding:8px;text-align:center;font-weight:800;color:{c3m};">{r["ret_3m"]:+.2f}%</td>'
             f'<td style="padding:8px;text-align:center;font-weight:700;color:{c6m};">{r["ret_6m"]:+.2f}%</td>'
             f'<td style="padding:8px;text-align:center;color:#fca5a5;">{r["off_1m_high"]:.2f}%</td>'
+            f'<td style="padding:8px;text-align:center;color:#00e676;font-weight:700;">+{r.get("rs_vs_nifty", 0):.1f}%</td>'
             f'<td style="padding:8px;text-align:center;color:#00e676;font-weight:700;">{r.get("days_above_50ma", 0)}/50</td>'
+            f'<td style="padding:8px;text-align:center;font-size:0.76rem;">{r.get("extension_label", "—")}</td>'
             f'<td style="padding:8px;text-align:center;color:#94a3b8;">{r["vol_ratio"]:.2f}x</td>'
             f'</tr>'
         )
@@ -194,7 +212,9 @@ def render():
         '<th style="padding:10px 8px;text-align:center;color:#22d3ee;">3M %</th>'
         '<th style="padding:10px 8px;text-align:center;">6M %</th>'
         '<th style="padding:10px 8px;text-align:center;">Off 1M High</th>'
+        '<th style="padding:10px 8px;text-align:center;color:#00e676;">RS vs NIFTY</th>'
         '<th style="padding:10px 8px;text-align:center;">50MA (50d)</th>'
+        '<th style="padding:10px 8px;text-align:center;">50MA Ext</th>'
         '<th style="padding:10px 8px;text-align:center;">Vol Ratio</th>'
         '</tr></thead>'
         f'<tbody>{"".join(rows_html)}</tbody>'

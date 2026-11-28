@@ -350,13 +350,19 @@ def render_10_rules_execution_card(detail_data: dict[str, Any], df: pd.DataFrame
             )
 
 
-def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None = None) -> dict[str, Any]:
+def evaluate_manas_trend_rules(
+    df: pd.DataFrame | None,
+    base_pivot: float | None = None,
+    benchmark_3m_ret: float | None = None,
+) -> dict[str, Any]:
     """
-    Computes Manas Arora's established-trend & execution rules from daily OHLCV:
-      1. 50-MA Consistency: days closed below 50 SMA in the last 50 trading days (0 = never closed below).
-      2. Entry Bar Timing (3-5 Bar Rule): consecutive up-bars from recent swing low (Bar 1-2 = Prime, 5+ = Late).
-      3. Adaptive Trailing Stop MA: 20 SMA normally, or 10 EMA / scale-out if steep 70-90 deg surge (>=18% in 5d).
-      4. Pyramiding Guard: allow adding near base (<=25% above base_pivot), block if >25% extended.
+    Computes Manas Arora's 7-pillar trend & execution rules from daily OHLCV:
+      1. Relative Strength: 3M stock return minus NIFTY 3M return (rs_vs_nifty).
+      2. Trend Following (50-MA / 10-Week MA): days closed below 50 SMA in last 50d.
+      3. Entry Bar Timing (3-5 Bar Rule): Bar 1-2 = Prime, 5+ = Late.
+      4. Extended Moves Guard: % distance above 50 SMA (10-week MA); >20% = Extended / Book Partial.
+      5. Adaptive Trailing Stop MA: 20 SMA normally, or 10 EMA / scale-out on steep angle (>=18% in 5d).
+      6. Pyramiding Guard: allow adding near base (<=25% above base_pivot), block if >25% extended.
     """
     if df is None or len(df) < 55:
         return {
@@ -364,6 +370,9 @@ def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None
             "closes_below_50ma": 50,
             "impulse_bars": 0,
             "bar_timing_label": "—",
+            "dist_50ma_pct": 0.0,
+            "extension_label": "—",
+            "rs_vs_nifty": 0.0,
             "trail_ma_val": 0.0,
             "trail_ma_label": "20 SMA",
             "steep_angle_alert": False,
@@ -373,16 +382,31 @@ def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None
 
     close = df["Close"].astype(float)
     sma50_s = close.rolling(50).mean()
+    sma50_val = float(sma50_s.iloc[-1])
     sma20_val = float(close.rolling(20).mean().iloc[-1])
     ema10_val = float(close.ewm(span=10, adjust=False).mean().iloc[-1])
     cmp_val = float(close.iloc[-1])
 
-    # 1. Last 50 trading days above/below 50 SMA
+    # 1. Relative Strength vs NIFTY (3M)
+    c_63 = float(close.iloc[-64]) if len(close) >= 64 else float(close.iloc[0])
+    ret_3m = ((cmp_val - c_63) / c_63) * 100.0 if c_63 > 0 else 0.0
+    rs_vs_nifty = round(ret_3m - benchmark_3m_ret, 1) if benchmark_3m_ret is not None else round(ret_3m, 1)
+
+    # 2. Last 50 trading days above/below 50 SMA (10-week MA)
     valid_50 = (close >= sma50_s).iloc[-50:]
     days_above = int(valid_50.sum())
     closes_below = int(len(valid_50) - days_above)
 
-    # 2. Consecutive up-close bars (3-5 bar impulse timing)
+    # 3. Extended Moves check (% above 50 SMA)
+    dist_50ma = ((cmp_val - sma50_val) / sma50_val) * 100.0 if sma50_val > 0 else 0.0
+    if dist_50ma >= 22.0:
+        ext_label = f"🔴 +{dist_50ma:.1f}% (Extended)"
+    elif dist_50ma >= 15.0:
+        ext_label = f"🟡 +{dist_50ma:.1f}% (Watch)"
+    else:
+        ext_label = f"🟢 {dist_50ma:+.1f}% (Ideal)"
+
+    # 4. Consecutive up-close bars (3-5 bar impulse timing)
     impulse_bars = 0
     for i in range(1, min(10, len(close))):
         if float(close.iloc[-i]) > float(close.iloc[-i - 1]):
@@ -396,7 +420,7 @@ def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None
     else:
         bar_label = f"🔴 Bar {impulse_bars} (Late)"
 
-    # 3. 5-day steepness / 70-90 deg climax angle check -> adaptive 10 EMA vs 20 SMA trail
+    # 5. 5-day steepness / 70-90 deg climax angle check -> adaptive 10 EMA vs 20 SMA trail
     c_5d = float(close.iloc[-6]) if len(close) >= 6 else cmp_val
     ret_5d = ((cmp_val - c_5d) / c_5d) * 100.0 if c_5d > 0 else 0.0
     steep_alert = ret_5d >= 18.0
@@ -407,7 +431,7 @@ def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None
         trail_val = round(sma20_val, 2)
         trail_label = f"🛡️ 20 SMA ₹{trail_val:,.2f}"
 
-    # 4. Pyramiding guard (<= 25% above base pivot)
+    # 6. Pyramiding guard (<= 25% above base pivot)
     if base_pivot and base_pivot > 0:
         ext_pct = ((cmp_val - base_pivot) / base_pivot) * 100.0
         pyramid_ok = ext_pct <= 25.0
@@ -421,6 +445,9 @@ def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None
         "closes_below_50ma": closes_below,
         "impulse_bars": impulse_bars,
         "bar_timing_label": bar_label,
+        "dist_50ma_pct": round(dist_50ma, 1),
+        "extension_label": ext_label,
+        "rs_vs_nifty": rs_vs_nifty,
         "trail_ma_val": trail_val,
         "trail_ma_label": trail_label,
         "steep_angle_alert": steep_alert,

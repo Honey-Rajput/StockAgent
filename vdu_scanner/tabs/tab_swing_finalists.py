@@ -28,6 +28,7 @@ def score_swing_candidate(
     min_run_pct: float = 35.0,
     max_dd_1m_pct: float = 25.0,
     require_gap_up: bool = True,
+    benchmark_3m_ret: float | None = None,
 ) -> dict | None:
     """
     Evaluate a stock for the Manas Arora VCP + Gap-Up Reversal setup:
@@ -146,7 +147,7 @@ def score_swing_candidate(
     else:
         verdict = "🎯 VCP Coil Ready"
 
-    m_rules = evaluate_manas_trend_rules(df, base_pivot=recent_low_15)
+    m_rules = evaluate_manas_trend_rules(df, base_pivot=recent_low_15, benchmark_3m_ret=benchmark_3m_ret)
 
     return {
         "symbol": sym,
@@ -179,7 +180,23 @@ def score_swing_candidate(
         "bar_timing_label": m_rules["bar_timing_label"],
         "trail_ma_label": m_rules["trail_ma_label"],
         "pyramid_label": m_rules["pyramid_label"],
+        "rs_vs_nifty": m_rules["rs_vs_nifty"],
+        "extension_label": m_rules["extension_label"],
     }
+
+
+def _get_nifty_3m_return() -> float:
+    """Fetch NIFTY 50 (^NSEI) 3M return once for Relative Strength calculation."""
+    try:
+        import yfinance as yf
+        nsei = yf.download("^NSEI", period="6mo", interval="1d", progress=False, timeout=10)
+        if nsei is not None and len(nsei) >= 64:
+            c = nsei["Close"].squeeze().dropna()
+            if len(c) >= 64 and float(c.iloc[-64]) > 0:
+                return ((float(c.iloc[-1]) - float(c.iloc[-64])) / float(c.iloc[-64])) * 100.0
+    except Exception:
+        pass
+    return 0.0
 
 
 def find_top10_swing_finalists(
@@ -191,6 +208,7 @@ def find_top10_swing_finalists(
     """Scan Top 1000 NSE stocks from local 1d OHLCV cache and return top N Manas Arora VCP finalists."""
     symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
+    bench_3m = _get_nifty_3m_return()
 
     candidates = []
     for sym in symbols:
@@ -198,7 +216,12 @@ def find_top10_swing_finalists(
         if df is None or df.empty:
             continue
         scored = score_swing_candidate(
-            sym, df, min_run_pct=min_run_pct, max_dd_1m_pct=max_dd_1m_pct, require_gap_up=require_gap_up
+            sym,
+            df,
+            min_run_pct=min_run_pct,
+            max_dd_1m_pct=max_dd_1m_pct,
+            require_gap_up=require_gap_up,
+            benchmark_3m_ret=bench_3m,
         )
         if scored:
             candidates.append(scored)
@@ -334,7 +357,9 @@ def render():
             f'<td style="padding:10px 8px;text-align:center;color:#38bdf8;font-weight:800;">+{r["gap_up_pct"]:.2f}%</td>'
             f'<td style="padding:10px 8px;text-align:right;color:#ef4444;font-weight:600;">₹{r["stop_loss"]:,.2f}</td>'
             f'<td style="padding:10px 8px;font-size:0.78rem;color:#22d3ee;">{r.get("trail_ma_label", "🛡️ 20 SMA")}</td>'
+            f'<td style="padding:10px 8px;text-align:center;color:#00e676;font-weight:700;">+{r.get("rs_vs_nifty", 0):.1f}%</td>'
             f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;color:#00e676;font-weight:700;">{r.get("days_above_50ma", 0)}/50</td>'
+            f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;">{r.get("extension_label", "—")}</td>'
             f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;">{r.get("bar_timing_label", "—")}</td>'
             f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;">{r.get("pyramid_label", "✅")}</td>'
             f'<td style="padding:10px 8px;text-align:center;"><span style="background:rgba(0,230,118,0.15);color:#00e676;'
@@ -358,7 +383,9 @@ def render():
         '<th style="padding:10px 8px;text-align:center;color:#38bdf8;">Gap-Up %</th>'
         '<th style="padding:10px 8px;text-align:right;">Initial SL</th>'
         '<th style="padding:10px 8px;text-align:left;">Trail Stop (No Cap)</th>'
+        '<th style="padding:10px 8px;text-align:center;color:#00e676;">RS vs NIFTY</th>'
         '<th style="padding:10px 8px;text-align:center;">50MA (50d)</th>'
+        '<th style="padding:10px 8px;text-align:center;">50MA Ext</th>'
         '<th style="padding:10px 8px;text-align:center;">Bar Timing</th>'
         '<th style="padding:10px 8px;text-align:center;">Pyramid</th>'
         '<th style="padding:10px 8px;text-align:center;">Score</th>'
@@ -370,16 +397,20 @@ def render():
     )
 
     st.markdown("---")
-    st.markdown("#### 📈 Finalist Chart & Quick Watchlist")
-    sel_col, wl_col = st.columns([3, 1])
-    with sel_col:
+    st.markdown("#### 🛡️ Risk Management & Position Sizing + Finalist Chart")
+    r_col1, r_col2, r_col3, r_col4 = st.columns([2, 1.5, 1.5, 1.5])
+    with r_col1:
         sel_sym = st.selectbox(
-            "Select Finalist to Inspect VCP + Gap-Up Structure:",
+            "Select Finalist to Inspect:",
             [f["symbol"] for f in finalists],
             key="sf_chart_select",
         )
     selected_cand = next((f for f in finalists if f["symbol"] == sel_sym), finalists[0])
-    with wl_col:
+    with r_col2:
+        acct_cap = st.number_input("Trading Capital (₹):", min_value=10000, value=500000, step=50000, key="sf_cap")
+    with r_col3:
+        risk_pct = st.number_input("Risk per Trade (%):", min_value=0.25, max_value=5.0, value=1.0, step=0.25, key="sf_risk_pct")
+    with r_col4:
         st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
         if st.button(f"➕ Add {sel_sym} to Watchlist", key="sf_add_wl", use_container_width=True):
             watchlist.add_to_watchlist(
@@ -390,5 +421,17 @@ def render():
                 f"Manas Arora VCP ({selected_cand['verdict']} | Run: +{selected_cand['prior_run_pct']:.1f}%, Off 1M High: {selected_cand['dd_1m_high_pct']:.1f}%)",
             )
             st.success(f"Added {sel_sym} to Watchlist!")
+
+    risk_rupees = acct_cap * (risk_pct / 100.0)
+    risk_per_sh = max(0.01, selected_cand["cmp"] - selected_cand["stop_loss"])
+    total_qty = int(risk_rupees / risk_per_sh)
+    pilot_qty = max(1, int(total_qty * 0.5)) if total_qty > 0 else 0
+    pos_val = total_qty * selected_cand["cmp"]
+    st.info(
+        f"**{sel_sym} Position Plan:** Max Risk **₹{risk_rupees:,.0f}** ({risk_pct}% of ₹{acct_cap:,.0f}) | "
+        f"Risk/Share **₹{risk_per_sh:,.2f}** (CMP ₹{selected_cand['cmp']:,.2f} → SL ₹{selected_cand['stop_loss']:,.2f}) | "
+        f"**Total Qty: {total_qty:,} shares** (₹{pos_val:,.0f}) → Start with **Pilot 50%: {pilot_qty:,} shares**, "
+        f"pyramid remaining after 1–2 days of positive feedback."
+    )
 
     _render_chart(sel_sym, selected_cand)
