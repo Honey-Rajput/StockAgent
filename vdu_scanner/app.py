@@ -1479,7 +1479,7 @@ st.sidebar.markdown('---')
 st.sidebar.number_input(
     "💰 Global Max Price (₹, 0 = All):",
     min_value=0,
-    value=1000,
+    value=0,
     step=100,
     key="global_max_cmp",
     help="Hides stocks priced above this limit across all scanner tabs (0 = no limit).",

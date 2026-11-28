@@ -417,7 +417,7 @@ def render():
     with c2:
         max_dd = st.slider("Max Off 1M High (%)", min_value=5.0, max_value=35.0, value=25.0, step=1.0, key="ma_max_dd")
     with c3:
-        max_price = st.number_input("Max Price (₹):", min_value=0, value=1000, step=100, key="ma_max_price")
+        max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=0, step=100, key="ma_max_price")
     with c4:
         max_res = st.selectbox("Show Top:", [10, 20, 30, 50], index=1, key="ma_max_res")
     with c5:

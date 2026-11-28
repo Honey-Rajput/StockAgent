@@ -110,7 +110,7 @@ def render():
     with f3:
         min_3m = st.number_input("Min 3M %:", value=15.0, step=5.0, key="atlas_min_3m")
     with f4:
-        max_price = st.number_input("Max Price (₹):", min_value=0, value=1000, step=100, key="atlas_max_price")
+        max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=0, step=100, key="atlas_max_price")
     with f5:
         sort_by = st.selectbox("Sort By:", ["3M % ↓", "1M % ↓", "6M % ↓", "Day Chg % ↓", "Nearest 1M High"], key="atlas_sort")
     with f6:

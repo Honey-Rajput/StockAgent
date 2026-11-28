@@ -253,7 +253,7 @@ def render():
     with c2:
         min_days = st.selectbox("Min Base Duration:", [15, 20, 25, 30], index=0, key="mb_min_days")
     with c3:
-        max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=1000, step=100, key="mb_max_price")
+        max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=0, step=100, key="mb_max_price")
     with c4:
         max_res = st.selectbox("Show Top:", [20, 30, 50, 100], index=1, key="mb_max_res")
     with c5:

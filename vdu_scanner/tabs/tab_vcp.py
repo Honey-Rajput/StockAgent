@@ -216,7 +216,7 @@ def render():
                 if 'VCP (15d)' in v_df.columns: mask = mask | (v_df['VCP (15d)'] == 'SQUEEZE')
                 v_df = v_df[mask]
         
-        _max_cmp_vcp = float(st.session_state.get("global_max_cmp", 1000))
+        _max_cmp_vcp = float(st.session_state.get("global_max_cmp", 0))
         if _max_cmp_vcp > 0 and 'close' in v_df.columns:
             v_df = v_df[v_df['close'].astype(float) <= _max_cmp_vcp]
 

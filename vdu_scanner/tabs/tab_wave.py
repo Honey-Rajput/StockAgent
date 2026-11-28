@@ -403,7 +403,7 @@ The **WaveTrend oscillator** (popularized by LazyBear) is an institutional-grade
             continue
         if search_sym and search_sym not in str(r.get('symbol', '')).upper():
             continue
-        _max_cmp_wt = float(st.session_state.get("global_max_cmp", 1000))
+        _max_cmp_wt = float(st.session_state.get("global_max_cmp", 0))
         if _max_cmp_wt > 0 and float(r.get('cmp') or 0.0) > _max_cmp_wt:
             continue
         filtered.append(r)

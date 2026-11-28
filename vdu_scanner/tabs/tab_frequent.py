@@ -244,7 +244,7 @@ def render():
             if strat_filter:
                 if not any(s in x['strategies'] for s in strat_filter):
                     continue
-            _max_cmp_al = float(st.session_state.get("global_max_cmp", 1000))
+            _max_cmp_al = float(st.session_state.get("global_max_cmp", 0))
             if _max_cmp_al > 0 and float(x.get('cmp') or 0.0) > _max_cmp_al:
                 continue
             filtered_list.append(x)
