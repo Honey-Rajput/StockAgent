@@ -204,7 +204,7 @@ def find_top10_swing_finalists(
     max_dd_1m_pct: float = 25.0,
     require_gap_up: bool = True,
     max_price: float = 1000.0,
-    max_results: int = 10,
+    max_results: int = 20,
 ) -> list[dict]:
     """Scan Top 1000 NSE stocks from local 1d OHLCV cache and return top N Manas Arora VCP finalists."""
     symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
@@ -278,10 +278,10 @@ def _render_chart(sym: str, candidate: dict):
 
 
 def render():
-    st.markdown("### 🚀 Manas Arora Style VCP + Gap-Up Finalists (Max 10)")
+    st.markdown("### 🚀 Manas Arora Style VCP + Gap-Up Finalists (Top 20)")
     st.markdown(
         "<p style='font-size:0.9rem; color:#94a3b8; margin-top:-6px;'>"
-        "Selects up to <b>10 finalist swing stocks</b> with a <b>≥35% prior run-up</b>, holding within <b>≤25% of their 1-Month high</b>, "
+        "Selects up to <b>20 finalist swing stocks</b> with a <b>≥35% prior run-up</b>, holding within <b>≤25% of their 1-Month high</b>, "
         "forming a tight <b>VCP contraction</b>, and <b>breaking their recent low with a Gap-Up open</b> ready for the next move."
         "</p>",
         unsafe_allow_html=True,
@@ -295,7 +295,7 @@ def render():
     with c3:
         max_price = st.number_input("Max Price (₹, 0=All):", min_value=0, value=1000, step=100, key="ma_max_price")
     with c4:
-        max_res = st.selectbox("Show Top:", [10, 20, 30, 50], index=0, key="ma_max_res")
+        max_res = st.selectbox("Show Top:", [10, 20, 30, 50], index=1, key="ma_max_res")
     with c5:
         req_gap = st.checkbox("Require Gap-Up Break Off Recent Low", value=True, key="ma_req_gap")
     with c6:
@@ -315,7 +315,7 @@ def render():
         return
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Finalists Selected", f"{len(finalists)} / 10")
+    k1.metric("Finalists Selected", f"{len(finalists)} / {max_res}")
     k2.metric("Avg Prior Run", f"+{sum(f['prior_run_pct'] for f in finalists) / len(finalists):.1f}%")
     k3.metric("Avg Off 1M High", f"{sum(f['dd_1m_high_pct'] for f in finalists) / len(finalists):.1f}%")
     k4.metric("Avg VCP Tightness", f"{sum(f['contraction_ratio'] for f in finalists) / len(finalists):.2f}x")
