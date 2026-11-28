@@ -1,8 +1,10 @@
 """
 tab_swing_finalists.py
-Top-10 Swing Trade Finalists (Manas Arora / Chartink Atlas 1M% & 3M% Momentum + VCP Pullback).
-Selects up to 10 high-conviction swing candidates that showed strong 1M/3M leadership
-and have now pulled back quietly on contracting volatility (VCP) and dry volume.
+Manas Arora Style Swing Trade Finalists (Max 10):
+  1. Minimum prior run-up of >= 35% (swing low to swing high over 3M-6M).
+  2. Not deep down from its 1-Month high (drawdown <= 25%, i.e. within 0% to -25% of 1M high).
+  3. Forming a VCP pattern (volatility contraction + dry volume during the base).
+  4. Breaking its recent low / VCP base by opening gap-up (recent 1-5 sessions) and ready for the next leg.
 """
 
 import pandas as pd
@@ -19,22 +21,28 @@ from utils import get_day_change_badge_html
 import watchlist
 
 
-def score_swing_candidate(sym: str, df: pd.DataFrame, min_1m_pct: float = 4.0, min_3m_pct: float = 10.0) -> dict | None:
+def score_swing_candidate(
+    sym: str,
+    df: pd.DataFrame,
+    min_run_pct: float = 35.0,
+    max_dd_1m_pct: float = 25.0,
+    require_gap_up: bool = True,
+) -> dict | None:
     """
-    Evaluate a single stock's daily OHLCV DataFrame for Manas Arora / VCP swing readiness:
-      1. Prior momentum leadership (1M% and 3M% change).
-      2. Healthy Stage-2 trend (CMP > 50 SMA * 0.98 and CMP > 200 SMA, 50 SMA > 200 SMA).
-      3. Low / resting pullback from 60-day high (not extended, -2% to -22% off high, near 10/21 EMA).
-      4. VCP volatility contraction (5d range < 20d range) + Dry Volume (5d avg vol < 20d avg vol).
-    Returns a scored dict or None if the stock does not qualify.
+    Evaluate a stock for the Manas Arora VCP + Gap-Up Reversal setup:
+      - Prior run-up >= min_run_pct (default 35%) from 6M/3M low to recent high.
+      - Drawdown from 1M (21d) high <= max_dd_1m_pct (default 25%).
+      - VCP contraction (5d range < 20d range) + dry volume on base.
+      - Breaking recent low / base via gap-up open (within last 5 sessions) with bullish close.
     """
     if df is None or len(df) < 130:
         return None
 
     df = df.sort_values("Date").reset_index(drop=True)
-    close = df["Close"].astype(float)
+    open_s = df["Open"].astype(float)
     high = df["High"].astype(float)
     low = df["Low"].astype(float)
+    close = df["Close"].astype(float)
     vol = df["Volume"].astype(float)
 
     cmp_val = float(close.iloc[-1])
@@ -42,7 +50,6 @@ def score_swing_candidate(sym: str, df: pd.DataFrame, min_1m_pct: float = 4.0, m
     if cmp_val < 20.0 or prev_close <= 0:
         return None
 
-    # Liquidity filter: 20d avg traded value >= 2 Cr (or avg vol >= 50,000)
     avg_vol_20 = float(vol.iloc[-20:].mean())
     avg_vol_5 = float(vol.iloc[-5:].mean())
     if avg_vol_20 < 50000 or (cmp_val * avg_vol_20) < 1e7:
@@ -50,96 +57,93 @@ def score_swing_candidate(sym: str, df: pd.DataFrame, min_1m_pct: float = 4.0, m
 
     day_chg_pct = ((cmp_val - prev_close) / prev_close) * 100.0
 
-    # 1M (21d), 3M (63d), 6M (126d) percentage returns
     c_1m = float(close.iloc[-22]) if len(close) >= 22 else float(close.iloc[0])
     c_3m = float(close.iloc[-64]) if len(close) >= 64 else float(close.iloc[0])
     c_6m = float(close.iloc[-127]) if len(close) >= 127 else float(close.iloc[0])
-    if c_1m <= 0 or c_3m <= 0 or c_6m <= 0:
+    ret_1m = ((cmp_val - c_1m) / c_1m) * 100.0 if c_1m > 0 else 0.0
+    ret_3m = ((cmp_val - c_3m) / c_3m) * 100.0 if c_3m > 0 else 0.0
+    ret_6m = ((cmp_val - c_6m) / c_6m) * 100.0 if c_6m > 0 else 0.0
+
+    # Rule 1: Minimum prior run of >= 35% (low over 126d to high over 63d)
+    low_126 = float(low.iloc[-126:].min())
+    high_63 = float(high.iloc[-63:].max())
+    if low_126 <= 0 or high_63 <= 0:
+        return None
+    prior_run_pct = ((high_63 - low_126) / low_126) * 100.0
+    if prior_run_pct < min_run_pct:
         return None
 
-    ret_1m = ((cmp_val - c_1m) / c_1m) * 100.0
-    ret_3m = ((cmp_val - c_3m) / c_3m) * 100.0
-    ret_6m = ((cmp_val - c_6m) / c_6m) * 100.0
-
-    # Must have prior momentum leadership (1M% and 3M%)
-    if ret_1m < min_1m_pct or ret_3m < min_3m_pct:
+    # Rule 2: Not deep down from 1-Month (21d) high — max drawdown <= 25%
+    high_1m = float(high.iloc[-21:].max())
+    if high_1m <= 0:
+        return None
+    dd_from_1m_high_pct = ((cmp_val - high_1m) / high_1m) * 100.0
+    if dd_from_1m_high_pct < -abs(max_dd_1m_pct):
         return None
 
-    # Moving averages
+    # Moving averages (Stage 2 / constructive structure)
     ema10 = float(close.ewm(span=10, adjust=False).mean().iloc[-1])
     ema21 = float(close.ewm(span=21, adjust=False).mean().iloc[-1])
     sma50 = float(close.rolling(50).mean().iloc[-1])
     sma200 = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else float(close.rolling(120).mean().iloc[-1])
-
-    # Stage 2 / uptrend structure
-    if cmp_val < sma200 or sma50 < sma200 * 0.99:
-        return None
-    if cmp_val < sma50 * 0.96:
+    if cmp_val < sma200 or cmp_val < sma50 * 0.94:
         return None
 
-    # Pullback from 60-day high (should be resting / pulled back, NOT chasing +15% extended)
-    high_60 = float(high.iloc[-60:].max())
-    if high_60 <= 0:
-        return None
-    pullback_pct = ((cmp_val - high_60) / high_60) * 100.0  # negative value e.g. -6.5%
-
-    # Must be in a constructive pullback / tight base (-22% <= pullback <= -1.5%)
-    # and not wildly extended above 21 EMA (within -5% to +6% of 21 EMA)
-    dist_ema21_pct = ((cmp_val - ema21) / ema21) * 100.0 if ema21 > 0 else 0.0
-    if pullback_pct > -1.5 or pullback_pct < -22.0:
-        return None
-    if dist_ema21_pct > 6.5 or dist_ema21_pct < -5.5:
-        return None
-
-    # VCP Volatility Contraction: compare recent 5-day avg daily range % vs prior 20-day avg daily range %
+    # Rule 3: VCP Volatility Contraction (recent 5d range contracting vs prior 20d range)
     daily_range_pct = ((high - low) / close.replace(0, np.nan)) * 100.0
-    range_5d = float(daily_range_pct.iloc[-5:].mean())
-    range_20d = float(daily_range_pct.iloc[-25:-5].mean()) if len(daily_range_pct) >= 25 else float(daily_range_pct.iloc[-20:].mean())
+    range_5d = float(daily_range_pct.iloc[-6:-1].mean()) if len(daily_range_pct) >= 6 else float(daily_range_pct.iloc[-5:].mean())
+    range_20d = float(daily_range_pct.iloc[-26:-6].mean()) if len(daily_range_pct) >= 26 else float(daily_range_pct.iloc[-20:].mean())
     if range_20d <= 0 or np.isnan(range_5d) or np.isnan(range_20d):
         return None
-    contraction_ratio = range_5d / range_20d  # < 1.0 means tightening!
-
-    # Require genuine tightening (VCP contraction <= 0.95)
+    contraction_ratio = range_5d / range_20d
     if contraction_ratio > 0.95:
         return None
 
-    # Dry Volume on pullback (5d avg vol / 20d avg vol)
     vol_dry_ratio = avg_vol_5 / avg_vol_20 if avg_vol_20 > 0 else 1.0
-    if vol_dry_ratio > 1.05:
+
+    # Rule 4: Breaking its recent low by opening gap-up (check last 5 sessions)
+    recent_low_15 = float(low.iloc[-15:-1].min()) if len(low) >= 15 else float(low.iloc[:-1].min())
+    best_gap_pct = 0.0
+    gap_days_ago = None
+    for offset in range(1, 6):
+        idx = -offset
+        if abs(idx) >= len(df):
+            break
+        o_i = float(open_s.iloc[idx])
+        c_i = float(close.iloc[idx])
+        prev_c_i = float(close.iloc[idx - 1])
+        if prev_c_i > 0:
+            g_pct = ((o_i - prev_c_i) / prev_c_i) * 100.0
+            if g_pct >= 0.5 and c_i >= o_i * 0.985 and c_i > prev_c_i and cmp_val >= recent_low_15 * 1.005:
+                if g_pct > best_gap_pct:
+                    best_gap_pct = g_pct
+                    gap_days_ago = offset - 1
+
+    has_gap_up_break = best_gap_pct >= 0.5
+    if require_gap_up and not has_gap_up_break:
         return None
 
-    # Composite Swing Readiness Score (0 - 100)
-    # 1. Momentum (1M + 3M leadership): up to 35 pts
-    momo_pts = min(20.0, max(0.0, (ret_3m - 10.0) * 0.45)) + min(15.0, max(0.0, (ret_1m - 4.0) * 0.6))
-    # 2. VCP Tightness: up to 25 pts (lower contraction_ratio = tighter base)
+    run_pts = min(25.0, max(0.0, (prior_run_pct - 35.0) * 0.35 + 10.0))
     vcp_pts = min(25.0, max(0.0, (1.0 - contraction_ratio) * 50.0))
-    # 3. Dry Volume: up to 20 pts (lower vol_dry_ratio = quieter pullback)
-    dry_pts = min(20.0, max(0.0, (1.05 - vol_dry_ratio) * 35.0))
-    # 4. Pullback Sweet Spot (-3% to -12% from high & close to 21 EMA): up to 10 pts
-    pb_abs = abs(pullback_pct)
-    pb_pts = 10.0 if 3.0 <= pb_abs <= 12.0 else 6.0
-    # 5. Institutional Cluster Boost: up to 10 pts
+    gap_pts = min(25.0, best_gap_pct * 5.0 + (8.0 if gap_days_ago == 0 else 4.0)) if has_gap_up_break else 0.0
+    dry_pts = min(15.0, max(0.0, (1.1 - vol_dry_ratio) * 25.0))
     cluster_tag = get_stock_cluster_tag(sym)
     cluster_pts = 10.0 if cluster_tag else 0.0
+    total_score = round(run_pts + vcp_pts + gap_pts + dry_pts + cluster_pts, 1)
 
-    total_score = round(momo_pts + vcp_pts + dry_pts + pb_pts + cluster_pts, 1)
-
-    # Trade Levels: Buy around CMP / 10-21 EMA, SL below recent 10d swing low, Target at 2.5R+ or prior high+
-    swing_low_10 = float(low.iloc[-10:].min())
-    stop_loss = round(min(swing_low_10 * 0.99, ema21 * 0.975), 2)
+    stop_loss = round(min(recent_low_15 * 0.99, ema21 * 0.975), 2)
     if stop_loss >= cmp_val * 0.985:
         stop_loss = round(cmp_val * 0.95, 2)
     risk = cmp_val - stop_loss
-    target_price = round(max(high_60 * 1.08, cmp_val + risk * 2.5), 2)
+    target_price = round(max(high_1m * 1.10, cmp_val + risk * 2.5), 2)
     rr_ratio = round((target_price - cmp_val) / risk, 1) if risk > 0 else 0.0
 
-    # Setup label
-    if contraction_ratio <= 0.65 and vol_dry_ratio <= 0.70:
-        verdict = "🎯 Prime VCP Coil"
-    elif abs(dist_ema21_pct) <= 2.5 and vol_dry_ratio <= 0.85:
-        verdict = "⚡ Tight 21 EMA Pullback"
+    if has_gap_up_break and gap_days_ago == 0:
+        verdict = f"🚀 Today Gap-Up +{best_gap_pct:.1f}% VCP"
+    elif has_gap_up_break:
+        verdict = f"⚡ Gap-Up +{best_gap_pct:.1f}% ({gap_days_ago}d ago)"
     else:
-        verdict = "🔥 Dry-Vol Base"
+        verdict = "🎯 VCP Coil Ready"
 
     return {
         "symbol": sym,
@@ -148,18 +152,20 @@ def score_swing_candidate(sym: str, df: pd.DataFrame, min_1m_pct: float = 4.0, m
         "cluster_tag": cluster_tag or "",
         "cmp": round(cmp_val, 2),
         "day_change_pct": round(day_chg_pct, 2),
+        "prior_run_pct": round(prior_run_pct, 1),
         "ret_1m": round(ret_1m, 2),
         "ret_3m": round(ret_3m, 2),
         "ret_6m": round(ret_6m, 2),
-        "pullback_pct": round(pullback_pct, 2),
-        "dist_ema21_pct": round(dist_ema21_pct, 2),
-        "range_5d": round(range_5d, 2),
+        "dd_1m_high_pct": round(dd_from_1m_high_pct, 2),
         "contraction_ratio": round(contraction_ratio, 2),
         "vol_dry_ratio": round(vol_dry_ratio, 2),
+        "gap_up_pct": round(best_gap_pct, 2),
+        "gap_days_ago": gap_days_ago,
+        "recent_low": round(recent_low_15, 2),
+        "high_1m": round(high_1m, 2),
         "ema10": round(ema10, 2),
         "ema21": round(ema21, 2),
         "sma50": round(sma50, 2),
-        "high_60": round(high_60, 2),
         "stop_loss": stop_loss,
         "target_price": target_price,
         "rr_ratio": rr_ratio,
@@ -168,8 +174,13 @@ def score_swing_candidate(sym: str, df: pd.DataFrame, min_1m_pct: float = 4.0, m
     }
 
 
-def find_top10_swing_finalists(min_1m_pct: float = 4.0, min_3m_pct: float = 10.0, max_results: int = 10) -> list[dict]:
-    """Scan Top 1000 NSE stocks from local 1d OHLCV cache and return top N swing finalists."""
+def find_top10_swing_finalists(
+    min_run_pct: float = 35.0,
+    max_dd_1m_pct: float = 25.0,
+    require_gap_up: bool = True,
+    max_results: int = 10,
+) -> list[dict]:
+    """Scan Top 1000 NSE stocks from local 1d OHLCV cache and return top N Manas Arora VCP finalists."""
     symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if str(s).strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
 
@@ -178,7 +189,9 @@ def find_top10_swing_finalists(min_1m_pct: float = 4.0, min_3m_pct: float = 10.0
         df = bulk_data.get(sym)
         if df is None or df.empty:
             continue
-        scored = score_swing_candidate(sym, df, min_1m_pct=min_1m_pct, min_3m_pct=min_3m_pct)
+        scored = score_swing_candidate(
+            sym, df, min_run_pct=min_run_pct, max_dd_1m_pct=max_dd_1m_pct, require_gap_up=require_gap_up
+        )
         if scored:
             candidates.append(scored)
 
@@ -233,53 +246,51 @@ def _render_chart(sym: str, candidate: dict):
 
 
 def render():
-    st.markdown("### 🏆 Top 10 Swing Finalists (Manas Arora / Atlas 1M% & 3M% + VCP Pullback)")
+    st.markdown("### 🚀 Manas Arora Style VCP + Gap-Up Finalists (Max 10)")
     st.markdown(
         "<p style='font-size:0.9rem; color:#94a3b8; margin-top:-6px;'>"
-        "Filters the NSE Top-1000 universe for <b>prior 1M &amp; 3M momentum leaders</b> that have now <b>pulled back quietly</b> "
-        "near their 10/21 EMA on <b>contracting volatility (VCP)</b> and <b>dry volume</b> — capped at the <b>Top 10 actionable swing finalists</b>."
+        "Selects up to <b>10 finalist swing stocks</b> with a <b>≥35% prior run-up</b>, holding within <b>≤25% of their 1-Month high</b>, "
+        "forming a tight <b>VCP contraction</b>, and <b>breaking their recent low with a Gap-Up open</b> ready for the next move."
         "</p>",
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3 = st.columns([2, 2, 2])
+    c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
     with c1:
-        min_1m = st.slider("Min 1M % Change", min_value=0.0, max_value=25.0, value=4.0, step=1.0, key="sf_min_1m")
+        min_run = st.slider("Min Prior Run-Up (%)", min_value=20.0, max_value=80.0, value=35.0, step=5.0, key="ma_min_run")
     with c2:
-        min_3m = st.slider("Min 3M % Change", min_value=0.0, max_value=50.0, value=10.0, step=2.0, key="sf_min_3m")
+        max_dd = st.slider("Max Drop from 1M High (%)", min_value=5.0, max_value=35.0, value=25.0, step=1.0, key="ma_max_dd")
     with c3:
-        st.markdown("<div style='height:26px;'></div>", unsafe_allow_html=True)
-        refresh_clicked = st.button("🔄 Refresh Top 10 Finalists", key="sf_refresh_btn", use_container_width=True)
+        req_gap = st.checkbox("Require Gap-Up Break Off Recent Low", value=True, key="ma_req_gap")
+    with c4:
+        refresh_clicked = st.button("🔄 Refresh Top 10", key="sf_refresh_btn", use_container_width=True)
 
-    cache_key = f"swing_finalists_{min_1m}_{min_3m}"
+    cache_key = f"ma_vcp_{min_run}_{max_dd}_{req_gap}"
     if refresh_clicked or cache_key not in st.session_state:
-        with st.spinner("Scanning cached 1M/3M momentum leaders & VCP contractions..."):
-            st.session_state[cache_key] = find_top10_swing_finalists(min_1m_pct=min_1m, min_3m_pct=min_3m, max_results=10)
+        with st.spinner("Scanning for ≥35% runners forming VCP + Gap-Up reversal..."):
+            st.session_state[cache_key] = find_top10_swing_finalists(
+                min_run_pct=min_run, max_dd_1m_pct=max_dd, require_gap_up=req_gap, max_results=10
+            )
 
     finalists = st.session_state.get(cache_key, [])
 
     if not finalists:
-        st.info("No stocks currently meet all 1M%/3M% + VCP pullback criteria. Try lowering the Min 1M% or Min 3M% sliders above.")
+        st.info("No stocks currently meet all criteria. Try unchecking 'Require Gap-Up Break Off Recent Low' or adjusting the sliders.")
         return
 
-    # Summary KPIs
     k1, k2, k3, k4 = st.columns(4)
-    avg_1m = sum(f["ret_1m"] for f in finalists) / len(finalists)
-    avg_3m = sum(f["ret_3m"] for f in finalists) / len(finalists)
-    avg_vcp = sum(f["contraction_ratio"] for f in finalists) / len(finalists)
     k1.metric("Finalists Selected", f"{len(finalists)} / 10")
-    k2.metric("Avg 1M Return", f"{avg_1m:+.1f}%")
-    k3.metric("Avg 3M Return", f"{avg_3m:+.1f}%")
-    k4.metric("Avg VCP Contraction", f"{avg_vcp:.2f}x", help="< 0.75x = tight VCP contraction")
+    k2.metric("Avg Prior Run", f"+{sum(f['prior_run_pct'] for f in finalists) / len(finalists):.1f}%")
+    k3.metric("Avg Off 1M High", f"{sum(f['dd_1m_high_pct'] for f in finalists) / len(finalists):.1f}%")
+    k4.metric("Avg VCP Tightness", f"{sum(f['contraction_ratio'] for f in finalists) / len(finalists):.2f}x")
 
-    # Export / Copy helpers
     exp_df = pd.DataFrame(finalists)
     e1, e2, _ = st.columns([1.5, 1.8, 5])
     with e1:
         st.download_button(
             "📥 Export CSV",
             exp_df.to_csv(index=False).encode("utf-8"),
-            file_name="top10_swing_finalists.csv",
+            file_name="manas_arora_top10_vcp.csv",
             mime="text/csv",
             key="sf_csv_dl",
         )
@@ -288,12 +299,11 @@ def render():
         st.download_button(
             "📋 TradingView Watchlist (.txt)",
             tv_txt.encode("utf-8"),
-            file_name="top10_swing_finalists_tv.txt",
+            file_name="manas_arora_top10_tv.txt",
             mime="text/plain",
             key="sf_tv_dl",
         )
 
-    # Render Atlas-style HTML table for the Top 10 Finalists
     rows_html = []
     for idx, r in enumerate(finalists, 1):
         sym = r["symbol"]
@@ -302,10 +312,6 @@ def render():
             f'color:#fbbf24;border:1px solid rgba(251,191,36,0.4);border-radius:3px;font-size:0.68rem;font-weight:700;">'
             f'✦ {r["cluster_tag"]}</span>' if r["cluster_tag"] else ""
         )
-        day_badge = get_day_change_badge_html(r["day_change_pct"])
-        m1_color = "#00e676" if r["ret_1m"] >= 15 else "#38bdf8"
-        m3_color = "#00e676" if r["ret_3m"] >= 30 else "#22d3ee"
-
         rows_html.append(
             f'<tr style="border-bottom:1px solid rgba(255,255,255,0.06);">'
             f'<td style="padding:10px 8px;text-align:center;font-weight:800;color:#fbbf24;">#{idx}</td>'
@@ -313,13 +319,11 @@ def render():
             f'<a href="https://in.tradingview.com/chart/?symbol=NSE:{sym}" target="_blank" style="color:#38bdf8;font-weight:800;text-decoration:none;">{sym} ↗</a>'
             f'{cluster_badge}<div style="font-size:0.72rem;color:#64748b;">{r["sector"]}</div></td>'
             f'<td style="padding:10px 8px;text-align:right;font-weight:700;color:#f8fafc;">₹{r["cmp"]:,.2f}</td>'
-            f'<td style="padding:10px 8px;text-align:center;">{day_badge}</td>'
-            f'<td style="padding:10px 8px;text-align:center;font-weight:800;color:{m1_color};">{r["ret_1m"]:+.1f}%</td>'
-            f'<td style="padding:10px 8px;text-align:center;font-weight:800;color:{m3_color};">{r["ret_3m"]:+.1f}%</td>'
-            f'<td style="padding:10px 8px;text-align:center;color:#cbd5e1;">{r["ret_6m"]:+.1f}%</td>'
-            f'<td style="padding:10px 8px;text-align:center;color:#fca5a5;">{r["pullback_pct"]:.1f}%</td>'
+            f'<td style="padding:10px 8px;text-align:center;">{get_day_change_badge_html(r["day_change_pct"])}</td>'
+            f'<td style="padding:10px 8px;text-align:center;font-weight:800;color:#00e676;">+{r["prior_run_pct"]:.1f}%</td>'
+            f'<td style="padding:10px 8px;text-align:center;color:#fca5a5;font-weight:700;">{r["dd_1m_high_pct"]:.1f}%</td>'
             f'<td style="padding:10px 8px;text-align:center;color:#22d3ee;font-weight:700;">{r["contraction_ratio"]:.2f}x</td>'
-            f'<td style="padding:10px 8px;text-align:center;color:#38bdf8;font-weight:700;">{r["vol_dry_ratio"]:.2f}x</td>'
+            f'<td style="padding:10px 8px;text-align:center;color:#38bdf8;font-weight:800;">+{r["gap_up_pct"]:.2f}%</td>'
             f'<td style="padding:10px 8px;text-align:right;color:#ef4444;font-weight:600;">₹{r["stop_loss"]:,.2f}</td>'
             f'<td style="padding:10px 8px;text-align:right;color:#00e676;font-weight:600;">₹{r["target_price"]:,.2f}'
             f'<div style="font-size:0.68rem;color:#6ee7b7;">1:{r["rr_ratio"]} R:R</div></td>'
@@ -329,7 +333,7 @@ def render():
             f'</tr>'
         )
 
-    table_html = (
+    st.markdown(
         '<div style="overflow-x:auto;border:1px solid rgba(255,255,255,0.1);border-radius:10px;background:rgba(9,13,22,0.92);margin-top:8px;">'
         '<table style="width:100%;border-collapse:collapse;font-size:0.84rem;">'
         '<thead><tr style="background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.12);'
@@ -338,29 +342,26 @@ def render():
         '<th style="padding:10px 8px;text-align:left;">Stock</th>'
         '<th style="padding:10px 8px;text-align:right;">CMP</th>'
         '<th style="padding:10px 8px;text-align:center;">Day Chg %</th>'
-        '<th style="padding:10px 8px;text-align:center;color:#38bdf8;">1M %</th>'
-        '<th style="padding:10px 8px;text-align:center;color:#22d3ee;">3M %</th>'
-        '<th style="padding:10px 8px;text-align:center;">6M %</th>'
-        '<th style="padding:10px 8px;text-align:center;">Off High</th>'
+        '<th style="padding:10px 8px;text-align:center;color:#00e676;">Prior Run</th>'
+        '<th style="padding:10px 8px;text-align:center;">Off 1M High</th>'
         '<th style="padding:10px 8px;text-align:center;">VCP Tight</th>'
-        '<th style="padding:10px 8px;text-align:center;">Vol Dry</th>'
+        '<th style="padding:10px 8px;text-align:center;color:#38bdf8;">Gap-Up %</th>'
         '<th style="padding:10px 8px;text-align:right;">Stop Loss</th>'
         '<th style="padding:10px 8px;text-align:right;">Target</th>'
         '<th style="padding:10px 8px;text-align:center;">Score</th>'
         '<th style="padding:10px 8px;text-align:left;">Setup</th>'
         '</tr></thead>'
         f'<tbody>{"".join(rows_html)}</tbody>'
-        '</table></div>'
+        '</table></div>',
+        unsafe_allow_html=True,
     )
-    st.markdown(table_html, unsafe_allow_html=True)
 
-    # Interactive Chart & Watchlist Add for any of the 10 Finalists
     st.markdown("---")
     st.markdown("#### 📈 Finalist Chart & Quick Watchlist")
     sel_col, wl_col = st.columns([3, 1])
     with sel_col:
         sel_sym = st.selectbox(
-            "Select Finalist to Inspect VCP Structure:",
+            "Select Finalist to Inspect VCP + Gap-Up Structure:",
             [f["symbol"] for f in finalists],
             key="sf_chart_select",
         )
@@ -373,7 +374,7 @@ def render():
                 selected_cand["cmp"],
                 selected_cand["stop_loss"],
                 selected_cand["target_price"],
-                f"Top-10 Swing Finalist ({selected_cand['verdict']} | 1M: {selected_cand['ret_1m']:+.1f}%, 3M: {selected_cand['ret_3m']:+.1f}%)",
+                f"Manas Arora VCP ({selected_cand['verdict']} | Run: +{selected_cand['prior_run_pct']:.1f}%, Off 1M High: {selected_cand['dd_1m_high_pct']:.1f}%)",
             )
             st.success(f"Added {sel_sym} to Watchlist!")
 
