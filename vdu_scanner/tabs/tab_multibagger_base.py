@@ -158,7 +158,7 @@ def detect_multibagger_base(
 
 def scan_multibagger_bases(max_box_range_pct: float = 22.0, min_box_days: int = 15, max_results: int = 30) -> list[dict]:
     """Scan NSE Top-1000 from local 1d cache for 2x Launchpad & High-Tight-Flag bases."""
-    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if str(s).strip()]
+    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
 
     hits = []

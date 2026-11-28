@@ -14,7 +14,7 @@ from utils import get_day_change_badge_html
 
 def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> list[dict]:
     """Compute 1M%, 3M%, 6M%, 1M high drawdown, and day change % for NSE Top-1000 from local 1d cache."""
-    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if str(s).strip()]
+    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
 
     rows = []

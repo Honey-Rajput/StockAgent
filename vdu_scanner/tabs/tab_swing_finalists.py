@@ -181,7 +181,7 @@ def find_top10_swing_finalists(
     max_results: int = 10,
 ) -> list[dict]:
     """Scan Top 1000 NSE stocks from local 1d OHLCV cache and return top N Manas Arora VCP finalists."""
-    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if str(s).strip()]
+    symbols = [s.strip().upper().replace(".NS", "") for s in get_top1000_nse_symbols() if s.strip()]
     bulk_data = bulk_get_cached_ohlcv(symbols, "1d")
 
     candidates = []

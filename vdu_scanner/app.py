@@ -12,7 +12,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import yfinance as yf
-import requests as _requests_session_lib
+import requests as _requests_session_lib  # type: ignore[import-untyped]
 _YF_SESSION = _requests_session_lib.Session()
 _YF_SESSION.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 from plotly.subplots import make_subplots
@@ -742,7 +742,7 @@ def run_background_ema_support_scan(force=False):
                 
             from scanner import scan_ema_support
             raw_symbols = get_index_stocks("ALL NSE")
-            symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            symbols_to_scan = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if s.strip()]
             
             from local_cache_manager import bulk_get_cached_ohlcv
             
@@ -841,7 +841,7 @@ def run_background_all_tab_scans():
 
             from data_fetcher import get_top1000_nse_symbols
             raw_symbols = get_top1000_nse_symbols()
-            all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
+            all_symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if s.strip()]
             
             # Phase 2: Shared Daily Download (1y or 2y)
             shared_daily_data = {}
@@ -1484,7 +1484,7 @@ col1, col2 = st.sidebar.columns(2)
 if col1.button("💾 Save Results", help="Force save all current results to the DB for today.", key="app_sidebar_save_results_btn"):
     import database
     from datetime import datetime
-    import pytz
+    import pytz  # type: ignore[import-untyped]
     ist = pytz.timezone('Asia/Kolkata')
     today_str = datetime.now(ist).strftime("%Y-%m-%d")
     
