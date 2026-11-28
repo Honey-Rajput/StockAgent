@@ -58,94 +58,86 @@ def render():
     run_vcp_btn = col_v_btn.button("🔍 Run VCP+Minervini Scan", type="primary", use_container_width=True, key="run_vcp_scan_btn")
     
     if run_vcp_btn:
-        with st.spinner("Running Minervini VCP scan across all NSE stocks..."):
+        with st.spinner("Running Minervini VCP scan across Top 1500 NSE stocks..."):
             from vcp_minervini import VCPConfig, MinerviniVCPAnalyzer
-            from data_fetcher import get_all_nse_symbols, get_stock_sector
+            from data_fetcher import get_top1500_nse_symbols, get_stock_sector
+            from local_cache_manager import bulk_get_cached_ohlcv
             import yfinance as yf
-            
-            # Use all NSE symbols (capped at 1800)
-            raw_symbols = get_all_nse_symbols()
-            symbols = [s if s.endswith('.NS') else f"{s}.NS" for s in raw_symbols if str(s).strip()]
-            
+
+            raw_symbols = get_top1500_nse_symbols()
+            clean_syms = [s.strip().upper().replace('.NS', '') for s in raw_symbols if s.strip()]
+
             cfg = VCPConfig(
                 vcp_thresh=vcp_thresh,
                 vcp_lookback=int(vcp_lookback),
                 risk_low=risk_low
             )
-            
-            # Download benchmark for RS Proxy calculation
+
             try:
                 benchmark_df = yf.download("^NSEI", period="2y", interval="1d", progress=False, threads=False, timeout=15)
             except Exception:
                 benchmark_df = None
-                
-            # Batch download data for speed, then run analyzer per-stock
+
+            progress_bar = st.progress(0, text="Loading local OHLCV cache...")
+            bulk_cached = bulk_get_cached_ohlcv(clean_syms, "1d")
+
             vcp_results = []
-            chunk_size = 100
-            sym_chunks = [symbols[i:i+chunk_size] for i in range(0, len(symbols), chunk_size)]
-            progress_bar = st.progress(0, text="Downloading data...")
-            
-            for c_idx, chunk in enumerate(sym_chunks):
-                progress_bar.progress(
-                    (c_idx + 1) / len(sym_chunks),
-                    text=f"Processing chunk {c_idx+1}/{len(sym_chunks)} ({len(vcp_results)} setups found)..."
-                )
+            total = len(clean_syms)
+            for idx, clean_s in enumerate(clean_syms):
+                if idx % 100 == 0 or idx == total - 1:
+                    progress_bar.progress((idx + 1) / max(1, total), text=f"Analyzing {idx+1}/{total} ({len(vcp_results)} VCP setups)...")
                 try:
-                    bulk_df = yf.download(tickers=chunk, period="2y", interval="1d", progress=False, threads=False, timeout=15)
-                    if bulk_df.empty:
+                    t_df = bulk_cached.get(clean_s)
+                    if t_df is None or len(t_df) < 250:
                         continue
-                    
-                    for sym in chunk:
-                        try:
-                            # Extract single-stock data from bulk download
-                            if isinstance(bulk_df.columns, pd.MultiIndex):
-                                all_tkrs = bulk_df.columns.get_level_values(1).unique().tolist()
-                                matched_t = next((t for t in all_tkrs if t.upper() == sym.upper()), None)
-                                if not matched_t:
-                                    continue
-                                t_df = bulk_df.xs(matched_t, axis=1, level=1).dropna(subset=['Close'])
-                            else:
-                                t_df = bulk_df.dropna(subset=['Close'])
-                            
-                            if t_df.empty or len(t_df) < 250:
-                                continue
-                            
-                            # Run the Minervini analyzer with pre-fetched data
-                            analyzer = MinerviniVCPAnalyzer(sym, cfg, benchmark_df=benchmark_df)
-                            analyzer.df = t_df.copy()
-                            analyzer._moving_averages()
-                            analyzer._trend_template()
-                            analyzer._buy_risk()
-                            analyzer._pressure()
-                            analyzer._rpr()
-                            analyzer._vcp()
-                            analyzer._entry_signals()
-                            
-                            last = analyzer.df.iloc[-1]
-                            result = {
-                                "symbol": sym,
-                                "date": analyzer.df.index[-1].strftime("%Y-%m-%d"),
-                                "close": round(float(last["Close"]), 2),
-                                "Pressure": last["pressure_txt"],
-                                "Risk (50d)": last["risk_status"],
-                                "Trend (TPR)": last["tpr_txt"],
-                                "RS Proxy": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
-                                "VCP (5d)": last["vcp_txt"],
-                                "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last["vcp_range_pct"]) else None,
-                                "VCP (10d)": last.get("vcp10_txt", "Normal"),
-                                "VCP 10d range %": round(float(last["vcp10_range_pct"]), 2) if "vcp10_range_pct" in last and pd.notna(last["vcp10_range_pct"]) else None,
-                                "VCP (15d)": last.get("vcp15_txt", "Normal"),
-                                "VCP 15d range %": round(float(last["vcp15_range_pct"]), 2) if "vcp15_range_pct" in last and pd.notna(last["vcp15_range_pct"]) else None,
-                                "Entry Signal": last["entry_signal"],
-                            }
-                            
-                            result["Sector"] = get_stock_sector(sym)
-                            vcp_results.append(result)
-                        except Exception:
-                            pass
+                    t_df = t_df.copy()
+                    if 'Date' in t_df.columns:
+                        t_df['Date'] = pd.to_datetime(t_df['Date'])
+                        t_df = t_df.set_index('Date').sort_index()
+
+                    sym = f"{clean_s}.NS"
+                    analyzer = MinerviniVCPAnalyzer(sym, cfg, benchmark_df=benchmark_df)
+                    analyzer.df = t_df
+                    analyzer._moving_averages()
+                    analyzer._trend_template()
+                    analyzer._buy_risk()
+                    analyzer._pressure()
+                    analyzer._rpr()
+                    analyzer._vcp()
+                    analyzer._entry_signals()
+
+                    last = analyzer.df.iloc[-1]
+                    tpr_txt = str(last["tpr_txt"])
+                    entry_sig = str(last["entry_signal"])
+                    has_squeeze = any(
+                        str(last.get(k, "")) == "SQUEEZE"
+                        for k in ("vcp_txt", "vcp10_txt", "vcp15_txt")
+                    )
+                    # Only keep real setups: PASSED Minervini Trend Template OR active Squeeze / Entry Signal
+                    if ("PASSED" not in tpr_txt) and (not has_squeeze) and (entry_sig not in ("BREAKOUT", "EARLY ENTRY")):
+                        continue
+
+                    result = {
+                        "symbol": sym,
+                        "date": analyzer.df.index[-1].strftime("%Y-%m-%d"),
+                        "close": round(float(last["Close"]), 2),
+                        "Pressure": last["pressure_txt"],
+                        "Risk (50d)": last["risk_status"],
+                        "Trend (TPR)": tpr_txt,
+                        "RS Proxy": round(float(last["rpr_proxy"]), 1) if pd.notna(last["rpr_proxy"]) else None,
+                        "VCP (5d)": last["vcp_txt"],
+                        "VCP range %": round(float(last["vcp_range_pct"]), 2) if pd.notna(last["vcp_range_pct"]) else None,
+                        "VCP (10d)": last.get("vcp10_txt", "Normal"),
+                        "VCP 10d range %": round(float(last["vcp10_range_pct"]), 2) if "vcp10_range_pct" in last and pd.notna(last["vcp10_range_pct"]) else None,
+                        "VCP (15d)": last.get("vcp15_txt", "Normal"),
+                        "VCP 15d range %": round(float(last["vcp15_range_pct"]), 2) if "vcp15_range_pct" in last and pd.notna(last["vcp15_range_pct"]) else None,
+                        "Entry Signal": entry_sig,
+                        "Sector": get_stock_sector(sym),
+                    }
+                    vcp_results.append(result)
                 except Exception:
                     pass
-            
+
             progress_bar.empty()
             
             if vcp_results:
