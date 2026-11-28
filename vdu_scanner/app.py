@@ -2475,10 +2475,10 @@ st.markdown("---")
 # Get scan cache (used by multiple tabs)
 scan_data = st.session_state.scan_results
 
-(tab_results, tab_detail, tab_watchlist, tab_breadth, tab_atlas, tab_swing_finalists, tab_ai, tab_sma, tab_sma65,
+(tab_results, tab_detail, tab_watchlist, tab_breadth, tab_atlas, tab_swing_finalists, tab_multibagger, tab_ai, tab_sma, tab_sma65,
  tab_macross, tab_wave, tab_minervini, tab_monthly, tab_weekly, tab_history,
  tab_vcs, tab_vcp, tab_stage2, tab_vpa, tab_pva_matrix, tab_alerts, tab_volprofile, tab_support, tab_rsi_wt, tab_ema_support, tab_stage_analysis, tab_vpa_squeeze, tab_flat_base, tab_near_30sma, tab_hh_hl) = st.tabs([
-    "📊 Results", "📈 Detail", "📋 Watchlist", "🌐 Breadth Ledger", "📊 1M & 3M Atlas", "🚀 Manas Arora VCP", "🤖 AI Pattern",
+    "📊 Results", "📈 Detail", "📋 Watchlist", "🌐 Breadth Ledger", "📊 1M & 3M Atlas", "🚀 Manas Arora VCP", "💎 2x Multibagger Base", "🤖 AI Pattern",
     "📈 20&50 SMA", "🛡️ 65 SMA", "🔄 MA Cross",
     "🌊 Wave", "🏆 Minervini", "📅 Monthly", "📈 Weekly",
     "📅 History", "📉 Dan Zanger Scanner", "🎯 VCP+Minervini", "🚀 Stage2 Brk",
@@ -2519,6 +2519,10 @@ with tab_atlas:
 with tab_swing_finalists:
     import tabs.tab_swing_finalists
     tabs.tab_swing_finalists.render()
+
+with tab_multibagger:
+    import tabs.tab_multibagger_base
+    tabs.tab_multibagger_base.render()
 
 with tab_ai:
     import tabs.tab_ai
