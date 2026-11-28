@@ -73,6 +73,10 @@ def render():
                     st.rerun()
         return
 
+    _max_cmp = float(st.session_state.get("global_max_cmp", 1000))
+    if _max_cmp > 0:
+        vpa_data = [r for r in vpa_data if float(r.get('cmp') or 0.0) <= _max_cmp]
+
     # Data enrichment: ensure PVA classification and blast scores
     try:
         from tabs.tab_vpa import compute_blast_score

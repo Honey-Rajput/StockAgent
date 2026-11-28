@@ -201,9 +201,12 @@ def render():
     else:
         display_results = st.session_state.get('vpa_squeeze_monthly_results', [])
 
-    # Apply symbol search
+    # Apply symbol search + global max price
     if search_vpa_sq:
         display_results = [r for r in display_results if search_vpa_sq in str(r.get('symbol', '')).upper()]
+    _max_cmp_sq = float(st.session_state.get("global_max_cmp", 1000))
+    if _max_cmp_sq > 0:
+        display_results = [r for r in display_results if float(r.get('cmp') or 0.0) <= _max_cmp_sq]
 
     if display_results:
         df_res = pd.DataFrame(display_results)

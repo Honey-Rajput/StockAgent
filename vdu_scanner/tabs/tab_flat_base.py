@@ -207,6 +207,9 @@ def render():
                 st.error(f"Error executing scan: {e}")
 
     results = st.session_state.get('flat_base_results', [])
+    _max_cmp_fb = float(st.session_state.get("global_max_cmp", 1000))
+    if results and _max_cmp_fb > 0:
+        results = [r for r in results if float(r.get('cmp') or 0.0) <= _max_cmp_fb]
     if results:
         df_res = pd.DataFrame(results)
         

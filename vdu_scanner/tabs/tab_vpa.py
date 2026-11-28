@@ -334,6 +334,9 @@ def render():
     # DATA ENRICHMENT — compute blast scores if missing (loaded from DB cache)
     # ─────────────────────────────────────────────────────────────────────────
     vpa_data = st.session_state.vpa_results
+    _max_cmp_vpa = float(st.session_state.get("global_max_cmp", 1000))
+    if _max_cmp_vpa > 0:
+        vpa_data = [r for r in vpa_data if float(r.get('cmp') or 0.0) <= _max_cmp_vpa]
     for r in vpa_data:
         if 'vol_ratio_5d' not in r:
             r['vol_ratio_5d'] = r.get('vol_ratio_5d', 1.0)

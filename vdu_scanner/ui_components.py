@@ -401,7 +401,7 @@ def render_unified_strategy_table(results_list: list, strategy_type: str, key_pr
         max_cmp_val = st.number_input(
             "💰 Max Price (₹, 0=All):",
             min_value=0,
-            value=1000,
+            value=int(st.session_state.get("global_max_cmp", 1000)),
             step=100,
             key=f"{key_prefix}_max_cmp_filter",
         )
