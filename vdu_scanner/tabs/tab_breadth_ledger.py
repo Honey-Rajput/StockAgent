@@ -310,6 +310,41 @@ def render():
 
         st.caption(f"Showing **{len(display_clusters)}** of **{len(clusters)}** industry groups.")
 
+        # Build JS cluster data map for modal (keyed by row-id)
+        cluster_js_data = {}
+        for rank_pre, c_pre in enumerate(display_clusters, 1):
+            rid_pre = f"row-{rank_pre}"
+            cs = c_pre.get("cluster_stocks", [])
+            if not cs:
+                cs = [
+                    {
+                        "symbol": str(s).strip().upper().replace(".NS", ""),
+                        "flag": 1,
+                        "tier_code": "1m",
+                        "tier_name": "1M High",
+                        "in_1m": True,
+                        "in_3m": False,
+                        "in_6m": False,
+                    }
+                    for s in c_pre.get("leading_stocks", [])
+                ]
+            stocks_6m = [s["symbol"] for s in cs if s.get("in_6m")]
+            stocks_3m_only = [s["symbol"] for s in cs if s.get("in_3m") and not s.get("in_6m")]
+            stocks_1m_only = [s["symbol"] for s in cs if s.get("in_1m") and not s.get("in_3m") and not s.get("in_6m")]
+            cluster_js_data[rid_pre] = {
+                "industry": str(c_pre.get("industry", "")),
+                "total": c_pre.get("total_stocks", 0),
+                "h1m": c_pre.get("highs_1m", 0),
+                "h3m": c_pre.get("highs_3m", 0),
+                "h6m": c_pre.get("highs_6m", 0),
+                "s6m": stocks_6m,
+                "s3m": stocks_3m_only,
+                "s1m": stocks_1m_only,
+            }
+
+        import json as _json
+        cluster_js_json = _json.dumps(cluster_js_data)
+
         table_rows = []
         for rank, c in enumerate(display_clusters, 1):
             row_id = f"row-{rank}"
@@ -490,6 +525,45 @@ def render():
         tbody_html = "".join(table_rows)
 
         cluster_table_html = f"""
+        <!-- Modal Overlay -->
+        <div id="breadth-modal-overlay" onclick="closeBreadthModal(event)" style="
+            display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:9999;
+            background:rgba(0,0,0,0.75); backdrop-filter:blur(3px); align-items:center; justify-content:center;">
+          <div id="breadth-modal-box" onclick="event.stopPropagation()" style="
+              background:#0d1526; border:1px solid rgba(56,189,248,0.4); border-radius:14px;
+              padding:24px 28px; max-width:680px; width:92%; max-height:82vh; overflow-y:auto;
+              box-shadow:0 8px 40px rgba(0,0,0,0.6);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <div>
+                <h3 id="modal-industry-title" style="margin:0; color:#f8fafc; font-size:1.1rem; font-weight:700;"></h3>
+                <span id="modal-industry-subtitle" style="font-size:0.78rem; color:#64748b;"></span>
+              </div>
+              <button onclick="closeBreadthModal(null)" style="
+                  background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15);
+                  color:#94a3b8; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:1rem;">✕</button>
+            </div>
+            <!-- Tab buttons inside modal -->
+            <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+              <button class="modal-tab-btn active-modal-tab" id="modal-tab-6m" onclick="switchModalTab('6m', this)">
+                🟢 6M Highs <span id="modal-cnt-6m" style="font-size:0.75rem; color:#6ee7b7; margin-left:4px;"></span>
+              </button>
+              <button class="modal-tab-btn" id="modal-tab-3m" onclick="switchModalTab('3m', this)">
+                🔷 3M High Only <span id="modal-cnt-3m" style="font-size:0.75rem; color:#67e8f9; margin-left:4px;"></span>
+              </button>
+              <button class="modal-tab-btn" id="modal-tab-1m" onclick="switchModalTab('1m', this)">
+                ⚡ 1M High Only <span id="modal-cnt-1m" style="font-size:0.75rem; color:#93c5fd; margin-left:4px;"></span>
+              </button>
+              <button class="modal-tab-btn" id="modal-tab-all" onclick="switchModalTab('all', this)">
+                👥 All Highs
+              </button>
+            </div>
+            <div id="modal-stocks-panel" style="display:flex; flex-wrap:wrap; gap:6px; min-height:60px;"></div>
+            <p style="font-size:0.72rem; color:#475569; margin-top:14px; margin-bottom:0;">
+              Click any ticker to open its TradingView chart. 🟢 = 6M &nbsp; 🔷 = 3M only &nbsp; ⚡ = 1M only
+            </p>
+          </div>
+        </div>
+
         <style>
         .cluster-wrap {{ font-family:'Segoe UI',system-ui,sans-serif; color:#cbd5e1; }}
         .cluster-table {{ width:100%; border-collapse:collapse; font-size:0.85rem; }}
@@ -545,6 +619,21 @@ def render():
         .stock-chip.tier-3m {{ background:rgba(34,211,238,0.13); color:#22d3ee; border:1px solid rgba(34,211,238,0.35); }}
         .stock-chip.tier-1m {{ background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); }}
         .stock-chip.tier-none {{ background:rgba(30,41,59,0.5); color:#94a3b8; border:1px solid rgba(71,85,105,0.4); }}
+
+        .modal-tab-btn {{
+            background:rgba(255,255,255,0.05); color:#94a3b8; border:1px solid rgba(255,255,255,0.12);
+            border-radius:6px; font-size:0.78rem; padding:5px 12px; cursor:pointer; transition:all 0.15s; font-weight:600;
+        }}
+        .modal-tab-btn:hover {{ background:rgba(255,255,255,0.12); color:#f8fafc; }}
+        .modal-tab-btn.active-modal-tab {{ background:#38bdf8; color:#04233a; border-color:#38bdf8; font-weight:800; box-shadow:0 0 10px rgba(56,189,248,0.4); }}
+        .modal-chip {{
+            display:inline-block; padding:5px 11px; border-radius:5px;
+            font-size:0.82rem; font-weight:700; text-decoration:none; transition:all 0.15s;
+        }}
+        .modal-chip:hover {{ transform:scale(1.06); filter:brightness(1.2); }}
+        .modal-chip-6m {{ background:rgba(0,230,118,0.18); color:#00e676; border:1px solid rgba(0,230,118,0.5); }}
+        .modal-chip-3m {{ background:rgba(34,211,238,0.15); color:#22d3ee; border:1px solid rgba(34,211,238,0.4); }}
+        .modal-chip-1m {{ background:rgba(56,189,248,0.14); color:#38bdf8; border:1px solid rgba(56,189,248,0.4); }}
         </style>
 
         <div class="cluster-wrap">
@@ -583,6 +672,100 @@ def render():
         </div>
 
         <script>
+        // ── Cluster data injected from Python ──
+        const CLUSTER_DATA = {cluster_js_json};
+
+        // ── Modal helpers ──
+        let _modalCurrentData = null;
+        let _modalCurrentTab = '6m';
+
+        function openBreadthModal(rowId, startTab) {{
+          const data = CLUSTER_DATA[rowId];
+          if (!data) return;
+          _modalCurrentData = data;
+          _modalCurrentTab = startTab || '6m';
+
+          document.getElementById('modal-industry-title').textContent = data.industry;
+          document.getElementById('modal-industry-subtitle').textContent =
+            data.total + ' stocks total · ' + data.h6m + ' at 6M · ' + data.h3m + ' at 3M · ' + data.h1m + ' at 1M high';
+          document.getElementById('modal-cnt-6m').textContent = '(' + data.s6m.length + ')';
+          document.getElementById('modal-cnt-3m').textContent = '(' + data.s3m.length + ')';
+          document.getElementById('modal-cnt-1m').textContent = '(' + data.s1m.length + ')';
+
+          const overlay = document.getElementById('breadth-modal-overlay');
+          overlay.style.display = 'flex';
+          switchModalTab(_modalCurrentTab, document.getElementById('modal-tab-' + _modalCurrentTab));
+        }}
+
+        function closeBreadthModal(evt) {{
+          if (evt && evt.target !== document.getElementById('breadth-modal-overlay')) return;
+          document.getElementById('breadth-modal-overlay').style.display = 'none';
+        }}
+
+        function switchModalTab(tab, btn) {{
+          _modalCurrentTab = tab;
+          document.querySelectorAll('.modal-tab-btn').forEach(b => b.classList.remove('active-modal-tab'));
+          if (btn) btn.classList.add('active-modal-tab');
+
+          const panel = document.getElementById('modal-stocks-panel');
+          if (!panel || !_modalCurrentData) return;
+          panel.innerHTML = '';
+
+          let stocks = [];
+          let chipClass = 'modal-chip-6m';
+          let emptyMsg = '';
+          const d = _modalCurrentData;
+
+          if (tab === '6m') {{
+            stocks = d.s6m;
+            chipClass = 'modal-chip-6m';
+            emptyMsg = 'No stocks at 6-Month High in this group.';
+          }} else if (tab === '3m') {{
+            stocks = d.s3m;
+            chipClass = 'modal-chip-3m';
+            emptyMsg = 'No stocks at 3M High only (not yet 6M) in this group.';
+          }} else if (tab === '1m') {{
+            stocks = d.s1m;
+            chipClass = 'modal-chip-1m';
+            emptyMsg = 'No stocks at 1M High only in this group.';
+          }} else {{
+            // All highs: show all three tiers combined, color-coded
+            const all6 = (d.s6m || []).map(s => [s, 'modal-chip-6m', '🟢']);
+            const all3 = (d.s3m || []).map(s => [s, 'modal-chip-3m', '🔷']);
+            const all1 = (d.s1m || []).map(s => [s, 'modal-chip-1m', '⚡']);
+            const combined = [...all6, ...all3, ...all1];
+            if (combined.length === 0) {{
+              panel.innerHTML = '<span style="color:#64748b;font-size:0.82rem;">No fresh high stocks in this group.</span>';
+              return;
+            }}
+            combined.forEach(([sym, cls, icon]) => {{
+              const a = document.createElement('a');
+              a.href = 'https://in.tradingview.com/chart/?symbol=NSE:' + sym;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              a.className = 'modal-chip ' + cls;
+              a.textContent = icon + ' ' + sym;
+              panel.appendChild(a);
+            }});
+            return;
+          }}
+
+          if (!stocks || stocks.length === 0) {{
+            panel.innerHTML = '<span style="color:#64748b;font-size:0.82rem;">' + emptyMsg + '</span>';
+            return;
+          }}
+          stocks.forEach(sym => {{
+            const a = document.createElement('a');
+            a.href = 'https://in.tradingview.com/chart/?symbol=NSE:' + sym;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.className = 'modal-chip ' + chipClass;
+            a.textContent = sym + ' ↗';
+            panel.appendChild(a);
+          }});
+        }}
+
+        // ── Existing row-level filtering ──
         function filterRow(rowId, tier, btnElement) {{
           const container = document.getElementById('chips-' + rowId);
           const statusEl = document.getElementById('status-' + rowId);
@@ -641,12 +824,9 @@ def render():
         }}
 
         function toggleRowTierNumber(el, rowId, tier) {{
-          if (el.classList.contains('active-pill')) {{
-            filterRow(rowId, 'active', null);
-            el.classList.remove('active-pill');
-          }} else {{
-            filterRow(rowId, tier, el);
-          }}
+          // Open modal showing 6M/3M/1M breakdown for this row
+          const startTab = (tier === '1m' || tier === '3m' || tier === '6m') ? tier : '6m';
+          openBreadthModal(rowId, startTab);
         }}
 
         function filterAllRows(tier, headerBtn) {{
