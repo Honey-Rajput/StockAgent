@@ -17,6 +17,7 @@ from config import get_company_name
 from data_fetcher import get_top1000_nse_symbols, get_stock_sector
 from local_cache_manager import bulk_get_cached_ohlcv
 from breadth_ledger import get_stock_cluster_tag
+from trading_rules import evaluate_manas_trend_rules
 from utils import get_day_change_badge_html
 import watchlist
 
@@ -129,6 +130,7 @@ def detect_multibagger_base(
         stop_loss = round(cmp_val * 0.93, 2)
     risk = cmp_val - stop_loss
     target_price = round(max(cmp_val + risk * 3.0, cmp_val * 1.30), 2)
+    m_rules = evaluate_manas_trend_rules(df, base_pivot=b_high)
 
     return {
         "symbol": sym,
@@ -153,6 +155,9 @@ def detect_multibagger_base(
         "stop_loss": stop_loss,
         "target_price": target_price,
         "score": score,
+        "days_above_50ma": m_rules["days_above_50ma"],
+        "bar_timing_label": m_rules["bar_timing_label"],
+        "trail_ma_label": m_rules["trail_ma_label"],
     }
 
 
@@ -293,7 +298,9 @@ def render():
             f'<td style="padding:9px 8px;text-align:center;color:#38bdf8;font-weight:700;">{r["today_vol_ratio"]:.2f}x</td>'
             f'<td style="padding:9px 8px;text-align:center;color:#00e676;font-weight:700;">+{r["prior_run_pct"]:.1f}%</td>'
             f'<td style="padding:9px 8px;text-align:right;color:#ef4444;font-weight:600;">₹{r["stop_loss"]:,.2f}</td>'
-            f'<td style="padding:9px 8px;text-align:right;color:#00e676;font-weight:600;">₹{r["target_price"]:,.2f}</td>'
+            f'<td style="padding:9px 8px;font-size:0.78rem;color:#22d3ee;">{r.get("trail_ma_label", "🛡️ 20 SMA")}</td>'
+            f'<td style="padding:9px 8px;text-align:center;color:#00e676;font-weight:700;">{r.get("days_above_50ma", 0)}/50</td>'
+            f'<td style="padding:9px 8px;text-align:center;font-size:0.76rem;">{r.get("bar_timing_label", "—")}</td>'
             f'<td style="padding:9px 8px;text-align:center;"><span style="background:rgba(0,230,118,0.15);color:#00e676;'
             f'border:1px solid rgba(0,230,118,0.4);padding:2px 7px;border-radius:4px;font-weight:800;">{r["score"]}</span></td>'
             f'</tr>'
@@ -313,8 +320,10 @@ def render():
         '<th style="padding:10px 8px;text-align:center;">Base Vol Dry</th>'
         '<th style="padding:10px 8px;text-align:center;">Today Vol</th>'
         '<th style="padding:10px 8px;text-align:center;">Prior Run</th>'
-        '<th style="padding:10px 8px;text-align:right;">Stop Loss</th>'
-        '<th style="padding:10px 8px;text-align:right;">Target (30%+)</th>'
+        '<th style="padding:10px 8px;text-align:right;">Initial SL</th>'
+        '<th style="padding:10px 8px;text-align:left;">Trail Stop (Ride Trend)</th>'
+        '<th style="padding:10px 8px;text-align:center;">50MA (50d)</th>'
+        '<th style="padding:10px 8px;text-align:center;">Bar Timing</th>'
         '<th style="padding:10px 8px;text-align:center;">Score</th>'
         '</tr></thead>'
         f'<tbody>{"".join(rows_html)}</tbody>'

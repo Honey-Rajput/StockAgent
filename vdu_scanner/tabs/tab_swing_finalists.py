@@ -17,6 +17,7 @@ from config import get_company_name
 from data_fetcher import get_top1000_nse_symbols, get_stock_sector
 from local_cache_manager import bulk_get_cached_ohlcv
 from breadth_ledger import get_stock_cluster_tag
+from trading_rules import evaluate_manas_trend_rules
 from utils import get_day_change_badge_html
 import watchlist
 
@@ -145,6 +146,8 @@ def score_swing_candidate(
     else:
         verdict = "🎯 VCP Coil Ready"
 
+    m_rules = evaluate_manas_trend_rules(df, base_pivot=recent_low_15)
+
     return {
         "symbol": sym,
         "company_name": get_company_name(sym),
@@ -171,6 +174,11 @@ def score_swing_candidate(
         "rr_ratio": rr_ratio,
         "swing_score": total_score,
         "verdict": verdict,
+        "days_above_50ma": m_rules["days_above_50ma"],
+        "closes_below_50ma": m_rules["closes_below_50ma"],
+        "bar_timing_label": m_rules["bar_timing_label"],
+        "trail_ma_label": m_rules["trail_ma_label"],
+        "pyramid_label": m_rules["pyramid_label"],
     }
 
 
@@ -325,8 +333,10 @@ def render():
             f'<td style="padding:10px 8px;text-align:center;color:#22d3ee;font-weight:700;">{r["contraction_ratio"]:.2f}x</td>'
             f'<td style="padding:10px 8px;text-align:center;color:#38bdf8;font-weight:800;">+{r["gap_up_pct"]:.2f}%</td>'
             f'<td style="padding:10px 8px;text-align:right;color:#ef4444;font-weight:600;">₹{r["stop_loss"]:,.2f}</td>'
-            f'<td style="padding:10px 8px;text-align:right;color:#00e676;font-weight:600;">₹{r["target_price"]:,.2f}'
-            f'<div style="font-size:0.68rem;color:#6ee7b7;">1:{r["rr_ratio"]} R:R</div></td>'
+            f'<td style="padding:10px 8px;font-size:0.78rem;color:#22d3ee;">{r.get("trail_ma_label", "🛡️ 20 SMA")}</td>'
+            f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;color:#00e676;font-weight:700;">{r.get("days_above_50ma", 0)}/50</td>'
+            f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;">{r.get("bar_timing_label", "—")}</td>'
+            f'<td style="padding:10px 8px;text-align:center;font-size:0.76rem;">{r.get("pyramid_label", "✅")}</td>'
             f'<td style="padding:10px 8px;text-align:center;"><span style="background:rgba(0,230,118,0.15);color:#00e676;'
             f'border:1px solid rgba(0,230,118,0.4);padding:2px 7px;border-radius:4px;font-weight:800;">{r["swing_score"]}</span></td>'
             f'<td style="padding:10px 8px;font-size:0.78rem;font-weight:600;color:#e2e8f0;">{r["verdict"]}</td>'
@@ -346,8 +356,11 @@ def render():
         '<th style="padding:10px 8px;text-align:center;">Off 1M High</th>'
         '<th style="padding:10px 8px;text-align:center;">VCP Tight</th>'
         '<th style="padding:10px 8px;text-align:center;color:#38bdf8;">Gap-Up %</th>'
-        '<th style="padding:10px 8px;text-align:right;">Stop Loss</th>'
-        '<th style="padding:10px 8px;text-align:right;">Target</th>'
+        '<th style="padding:10px 8px;text-align:right;">Initial SL</th>'
+        '<th style="padding:10px 8px;text-align:left;">Trail Stop (No Cap)</th>'
+        '<th style="padding:10px 8px;text-align:center;">50MA (50d)</th>'
+        '<th style="padding:10px 8px;text-align:center;">Bar Timing</th>'
+        '<th style="padding:10px 8px;text-align:center;">Pyramid</th>'
         '<th style="padding:10px 8px;text-align:center;">Score</th>'
         '<th style="padding:10px 8px;text-align:left;">Setup</th>'
         '</tr></thead>'

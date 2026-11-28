@@ -9,6 +9,7 @@ import streamlit as st
 from data_fetcher import get_top1000_nse_symbols, get_stock_sector
 from local_cache_manager import bulk_get_cached_ohlcv
 from breadth_ledger import get_stock_cluster_tag
+from trading_rules import evaluate_manas_trend_rules
 from utils import get_day_change_badge_html
 
 
@@ -53,6 +54,7 @@ def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> lis
         high_1m = float(high.iloc[-21:].max())
         off_1m_high = round(((cmp_val - high_1m) / high_1m) * 100.0, 2) if high_1m > 0 else 0.0
         vol_ratio = round(float(vol.iloc[-1]) / avg_vol_20, 2) if avg_vol_20 > 0 else 1.0
+        m_rules = evaluate_manas_trend_rules(df)
 
         rows.append({
             "symbol": sym,
@@ -65,6 +67,9 @@ def compute_atlas_momentum_rows(min_1m: float = 0.0, min_3m: float = 0.0) -> lis
             "ret_6m": ret_6m,
             "off_1m_high": off_1m_high,
             "vol_ratio": vol_ratio,
+            "days_above_50ma": m_rules["days_above_50ma"],
+            "closes_below_50ma": m_rules["closes_below_50ma"],
+            "trail_ma_label": m_rules["trail_ma_label"],
         })
 
     rows.sort(key=lambda x: (x["ret_3m"], x["ret_1m"]), reverse=True)
@@ -93,6 +98,12 @@ def render():
     with f5:
         top_n = st.selectbox("Show Rows:", [50, 100, 250, 500], index=0, key="atlas_topn")
 
+    only_est_trend = st.checkbox(
+        "🛡️ Established Trend Only: Never / barely closed below 50 SMA in last 50 days (≤ 2 closes below 50MA)",
+        value=False,
+        key="atlas_est_50ma",
+    )
+
     if st.button("🔄 Refresh Atlas Data", key="atlas_refresh_btn") or "atlas_rows_cache" not in st.session_state:
         with st.spinner("Computing 1M% & 3M% momentum across NSE Top-1000..."):
             st.session_state["atlas_rows_cache"] = compute_atlas_momentum_rows(min_1m=-999.0, min_3m=-999.0)
@@ -101,6 +112,7 @@ def render():
     filtered = [
         r for r in all_rows
         if r["ret_1m"] >= min_1m and r["ret_3m"] >= min_3m
+        and (not only_est_trend or r.get("closes_below_50ma", 50) <= 2)
         and (not search_q or search_q in r["symbol"] or search_q in r["sector"].upper())
     ]
 
@@ -164,6 +176,7 @@ def render():
             f'<td style="padding:8px;text-align:center;font-weight:800;color:{c3m};">{r["ret_3m"]:+.2f}%</td>'
             f'<td style="padding:8px;text-align:center;font-weight:700;color:{c6m};">{r["ret_6m"]:+.2f}%</td>'
             f'<td style="padding:8px;text-align:center;color:#fca5a5;">{r["off_1m_high"]:.2f}%</td>'
+            f'<td style="padding:8px;text-align:center;color:#00e676;font-weight:700;">{r.get("days_above_50ma", 0)}/50</td>'
             f'<td style="padding:8px;text-align:center;color:#94a3b8;">{r["vol_ratio"]:.2f}x</td>'
             f'</tr>'
         )
@@ -181,6 +194,7 @@ def render():
         '<th style="padding:10px 8px;text-align:center;color:#22d3ee;">3M %</th>'
         '<th style="padding:10px 8px;text-align:center;">6M %</th>'
         '<th style="padding:10px 8px;text-align:center;">Off 1M High</th>'
+        '<th style="padding:10px 8px;text-align:center;">50MA (50d)</th>'
         '<th style="padding:10px 8px;text-align:center;">Vol Ratio</th>'
         '</tr></thead>'
         f'<tbody>{"".join(rows_html)}</tbody>'

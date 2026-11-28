@@ -349,3 +349,83 @@ def render_10_rules_execution_card(detail_data: dict[str, Any], df: pd.DataFrame
                 unsafe_allow_html=True
             )
 
+
+def evaluate_manas_trend_rules(df: pd.DataFrame | None, base_pivot: float | None = None) -> dict[str, Any]:
+    """
+    Computes Manas Arora's established-trend & execution rules from daily OHLCV:
+      1. 50-MA Consistency: days closed below 50 SMA in the last 50 trading days (0 = never closed below).
+      2. Entry Bar Timing (3-5 Bar Rule): consecutive up-bars from recent swing low (Bar 1-2 = Prime, 5+ = Late).
+      3. Adaptive Trailing Stop MA: 20 SMA normally, or 10 EMA / scale-out if steep 70-90 deg surge (>=18% in 5d).
+      4. Pyramiding Guard: allow adding near base (<=25% above base_pivot), block if >25% extended.
+    """
+    if df is None or len(df) < 55:
+        return {
+            "days_above_50ma": 0,
+            "closes_below_50ma": 50,
+            "impulse_bars": 0,
+            "bar_timing_label": "—",
+            "trail_ma_val": 0.0,
+            "trail_ma_label": "20 SMA",
+            "steep_angle_alert": False,
+            "pyramid_allowed": True,
+            "pyramid_label": "Pilot 40%",
+        }
+
+    close = df["Close"].astype(float)
+    sma50_s = close.rolling(50).mean()
+    sma20_val = float(close.rolling(20).mean().iloc[-1])
+    ema10_val = float(close.ewm(span=10, adjust=False).mean().iloc[-1])
+    cmp_val = float(close.iloc[-1])
+
+    # 1. Last 50 trading days above/below 50 SMA
+    valid_50 = (close >= sma50_s).iloc[-50:]
+    days_above = int(valid_50.sum())
+    closes_below = int(len(valid_50) - days_above)
+
+    # 2. Consecutive up-close bars (3-5 bar impulse timing)
+    impulse_bars = 0
+    for i in range(1, min(10, len(close))):
+        if float(close.iloc[-i]) > float(close.iloc[-i - 1]):
+            impulse_bars += 1
+        else:
+            break
+    if impulse_bars <= 2:
+        bar_label = f"🟢 Bar {max(1, impulse_bars)} (Prime)"
+    elif impulse_bars <= 4:
+        bar_label = f"🟡 Bar {impulse_bars} (Mid)"
+    else:
+        bar_label = f"🔴 Bar {impulse_bars} (Late)"
+
+    # 3. 5-day steepness / 70-90 deg climax angle check -> adaptive 10 EMA vs 20 SMA trail
+    c_5d = float(close.iloc[-6]) if len(close) >= 6 else cmp_val
+    ret_5d = ((cmp_val - c_5d) / c_5d) * 100.0 if c_5d > 0 else 0.0
+    steep_alert = ret_5d >= 18.0
+    if steep_alert:
+        trail_val = round(ema10_val, 2)
+        trail_label = f"⚠️ 10 EMA ₹{trail_val:,.2f} (Scale Out)"
+    else:
+        trail_val = round(sma20_val, 2)
+        trail_label = f"🛡️ 20 SMA ₹{trail_val:,.2f}"
+
+    # 4. Pyramiding guard (<= 25% above base pivot)
+    if base_pivot and base_pivot > 0:
+        ext_pct = ((cmp_val - base_pivot) / base_pivot) * 100.0
+        pyramid_ok = ext_pct <= 25.0
+        pyramid_label = "✅ Pyramid OK" if pyramid_ok else f"🚫 +{ext_pct:.0f}% (>25%)"
+    else:
+        pyramid_ok = True
+        pyramid_label = "✅ Pilot -> Add +ve"
+
+    return {
+        "days_above_50ma": days_above,
+        "closes_below_50ma": closes_below,
+        "impulse_bars": impulse_bars,
+        "bar_timing_label": bar_label,
+        "trail_ma_val": trail_val,
+        "trail_ma_label": trail_label,
+        "steep_angle_alert": steep_alert,
+        "pyramid_allowed": pyramid_ok,
+        "pyramid_label": pyramid_label,
+    }
+
+
